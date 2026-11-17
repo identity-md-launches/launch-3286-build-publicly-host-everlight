@@ -11,12 +11,32 @@ import type { Candle } from "./lib/candles";
 
 const ROUTES = [
   ["garden", "Garden"],
-  ["light", "Light a candle"],
-  ["mine", "My candles"],
+  ["mine", "My Candles"],
   ["rewards", "Rewards"],
   ["treasury", "Treasury"],
+  ["light", "Light a candle"],
   ["how", "How it works"],
 ] as const;
+/** Header tabs, in the reference order; Light a candle and How it works live in the side actions. */
+const NAV = ROUTES.slice(0, 4);
+/** Contract split of every 1 IMD candle (WishGarden): unchanged economics. */
+const SPLIT = [
+  ["30%", "Burn", "flame"],
+  ["30%", "Previous paid candles", "layers"],
+  ["30%", "Ecosystem", "sprout"],
+  ["5%", "Operations", "gear"],
+  ["5%", "Founder", "people"],
+] as const;
+const ICON: Record<string, string> = {
+  flame: "M12 3c1 3 4 4.5 4 8.5A4 4 0 0 1 8 11.5C8 9 10 8 10 6c1.2.8 1.6 1.7 2-3Z",
+  layers: "M12 4 3 8.5l9 4.5 9-4.5L12 4Zm-9 8.5 9 4.5 9-4.5M3 16.5 12 21l9-4.5",
+  sprout: "M12 20v-8m0 0C12 7 8.5 5 4 5c0 4.5 3 7 8 7Zm0 0c0-4 3-6.5 8-6.5 0 4-3 6.5-8 6.5Z",
+  gear: "M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7ZM12 3v2.5m0 13V21M3 12h2.5m13 0H21M5.6 5.6l1.8 1.8m9.2 9.2 1.8 1.8m0-12.8-1.8 1.8m-9.2 9.2-1.8 1.8",
+  people: "M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm7 0a2.5 2.5 0 1 0 0-5M3 19c.5-3.5 3-5 6-5s5.5 1.5 6 5m1-5c2.5 0 4.5 1.5 5 5",
+};
+const Icon = ({ name }: { name: string }) => (
+  <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round"><path d={ICON[name]} /></svg>
+);
 type Route = (typeof ROUTES)[number][0];
 
 const readRoute = (): Route => {
@@ -45,6 +65,18 @@ function usePendingRecovery(push: (t: Toast) => void) {
   }, []);
 }
 
+function useNarrow() {
+  const q = "(max-width: 900px)";
+  const [n, setN] = useState(() => matchMedia(q).matches);
+  useEffect(() => {
+    const m = matchMedia(q);
+    const f = () => setN(m.matches);
+    m.addEventListener("change", f);
+    return () => m.removeEventListener("change", f);
+  }, []);
+  return n;
+}
+
 export default function App() {
   const [route, setRoute] = useState<Route>(readRoute);
   const [selected, setSelected] = useState<number | null>(null);
@@ -54,6 +86,7 @@ export default function App() {
   const [findBusy, setFindBusy] = useState<number | null>(null);
   const [extra, setExtra] = useState<Candle | null>(null); // a record read by Find before its page streamed in
   const [menu, setMenu] = useState(false);
+  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [stats, setStats] = useState<{ fps: number; ms: number; drawn: number; lod: number; missing: number } | null>(null);
   const garden = useRef<GardenHandle | null>(null);
@@ -65,6 +98,7 @@ export default function App() {
   const myIds = useMyIds(address);
   const mine = useMemo(() => new Set(myIds.data ?? []), [myIds.data]);
   const total = cs.candles.length;
+  const narrow = useNarrow();
 
   const push = (t: Toast) => setToasts((l) => [...l.filter((x) => x.id !== t.id), t].slice(-3));
   usePendingRecovery(push);
@@ -80,6 +114,17 @@ export default function App() {
   useEffect(() => {
     if (route !== "garden") panelHeading.current?.focus();
   }, [route]);
+  // Escape closes the innermost layer: the candle popup, then the menu, then an open panel.
+  useEffect(() => {
+    const f = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || document.querySelector(".sheet-bg")) return; // the connect sheet handles its own Escape
+      if (selected) setSelected(null);
+      else if (menu) setMenu(false);
+      else if (route !== "garden") location.hash = "#/garden";
+    };
+    addEventListener("keydown", f);
+    return () => removeEventListener("keydown", f);
+  }, [selected, menu, route]);
   useEffect(() => {
     const t = ROUTES.find(([k]) => k === route)![1];
     document.title = route === "garden" ? "Everlight Garden: light a permanent candle" : `${t} · Everlight Garden`;
@@ -124,11 +169,11 @@ export default function App() {
       <a className="skip" href="#main">Skip to the garden tools</a>
       <header className="top">
         <a className="brand" href="#/garden" aria-label="Everlight Garden, home">
-          <img src="./favicon.svg" alt="" width={28} height={28} />
-          <span>Everlight Garden</span>
+          <img src="./favicon.svg" alt="" width={32} height={32} />
+          <span className="brand-name">Everlight Garden</span><span className="brand-on"> · on IMD</span>
         </a>
         <nav aria-label="Main" className={menu ? "nav open" : "nav"}>
-          {ROUTES.map(([k, label]) => (
+          {(menu ? ROUTES : NAV).map(([k, label]) => (
             <a key={k} href={`#/${k}`} aria-current={route === k ? "page" : undefined}>{label}</a>
           ))}
         </nav>
@@ -152,13 +197,21 @@ export default function App() {
         onSelect={setSelected}
         handleRef={(h) => (garden.current = h)}
         onStats={setStats}
+        onAnchor={setAnchor}
       />
+
+      <div className="frames" aria-hidden="true">
+        <img className="fr-canopy" src="./art/canopy.webp" alt="" />
+        <img className="fr-left" src="./art/frame-left.webp" alt="" />
+        <img className="fr-right" src="./art/frame-right.webp" alt="" />
+      </div>
 
       <main id="main" className="overlay">
         {route === "garden" && (
           <div className="intro">
-            <h1>Light a candle that stays</h1>
-            <p>Each candle is a permanent record on Ethereum: 1 IMD, one of seven styles and an optional public wish.</p>
+            <h1>Light a wish in the garden</h1>
+            <p className="intro-line">Permanent candles on Ethereum: 1 IMD each, with a public wish.</p>
+            <a className="cta intro-cta" href="#/light">Light a candle · 1 IMD</a>
             <p className="status-line" role="status">
               <span className={`dot ${status.data?.open ? "on" : ""}`} aria-hidden="true" /> {salesLine} · {cs.total === null ? "counting candles…" : `${total} lit`}
               {cs.loading && cs.total !== null && total < cs.total ? ` (loading ${total} of ${cs.total})` : ""}
@@ -168,14 +221,28 @@ export default function App() {
           </div>
         )}
 
-        <div className={route === "garden" ? "dock" : "dock dock-under"}>
-          <a className="cta" href="#/light">Light a candle</a>
+        <nav className="side" aria-label="Quick actions">
+          <a className="side-act" href="#/light"><img src="./art/candle-0.svg" alt="" width={20} height={40} /><span>Light a candle · 1 IMD</span></a>
+          <a className="side-act" href="#/rewards"><Icon name="layers" /><span>My rewards</span></a>
+          <a className="side-act" href="#/how"><Icon name="sprout" /><span>How it works</span></a>
+        </nav>
+
+        <div className={route === "garden" ? "strip" : "strip strip-under"}>
           <form className="find" onSubmit={find} role="search">
-            <label htmlFor="find" className="sr">Find candle by number</label>
+            <label htmlFor="find" className="sr">Find a candle by its number</label>
+            <svg className="find-ic" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="12" cy="12" r="7" /><circle cx="12" cy="12" r="2.5" /><path d="M12 2v3m0 14v3M2 12h3m14 0h3" /></svg>
             <input id="find" inputMode="numeric" placeholder="Candle #" value={query} onChange={(e) => setQuery(e.target.value)} aria-describedby={findError ? "find-err" : undefined} />
-            <button className="btn" type="submit" disabled={findBusy !== null}>Find</button>
+            <button className="btn" type="submit" disabled={findBusy !== null}>Find<span className="wide-only">{"\u00a0"}my candle</span></button>
           </form>
-          <a className="btn" href="#/mine">My candles</a>
+          <div className="map-slot" aria-hidden="true" />
+          <details className="split" open={!narrow}>
+            <summary>Split of 1 IMD</summary>
+            <ul>
+              {SPLIT.map(([pct, label, ic]) => (
+                <li key={label}><Icon name={ic} /><strong>{pct}</strong> {label}</li>
+              ))}
+            </ul>
+          </details>
           {findBusy !== null && <p className="find-err find-wait" role="status">Loading candle #{findBusy}…</p>}
           {findError && <p id="find-err" className="find-err" role="alert">{findError}</p>}
         </div>
@@ -194,7 +261,14 @@ export default function App() {
           </aside>
         )}
 
-        {sel && <div className="detail-wrap"><CandleDetail c={sel} mine={mine.has(sel.id)} onClose={() => setSelected(null)} /></div>}
+        {sel && (
+          <div
+            className={anchor && !narrow ? "detail-wrap anchored" : "detail-wrap"}
+            style={anchor && !narrow ? { left: Math.min(Math.max(anchor.x, 190), innerWidth - 190), top: anchor.y - 14 } : undefined}
+          >
+            <CandleDetail c={sel} mine={mine.has(sel.id)} onClose={() => setSelected(null)} />
+          </div>
+        )}
 
         <div className="toasts" aria-live="polite">
           {toasts.map((t) => (

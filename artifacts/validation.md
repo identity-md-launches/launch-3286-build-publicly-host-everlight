@@ -1,5 +1,86 @@
 # Everlight Garden: validation record
 
+## Revision 2: reference redesign (2026-11-17)
+
+These are worker-side checks. They are recorded here, not independently certified.
+
+- **Live** means a read from Ethereum/Base mainnet through public RPCs, reached through this machine's proxy.
+- **Simulated** means a labelled fixture (`?fixture=N`, with a "Test fixture … not onchain" banner) or a labelled mock in vitest.
+
+No transaction was sent and no contract, address, ABI or economic rule changed.
+
+### Tooling and its limits
+
+- **No image-generation tool was available.** All scenery is original procedural artwork from `web/art-src/paint.js`, rendered with Skia (`@napi-rs/canvas`, installed outside the repo) to WebP. See `artifacts/asset-manifest.md`.
+- It replaces the primitive SVG scenery, which was deleted.
+- It follows the reference's composition: framed foreground, terraced middle distance with stream, waterfalls, bridges and a gazebo, and a vista with moon, mountains and castle. It follows the palette and the UI placement too.
+- **It does not reach the owner's 99% visual-similarity target.** The painting is much simpler than the illustrated reference, and the overview at 3,000–10,000 candles shows the repeating sector grid. **No similarity score was measured or is claimed.** Compare `artifacts/screens/side-by-side-*.webp`.
+- Browser: Playwright's headless Chromium shell. It ran on Ubuntu runtime libraries and DejaVu/Liberation fonts extracted into a temp dir, because the machine has neither installed. Screenshots therefore use Liberation Serif in place of Iowan/Palatino. Rendering is software (SwiftShader), with no GPU.
+
+### Commands and results
+
+| Command | Result |
+| --- | --- |
+| `cd web && npx tsc --noEmit` | exit 0 (final source) |
+| `cd web && npx vitest run` | 2 files, **26/26 passed** |
+| `cd web && npx vite build` | built into `dist/` (JS ≈1.4 MB, of which 0.64 MB is the main chunk; art 0.5 MB; og.png 0.84 MB) |
+| `node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste` | first run: 14/16 (eyebrows: "Connect" sat 18px above the h1 at 390; type-faces: 4 weights). After the fixes: **16/16 passed** on the final export |
+| `test/scratch/shoot.mjs` and `perf.mjs` (headless Chromium, export served from disk at a `/preview/` subpath) | see below. Not delivered (scratch) |
+
+### Browser checks on the export
+
+| Scenario | Data | Result |
+| --- | --- | --- |
+| Garden, 1600×1000 | **live** (activated=false, 0 candles) | moonlit garden, every pedestal empty and unlit, "Sales closed until activation · 0 lit"; no horizontal overflow (`d1600-live.webp`) |
+| Garden, 390×844 | **live** | headline, "Light a candle · 1 IMD", status and garden all on the first screen (`m390-live.webp`) |
+| 100 / 3,000 / 10,000 candles | **simulated fixtures** | `d1600-f100`, `d1600-f3000`, `d1600-f10000`, `*-overview.webp`, `m390-f100.webp` |
+| Find #40 → anchored popup with wish, owner, style, date | simulated | class `detail-wrap anchored`, popup notch over the flame (`d1600-popup.webp`) |
+| Click directly on candle #40 (spatial hit test) | simulated | popup "Candle #40" |
+| Find #9876 at 10,000 | simulated | camera jumped, popup "Candle #9876" (`d1600-f10000-find9876.webp`) |
+| Escape | simulated | closes the popup; closes a panel back to `#/garden` |
+| Mobile menu (390) | simulated | lists Garden, My Candles, Rewards, Treasury, Light a candle, How it works (`m390-menu.webp`) |
+| Mobile economics sheet and candle sheet | simulated | `m390-split.webp`, `m390-candle.webp` |
+| Light a candle and Treasury panels | live reads | `d1600-light.webp`, `d1600-treasury.webp`, `m390-light.webp` |
+| Page errors | — | one uncaught `undefined` promise rejection and "Failed to execute inlined telemetry script", both from the bundled Coinbase wallet SDK chunk (`dist-*.js`) when its telemetry is blocked. No app errors and no failed site requests |
+
+### Rendering and interaction performance (headless, software rendering, 1600×1000)
+
+Values are `__lastFrame.ms` (draw time per frame) after drags. Medians are over 8 drags.
+
+| Fixture | Detail view (LOD 2) median / p95 | Overview (LOD 0) median | Visible sectors / candles drawn |
+| --- | --- | --- | --- |
+| 0 (live) | 0.6 / 0.7 ms | 0.4 ms | 1 / 0 |
+| 100 | 11.4 / 33.6 ms | 0.6 ms | 2 / 100 |
+| 3,000 | 28.2 / 29.9 ms | 1.5 ms | 31 / 2,976 |
+| 10,000 | 25.6 / 224 ms | 2.6 ms | 63 / 6,048 |
+
+The first paint of a sector costs about 350–500 ms (one-off sector cache build), and the p95 of 224 ms at 10,000 is panning into uncached sectors. The cache is capped at 24 hi-res sectors. Find + camera jump + popup took about 3.3 s wall-clock, mostly the fixture lookup and the 800 ms settle waits in the script. Headless rAF limits FPS, so draw time is the meaningful measure.
+
+### Better Interface review (six domains)
+
+| Domain | Coverage | Findings → fixes |
+| --- | --- | --- |
+| Accessibility | checked | frames are `aria-hidden` with `pointer-events: none`; the popup closes on Escape (new global handler in `web/src/App.tsx`, which defers to the connect sheet's own Escape and focus trap); 44px targets (probe: targets pass); focus ring kept; reduced motion kept |
+| Layout | checked | **F1** `web/src/garden/Garden.tsx`: the minimap was hidden under the strip (fixed `.garden` stacking context) → moved outside the canvas wrapper. **F2** `web/src/styles.css`: at 1440 the economics wrapped to two rows → tighter items under 1500px. **F3**: at 390 the frames covered too much garden → left frame 30vh, right frame hidden |
+| Writing | checked | headline of six words or fewer plus one plain line; verb-first actions ("Light a candle · 1 IMD", "Find my candle"); economics use the contract's split, not the reference footer's obsolete numbers |
+| Typography | checked | **F4** `web/src/styles.css` `.cta` 650 → 600 and h1 500 → 400 (probe: type-faces); six sizes; **F5** `web/src/App.tsx`: "Findmy candle" because flex collapsed the space → non-breaking space |
+| Colors | checked | gold/emerald/near-black tokens, no purple; contrast passed by the probe on the first screen. Contrast inside panels was viewed in screenshots, not measured |
+| UI | checked | **F6** `web/src/styles.css` (mobile `.intro`): "Connect" read as an eyebrow above the h1 at 390 → intro starts 40px below the header (probe: eyebrows pass); consistent gold hairline across header, strip, side actions, popup, panels and sheets |
+
+### Remaining limitations
+
+- The visual result is procedural and simpler than the reference (see above). The scene uses the same perspective sector for every 96 candles, so it looks repetitive when zoomed far out.
+- Foreground frames sit over the garden edges; candles behind them stay reachable through Find, the register and panning.
+- No wallet transaction was exercised in a browser. Purchase, approval and claim logic is covered only by the vitest mocks from the previous job, unchanged. The contract is not activated, so live purchases are disabled.
+- The mobile routing check of `#/mine` crashed the headless browser once in this environment, so that screenshot is missing; `m390-light.webp` shows the mobile bottom-sheet panel.
+- `og:image` is relative (`./og.png`).
+- Hosting: the committed `dist/` is the delivery, and the plane publishes it. No publish command was run.
+
+---
+
+## Revision 1 record (previous job, kept for history)
+
+
 Worker-side checks on 2026-11-17. They are recorded, not independently certified. **Live** means a read from Ethereum/Base mainnet through public RPCs. **Simulated** means a labelled mock or fixture. No real-fund transaction was sent.
 
 ## 1. Scope and assumptions

@@ -32,6 +32,9 @@ export function CandleDetail({ c, onClose, mine }: { c: Candle; onClose: () => v
         </dl>
       </div>
       {c.wish ? <blockquote className="wish">{c.wish}</blockquote> : <p className="muted">No wish was written for this candle.</p>}
+      {FIXTURE === null
+        ? <a className="onchain" href={`${ETHERSCAN}/address/${GARDEN}#readContract`} target="_blank" rel="noreferrer">View onchain (getCandle {c.id}) ↗</a>
+        : <p className="fine">Simulated fixture candle: not onchain.</p>}
     </section>
   );
 }

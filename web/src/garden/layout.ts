@@ -6,6 +6,8 @@
 export const SECTOR_W = 1200;
 export const SECTOR_H = 900;
 export const SLOTS_PER_SECTOR = 96;
+/** Height above the slot point at which a candle stands in its pedestal cup (in depth-scale units). */
+export const HOLDER_TOP = 24;
 /**
  * Each sector is staged as one scene receding toward a vanishing point at its top centre: a stream
  * and candle path run down the middle, and six terraces line it on both sides. Far terraces are
@@ -125,7 +127,7 @@ export function hitTest(x: number, y: number, total: number, radius: number): nu
   for (let s = 0; s < SLOTS_PER_SECTOR; s++) {
     const [sx, sy, sc] = slotCache[s];
     const dx = sx - lx;
-    const dy = sy - 20 * sc - ly; // candle body sits above its base point
+    const dy = sy - 42 * sc - ly; // candle body stands on its pedestal, above the slot point
     const d = dx * dx + dy * dy;
     if (d < bd) {
       bd = d;

@@ -1,15 +1,13 @@
 import type { Candle } from "../lib/candles";
-import {
-  DEPTHS, SECTOR_H, SECTOR_W, SLOTS_PER_SECTOR, VANISH_X, depthScale, mulberry, pathHalf, positionOf, sectorCount, sectorOrigin,
-  terraceHalf, terraceY, worldBounds,
-} from "./layout";
+import { HOLDER_TOP, SECTOR_H, SECTOR_W, SLOTS_PER_SECTOR, positionOf, sectorCount, sectorOrigin, worldBounds } from "./layout";
+import { drawSectorArt } from "./scenery";
 
 export interface Camera { x: number; y: number; z: number }
 
 /** Asset paths are relative to the page so the export works under any gateway subpath. */
 export const ART_BASE = new URLSearchParams(location.search).has("noassets") ? "./missing-art/" : "./art/";
 const CANDLE_ART = Array.from({ length: 7 }, (_, i) => `candle-${i}.svg`);
-const LAYERS = ["arch.svg", "frog.svg", "flowers.svg", "holder.svg"] as const;
+const LAYERS = ["backdrop", "pedestal", "tree-0", "tree-1", "tree-2", "bridge", "gazebo", "waterfall", "bush", "bush-plain", "lantern", "ground", "stone", "frog"].map((n) => `${n}.webp`);
 
 /** Flame tip offsets per style (fraction of 80-unit sprite height) and glow tint. */
 const WICK = [12, 12, 22, 30, 12, 22, 36];
@@ -76,6 +74,14 @@ export class GardenRenderer {
     this.canvas.height = Math.round(h * this.dpr);
   }
 
+  /** Opening view: the first sector fills the width, the vista and moon show above its far terrace. */
+  home() {
+    const mobile = this.w < 640;
+    const z = mobile ? 0.62 : Math.min(1.6, Math.max(0.5, this.w / 1180));
+    this.cam = { x: SECTOR_W / 2 + (mobile ? 0 : 20), y: 0, z };
+    this.cam.y = 150 + (0.5 - (mobile ? 0.34 : 0.3)) * (this.h / z);
+  }
+
   toWorld(sx: number, sy: number) {
     return { x: this.cam.x + (sx - this.w / 2) / this.cam.z, y: this.cam.y + (sy - this.h / 2) / this.cam.z };
   }
@@ -87,7 +93,7 @@ export class GardenRenderer {
     const b = worldBounds(total);
     this.cam.z = Math.min(4, Math.max(0.06, this.cam.z));
     this.cam.x = Math.min(b.maxX, Math.max(b.minX, this.cam.x));
-    this.cam.y = Math.min(b.maxY, Math.max(b.minY, this.cam.y));
+    this.cam.y = Math.min(b.maxY, Math.max(b.minY - 200, this.cam.y));
   }
 
   /** Pre-render one sector's static layers once (terraces, stream, arches, frogs, flowers, holders). */
@@ -95,14 +101,14 @@ export class GardenRenderer {
     const cache = low ? this.sectorLowCache : this.sectorCache;
     const hit = cache.get(index);
     if (hit) return hit;
-    const scale = low ? 0.125 : 0.5;
+    const scale = low ? 0.125 : 0.75;
     const c = document.createElement("canvas");
     c.width = SECTOR_W * scale;
     c.height = SECTOR_H * scale;
     const g = c.getContext("2d")!;
     g.scale(scale, scale);
     drawSectorArt(g, index, this.layerImgs);
-    if (!low && cache.size > 48) cache.delete(cache.keys().next().value!);
+    if (!low && cache.size > 24) cache.delete(cache.keys().next().value!);
     cache.set(index, c);
     return c;
   }
@@ -128,7 +134,7 @@ export class GardenRenderer {
       const x = pos.x - ox, y = pos.y - oy;
       const k = pos.scale;
       g.globalAlpha = 0.3;
-      g.drawImage(this.glow, x - 60 * k, y - 80 * k, 120 * k, 120 * k);
+      g.drawImage(this.glow, x - 60 * k, y - 104 * k, 120 * k, 120 * k);
     }
     g.globalCompositeOperation = "source-over";
     g.globalAlpha = 1;
@@ -136,7 +142,7 @@ export class GardenRenderer {
       const pos = positionOf(p);
       g.fillStyle = `rgb(${TINT[candles[p].style] ?? TINT[0]})`;
       g.beginPath();
-      g.arc(pos.x - ox, pos.y - oy - 20 * pos.scale, 10 * pos.scale, 0, Math.PI * 2);
+      g.arc(pos.x - ox, pos.y - oy - 44 * pos.scale, 10 * pos.scale, 0, Math.PI * 2);
       g.fill();
     }
     this.litCache.set(index, { count, canvas: c });
@@ -147,12 +153,22 @@ export class GardenRenderer {
     const t0 = performance.now();
     const { ctx, cam } = this;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    // Night sky behind everything
-    const sky = ctx.createLinearGradient(0, 0, 0, this.h);
-    sky.addColorStop(0, "#040a08");
-    sky.addColorStop(1, "#071510");
-    ctx.fillStyle = sky;
+    // Distant vista (sky, moon, hills, castle) in screen space with slight parallax; sectors draw over it.
+    ctx.fillStyle = "#06130c";
     ctx.fillRect(0, 0, this.w, this.h);
+    const bd = this.layerImgs["backdrop.webp"];
+    if (bd) {
+      const bh = Math.max(this.h * 0.82, (this.w * 1.08 * bd.height) / bd.width);
+      const bw = (bh * bd.width) / bd.height;
+      const px = Math.max(0, Math.min(bw - this.w, (bw - this.w) * 0.62 - (cam.x - SECTOR_W / 2) * 0.02 * cam.z));
+      const py = Math.min(0, -((cam.y - 300) * 0.04 * cam.z));
+      ctx.drawImage(bd, -px, py, bw, bh);
+      const fade = ctx.createLinearGradient(0, py + bh * 0.8, 0, py + bh);
+      fade.addColorStop(0, "rgba(6,19,12,0)");
+      fade.addColorStop(1, "#06130c");
+      ctx.fillStyle = fade;
+      ctx.fillRect(0, py + bh * 0.8, this.w, bh * 0.2 + 1);
+    }
 
     const tl = this.toWorld(0, 0);
     const br = this.toWorld(this.w, this.h);
@@ -190,7 +206,7 @@ export class GardenRenderer {
         ctx.strokeStyle = color;
         ctx.lineWidth = 2 / cam.z;
         ctx.beginPath();
-        ctx.arc(p.x, p.y - 20 * p.scale, 40 * Math.max(p.scale, 0.8), 0, Math.PI * 2);
+        ctx.arc(p.x, p.y - 44 * p.scale, 40 * Math.max(p.scale, 0.8), 0, Math.PI * 2);
         ctx.stroke();
       };
       if (input.highlightMine) input.mine.forEach((id) => ring(id, "rgba(232,190,90,0.9)"));
@@ -209,7 +225,6 @@ export class GardenRenderer {
         const c = input.candles[p] ?? (input.extra && input.extra.id === p + 1 ? input.extra : undefined);
         if (pos.x < tl.x - 60 || pos.x > br.x + 60 || pos.y < tl.y - 100 || pos.y > br.y + 60) continue;
         if (c) lit.push({ x: pos.x, y: pos.y, k: pos.scale, c });
-        else if (p >= extent) this.drawHolder(pos.x, pos.y, pos.scale);
       }
     }
     // Warm light first, additive and local; strength per candle is fixed so many candles brighten
@@ -217,12 +232,12 @@ export class GardenRenderer {
     ctx.globalCompositeOperation = "lighter";
     for (const { x, y, k, c } of lit) {
       const flick = input.reducedMotion ? 1 : 0.88 + 0.12 * Math.sin(time / 260 + c.id * 1.7);
-      ctx.globalAlpha = 0.22 * flick;
+      ctx.globalAlpha = 0.34 * flick;
       const r = 80 * k;
-      ctx.drawImage(this.glow, x - r, y - 40 * k - r, r * 2, r * 2);
-      // reflection streak on the terrace stone / stream below
-      ctx.globalAlpha = 0.1 * flick;
-      ctx.drawImage(this.glow, x - 12 * k, y - 4 * k, 24 * k, 56 * k);
+      ctx.drawImage(this.glow, x - r, y - 48 * k - r, r * 2, r * 2);
+      // warm pool on the terrace stone and pedestal faces around the holder
+      ctx.globalAlpha = 0.3 * flick;
+      ctx.drawImage(this.glow, x - 46 * k, y - 18 * k, 92 * k, 34 * k);
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
@@ -233,7 +248,7 @@ export class GardenRenderer {
         ctx.strokeStyle = input.selected === c.id ? "#fff3c4" : "rgba(232,190,90,0.9)";
         ctx.lineWidth = Math.max(2, 2 / cam.z);
         ctx.beginPath();
-        ctx.arc(x, y - 22 * k, 34 * Math.max(k, 0.7), 0, Math.PI * 2);
+        ctx.arc(x, y - 44 * k, 30 * Math.max(k, 0.7), 0, Math.PI * 2);
         ctx.stroke();
       }
     }
@@ -242,25 +257,13 @@ export class GardenRenderer {
     (window as any).__lastFrame = this.stats;
   }
 
-  private drawHolder(x: number, y: number, k: number) {
-    const im = this.layerImgs["holder.svg"];
-    if (im) this.ctx.drawImage(im, x - 14 * k, y - 6 * k, 28 * k, 14 * k);
-    else {
-      this.ctx.strokeStyle = "#5d6f63";
-      this.ctx.lineWidth = 2;
-      this.ctx.beginPath();
-      this.ctx.ellipse(x, y, 11 * k, 4 * k, 0, 0, Math.PI * 2);
-      this.ctx.stroke();
-    }
-  }
-
   /** k is the depth scale of the slot: far terraces hold smaller candles than near ones. */
   private drawCandle(x: number, y: number, k: number, c: Candle, time: number) {
     const { ctx } = this;
     const im = this.candleImgs[c.style];
-    const f = 0.7 * k; // sprite drawn at 0.7 x depth scale of its 40x80 box
+    const f = 0.5 * k; // sprite drawn at 0.5 x depth scale of its 40x80 box, standing in the pedestal cup
     const w = 40 * f, h = 80 * f;
-    const top = y - h + 4 * k;
+    const top = y - HOLDER_TOP * k - h + 2 * k;
     if (im) ctx.drawImage(im, x - w / 2, top, w, h);
     else {
       ctx.fillStyle = "#efe4c4";
@@ -271,7 +274,7 @@ export class GardenRenderer {
     const stretch = time ? 1 + 0.12 * Math.sin(time / 120 + c.id * 2.3) : 1;
     ctx.save();
     ctx.translate(x, tipY);
-    ctx.scale(k, k * stretch);
+    ctx.scale(k * 1.5, k * 1.5 * stretch);
     const fg = ctx.createRadialGradient(0, -3, 0.5, 0, -4, 9);
     fg.addColorStop(0, "#fffbe8");
     fg.addColorStop(0.35, `rgb(${TINT[c.style] ?? TINT[0]})`);
@@ -335,165 +338,3 @@ function makeGlow() {
   return c;
 }
 
-/**
- * Static art for one sector, seeded by its index so each scene is distinct but stable. The scene
- * recedes to a moonlit gate at the top centre: canopy and mist in the distance, a stream and
- * stepping-stone path down the middle, terraces on both banks that widen toward the viewer, and
- * large arches and frog sculptures framing the near edges.
- */
-export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: Record<string, Img>) {
-  const r = mulberry(1000 + index * 31);
-  const W = SECTOR_W, H = SECTOR_H, cx = VANISH_X;
-  const arch = imgs["arch.svg"], frog = imgs["frog.svg"], flowers = imgs["flowers.svg"];
-  const far = terraceY(0) * H;
-  // ground: darker and mistier in the distance, a little more emerald up close
-  const bg = g.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, "#040b08");
-  bg.addColorStop(0.25, "#07140f");
-  bg.addColorStop(1, "#0c2118");
-  g.fillStyle = bg;
-  g.fillRect(0, 0, W, H);
-  // moon glow behind the far gate
-  const moon = g.createRadialGradient(cx, far * 0.45, 8, cx, far * 0.45, W * 0.55);
-  moon.addColorStop(0, "rgba(190,214,220,0.16)");
-  moon.addColorStop(0.3, "rgba(170,200,210,0.06)");
-  moon.addColorStop(1, "rgba(170,200,210,0)");
-  g.fillStyle = moon;
-  g.fillRect(0, 0, W, H);
-  // distant canopy: small, low-contrast silhouettes along the horizon
-  g.fillStyle = "#0a1d15";
-  for (let x = -30; x < W + 30; x += 34 + r() * 30) {
-    g.beginPath();
-    g.arc(x, far - 30 - r() * 26, 22 + r() * 22, 0, Math.PI * 2);
-    g.fill();
-  }
-  // nearer hedges at the sides, larger
-  g.fillStyle = "#0b2219";
-  for (const side of [-1, 1]) {
-    for (let k = 0; k < 6; k++) {
-      const d = k / 5;
-      const x = cx + side * (terraceHalf(d) + 40 + r() * 30);
-      g.beginPath();
-      g.arc(x, terraceY(d) * H - 30 * depthScale(d), (40 + r() * 20) * depthScale(d), 0, Math.PI * 2);
-      g.fill();
-    }
-  }
-  // the far gate the path recedes into
-  const gw = 96, gh = 106;
-  if (arch) g.drawImage(arch, cx - gw / 2, far - gh + 6, gw, gh);
-  // stream: a tapered band from the gate to the near edge
-  const stream = (inset: number) => {
-    g.beginPath();
-    g.moveTo(cx - pathHalf(0) + inset, far);
-    for (let k = 0; k <= 10; k++) { const d = k / 10; g.lineTo(cx - pathHalf(d) * 0.62 + inset + Math.sin(d * 5 + index) * 10 * d, terraceY(d) * H); }
-    g.lineTo(cx - pathHalf(1) * 0.7 + inset, H);
-    g.lineTo(cx + pathHalf(1) * 0.7 - inset, H);
-    for (let k = 10; k >= 0; k--) { const d = k / 10; g.lineTo(cx + pathHalf(d) * 0.62 - inset + Math.sin(d * 5 + index) * 10 * d, terraceY(d) * H); }
-    g.closePath();
-  };
-  const water = g.createLinearGradient(0, far, 0, H);
-  water.addColorStop(0, "#1a3a3a");
-  water.addColorStop(1, "#0d2a2b");
-  g.fillStyle = water;
-  stream(0);
-  g.fill();
-  // moonlight shimmer on the water, denser in the distance
-  g.strokeStyle = "rgba(190,225,225,0.16)";
-  g.lineWidth = 1.5;
-  for (let k = 0; k < 26; k++) {
-    const d = Math.pow(r(), 1.3);
-    const y = terraceY(d) * H + (r() - 0.5) * 20;
-    const half = pathHalf(d) * 0.45 * r();
-    const x = cx + Math.sin(d * 5 + index) * 10 * d + (r() - 0.5) * pathHalf(d) * 0.6;
-    g.beginPath();
-    g.moveTo(x - half * 0.5, y);
-    g.lineTo(x + half * 0.5, y);
-    g.stroke();
-  }
-  // stepping-stone path along the stream banks, shrinking with distance
-  g.fillStyle = "rgba(150,160,135,0.22)";
-  for (const side of [-1, 1]) {
-    for (let k = 0; k < 18; k++) {
-      const d = k / 17;
-      const sc = depthScale(d);
-      const x = cx + side * (pathHalf(d) * 0.62 + 6 + 8 * sc) + Math.sin(d * 5 + index) * 10 * d;
-      g.beginPath();
-      g.ellipse(x, terraceY(d) * H + 10 * sc, 9 * sc, 3.5 * sc, 0, 0, Math.PI * 2);
-      g.fill();
-    }
-  }
-  // terraces: a stone ledge on each bank under every candle row, thicker and wider up close
-  DEPTHS.forEach((d, row) => {
-    const sc = depthScale(d);
-    const y = terraceY(d) * H;
-    const inner = pathHalf(d) + 4;
-    const outer = terraceHalf(d) + 30 * sc;
-    for (const side of [-1, 1]) {
-      const pts: [number, number][] = [];
-      for (let k = 0; k <= 12; k++) {
-        const u = k / 12;
-        pts.push([cx + side * (inner + u * (outer - inner)), y + 4 * sc - u * u * 16 * sc]);
-      }
-      g.fillStyle = row % 2 ? "#13261d" : "#11231a";
-      g.beginPath();
-      pts.forEach(([x, py], k) => (k ? g.lineTo(x, py) : g.moveTo(x, py)));
-      for (let k = pts.length - 1; k >= 0; k--) g.lineTo(pts[k][0], pts[k][1] + 22 * sc);
-      g.closePath();
-      g.fill();
-      g.strokeStyle = `rgba(196,170,110,${0.1 + 0.14 * d})`;
-      g.lineWidth = 1 + 1.5 * sc;
-      g.beginPath();
-      pts.forEach(([x, py], k) => (k ? g.lineTo(x, py) : g.moveTo(x, py)));
-      g.stroke();
-    }
-  });
-  // flowers between terraces, scaled by depth
-  for (let i = 0; i < 12; i++) {
-    const d = r();
-    const sc = depthScale(d);
-    const side = r() < 0.5 ? -1 : 1;
-    const x = cx + side * (pathHalf(d) + 20 + r() * (terraceHalf(d) - pathHalf(d)));
-    const y = terraceY(d) * H + 18 * sc;
-    const w = 110 * sc, h = 55 * sc;
-    if (flowers) g.drawImage(flowers, x - w / 2, y, w, h);
-    else {
-      g.fillStyle = "#e9e1c9";
-      for (let k = 0; k < 4; k++) g.fillRect(x + k * 14 * sc, y + 20 * sc - k * 2, 4 * sc, 4 * sc);
-    }
-  }
-  // small frog sculptures guarding the far banks
-  for (const side of [-1, 1]) {
-    const d = 0.25 + r() * 0.1, sc = depthScale(d);
-    const x = cx + side * (pathHalf(d) * 0.62 + 18 * sc) - 30 * sc;
-    const y = terraceY(d) * H - 34 * sc;
-    if (frog) g.drawImage(frog, x, y, 60 * sc, 50 * sc);
-  }
-  // near frame: arches straddle each sector edge (neighbouring sectors complete them) and large frogs sit at the near corners
-  const aw = 280, ah = 308, ay = H * 0.38;
-  if (arch) {
-    g.drawImage(arch, -aw / 2, ay, aw, ah);
-    g.drawImage(arch, W - aw / 2, ay, aw, ah);
-  }
-  const fw = 150, fh = 125;
-  if (frog) {
-    g.drawImage(frog, 6, H - fh - 4, fw, fh);
-    g.save();
-    g.translate(W - 6, H - fh - 4);
-    g.scale(-1, 1);
-    g.drawImage(frog, 0, 0, fw, fh);
-    g.restore();
-  } else {
-    g.fillStyle = "#4a5d51";
-    for (const x of [6 + fw / 2, W - 6 - fw / 2]) {
-      g.beginPath();
-      g.ellipse(x, H - fh / 2, fw * 0.4, fh * 0.3, 0, 0, Math.PI * 2);
-      g.fill();
-    }
-  }
-  // near-edge vignette: deepens the foreground frame without dimming the candles drawn later
-  const vig = g.createRadialGradient(cx, H * 0.45, H * 0.35, cx, H * 0.55, W * 0.75);
-  vig.addColorStop(0, "rgba(0,0,0,0)");
-  vig.addColorStop(1, "rgba(0,0,0,0.38)");
-  g.fillStyle = vig;
-  g.fillRect(0, 0, W, H);
-}

@@ -1,95 +1,126 @@
 # Everlight Garden design system
 
-Taken from the final source: `web/src/styles.css`, `web/src/garden/renderer.ts` and the components in `web/src/`.
+Taken from the final source: `web/src/styles.css` (base tokens, then the "Reference restyle (v2)" block, which overrides them), `web/src/garden/renderer.ts`, `web/src/garden/scenery.ts`, `web/art-src/paint.js` and the components in `web/src/`.
 
 ## Overview
 
-An immersive midnight garden fills the whole viewport. Interface chrome stays compact and dark so the candlelight carries the warmth. A thin header holds the brand, the six page links and the wallet control. A short intro sits in a translucent block, and a bottom dock holds the main action. Information pages open as one collapsible panel over the garden: a right drawer on desktop, a bottom sheet on phones. There is no purple, there are no generic SaaS cards, and nothing is pasted over a screenshot.
+A nocturnal fantasy garden fills the viewport, staged after the owner's approved reference:
+
+- **Foreground frame:** carved stone columns and an arch, an emerald banner, white flowers and brass frog sculptures, with overhanging leaves along the top.
+- **Middle distance:** terraced gardens with stone retaining walls, a moonlit stream that drops in a waterfall at every terrace, arched bridges, a domed gazebo and trees.
+- **Distance:** misty terraced hills, mountains, a moon and a softly lit castle.
+
+The interface is compact antique-gold chrome on near-black emerald:
+
+- A slim header holds the brand, four tabs and Connect Wallet.
+- A serif italic headline sits at the top left.
+- Small side actions sit on the right.
+- A bottom strip holds Find my candle, the minimap and the contract's economics.
+
+There is no purple, no dashboard cards, and no reference pixels anywhere.
+
+## Layers (render order)
+
+| # | Layer | Source | Notes |
+| --- | --- | --- | --- |
+| 1 | Vista | `art/backdrop.webp` drawn in screen space | parallax of 0.02× pan; fades into `#06130c` at its foot |
+| 2 | Sector scenery | `drawSectorArt()` in `scenery.ts`, cached per sector (0.75× hi-res, ≤24 cached; 0.125× overview) | the top band is transparent so the vista shows between sector rows |
+| 3 | Candle holders | `drawPedestal()` at each slot from `positionOf()`, inside the sector cache | the cup sits `HOLDER_TOP` = 24 depth units above the slot point |
+| 4 | Lighting | additive glow sprite per lit candle: a halo of radius 80k at 34% alpha, plus a ground pool of 92k×34k at 30% | flicker only without reduced motion |
+| 5 | Purchased candles | `drawCandle()`: style sprite at 0.5k scale, flame at 1.5k | from contract data only; never pre-lit |
+| 6 | Foreground frames | `.frames` HTML images (canopy, frame-left, frame-right) | `pointer-events: none`, `aria-hidden` |
+| 7 | UI | header, intro, side actions, strip, panels, popup, sheets | HTML, keyboard reachable |
+
+The decorative castle windows (backdrop) and the brass lanterns (row 3) are steady boxed lights. Only purchased candles have flames.
 
 ## Colors
 
-Primitives (`:root`) are referenced only by the semantic tokens below.
+Primitives:
 
-| Primitive | Value | Semantic role(s) |
+| Token | Value | Role |
 | --- | --- | --- |
-| `--night-950` | `#040a08` | `--color-bg`, header base (82% alpha) |
-| `--night-900` | `#07130e` | panel surface, inputs, segmented buttons |
-| `--night-800` | `#0c1f17` | `--color-surface-raised`, summary tiles, list rows, wish quote |
-| `--night-700` | `#143024` | `--color-surface-hover`, pressed state, notice |
-| `--emerald-500` | `#2f7d5a` | `--color-live` (sales-open dot) |
-| `--gold-300` | `#f6d98f` | `--color-accent-strong` (links, hover of primary), fixture label |
-| `--gold-400` | `#f2c35f` | `--color-accent` (primary action, selected outline) |
+| `--night-950` | `#040a08` | `--color-bg` |
+| `--night-900` | `#07130e` | inputs, segmented buttons |
+| `--night-800` | `#0c1f17` | `--color-surface-raised`, rows, tiles |
+| `--night-700` | `#143024` | `--color-surface-hover` |
+| `--emerald-500` | `#2f7d5a` | `--color-live` |
+| `--emerald-700` | `#0f3a27` | active tab (gradient from `#145236`) |
+| `--emerald-800` | `#0a2a1c` | side-action hover, notice |
+| `--gold-300` | `#f6d98f` | `--color-accent-strong`, CTA hover |
+| `--gold-400` | `#f2c35f` | `--color-accent`, icons |
+| `--gold-500` | `#d4a84c` | CTA gradient foot, wish rule |
 | `--ivory-100` | `#f4eedc` | `--color-text`, focus ring |
 | `--ivory-300` | `#cfc6ad` | `--color-text-secondary` |
-| `--coral-300` | `#ffab94` | `--color-danger`, closed-sales dot |
-| `#1d1406` | | `--color-on-accent` (text on gold) |
-| gold at 28% / 55% alpha | | `--color-border`, `--color-border-strong` |
+| `--coral-300` | `#ffab94` | `--color-danger` |
 
-Garden palette (canvas): ground `#040b08`→`#07140f`→`#0c2118` (darker in the distance), canopy `#0a1d15`, hedges `#0b2219`, terraces `#11231a` / `#13261d` with gold edges at 10–24% alpha (stronger up close), stream `#1a3a3a`→`#0d2a2b` with moonlit shimmer at 16% alpha, moon glow `rgba(190,214,220,0.16)` behind the far gate, and a near-edge vignette to 38% black. Candlelight is an additive radial sprite (`rgba(255,200,110,0.9)` → transparent) at 22% alpha and 80-unit radius per candle, so it stays local. Each style has its own flame tint.
+Semantic additions (v2):
 
-Contrast was measured by the design probe on the rendered first screen at 320, 390 and 1440 wide. All text passed WCAG AA.
+| Token | Value |
+| --- | --- |
+| `--color-headline` | `#f3dca0` (brand, h1, panel headings, popup title) |
+| `--color-line` | `rgb(212 168 76 / 0.6)`: slim gold borders on the header, strip, side actions, popup, panels and sheets |
+| `--color-line-soft` | gold at 30%: dividers, inputs |
+| `--color-chrome` | `rgb(4 9 7 / 0.9)`: floating sheets |
+
+Chrome surfaces use vertical gradients from `#0a1811`/`rgb(10 22 15)` to `#050c08`/`rgb(4 9 7)`. The primary CTA is a gold gradient (`#f3d07a` → `--gold-500`) with `--color-on-accent` `#1d1406` text.
+
+Scene palette (from `paint.js`/`scenery.ts`):
+
+- **Sky:** `#03080d` → `#10283a`.
+- **Moon:** `#fffef6` with a `#9fc4e8` halo.
+- **Hills and mist:** `#132636`, `#0e1f22`, `#0b1d18`…`#06130c`, mist `rgb(110 150 170 / ≤0.1)`.
+- **Foliage:** dark `#06140d`–`#0c2617`, lit `#13402a`–`#226443`, moon rim `#4f8a6c`.
+- **Water:** `#28506a` → `#0a2430`, with shimmer `rgba(190,225,245,0.22)`.
+- **Stone:** `#3d3a30` plus noise, gold coping `rgba(214,186,120,0.22–0.42)`.
+- **Brass:** `#fff0b8` → `#e2b45a` → `#9a6a24` → `#21160a`.
+- **Flowers:** `#f7f4ea` with `#d6a73c` centres.
+- **Candle glow:** `rgba(255,200,110,0.9)` → transparent.
+
+Contrast: the design probe measured all first-screen text at 320, 390 and 1440 wide, and everything passed (≥4.5:1, or ≥3:1 for large text). The intro sits on a radial scrim `rgb(3 8 6 / 0.82)`.
 
 ## Typography
 
-- Headings: `--font-serif` = Iowan Old Style, Palatino Linotype, Palatino, Book Antiqua, Georgia, serif. Weight 600, line-height 1.15, `text-wrap: balance`.
-- Body and controls: `--font-sans` = system-ui stack. Weights 400, 600 (labels) and 650 (primary button).
-- One scale of six sizes: `--text-sm` 13px, `--text-base` 15px, `--text-md` 17px, `--text-lg` 20px, `--text-xl` 28px, `--text-2xl` 40px. h1 = 40px (28px under 640px), h2 = 28px (20px under 640px), h3 = 20px.
-- Numbers use `font-variant-numeric: tabular-nums`. Text fields use at least 16px so iOS does not zoom.
-- No all-caps labels, no letter-spacing, no eyebrow kickers. No web fonts are bundled.
+- Serif (`--font-serif`: Iowan Old Style, Palatino Linotype, Palatino, Book Antiqua, Georgia): brand, h1–h3, nav tabs, buttons, side actions, percentages.
+- Sans (`--font-sans`: the system-ui stack): body, labels, economics captions.
+- Weights: 400 and 600 only. The h1 is 400 italic. Headings, the brand and the CTA are 600.
+- One scale of six sizes: 13 / 15 / 17 / 20 / 28 / 40 px (`--text-sm`…`--text-2xl`). The h1 is 40px (28px under 640px), the brand 20px, the tabs 17px, the percentages 20px (17px under 1500px).
+- The brand is uppercase with 0.03em tracking, inside the probe's 0.04em bar. There are no eyebrow labels. Numbers are tabular.
 
-## Layout
+## Spacing, shape, elevation
 
-- Spacing scale: 4, 8, 12, 16, 24, 32px (`--space-1`…`--space-6`).
-- Header: fixed, 56px tall. Page links are inline above 1100px; below that a 44px menu icon button opens a stacked list with 48px rows. At 480px and below the wordmark text hides and the 44px favicon link (named "Everlight Garden, home") stays, so the menu and the full wallet label ("Connect" or "Switch to Ethereum") fit at 320px. The switch-error note drops below the header as a small floating card.
-- Garden: fixed full-viewport canvas. The overlay above it lets pointer events through, except on its children.
-- Garden scene (`web/src/garden/layout.ts`, `drawSectorArt` in `renderer.ts`): each 1200×900 sector is one view down a candle path that recedes to a small moonlit arch at the top centre. A tapered stream with stepping stones runs down the middle. Six terraces line it on both banks, holding 8, 12, 14, 18, 20 and 24 candles from far to near (96 per sector). Terrace baselines sit at `0.24 + 0.66·d^1.45` of the sector height, so rows bunch up in the distance. Candles, holders, glows and rings scale by `0.5 + 0.7·d^1.2` (0.5 far, 1.2 near). Terraces widen from ±160 to ±580 units. Large arches straddle each sector's side edges, so neighbouring sectors complete them, and two large frog sculptures frame the near corners. Small frogs and the flowers are scaled to their depth. A candle's place still depends only on its position, so it is the same after a reload.
-- Intro: top-left, max 440px. Under 640px it spans the width with 12px side insets.
-- Dock: bottom-centre on desktop. Under 640px it is full width with "Light a candle" and "My candles" in one row and the find field below. It hides while a panel is open on phones.
-- Panel: right drawer `min(440px, 100vw)` on desktop. Under 640px it is a bottom sheet at 78% height with rounded top corners.
-- Map tools: minimap 160×110 (112×77 under 640px) and a zoom column, bottom-right above the dock.
-- Candle details: bottom-left card up to 400px wide. On phones it spans the width above the dock.
-- Checked for no horizontal overflow at 320, 390 and 1440, and on every panel at 390.
-
-## Elevation & depth
-
-Depth comes from translucency and borders, never from shadows. No surface combines a border with a shadow. Overlays use the night ramp: base → 800 → 700 for hover and pressed. The connect sheet has a 60% black backdrop.
-
-## Shapes
-
-Radii: 8px for controls, tiles and rows, 12px for menus and toasts, 16px for the intro, dock, panel sheet, detail and connect sheet. Accent borders are a 3px left rule on notices, burn stages and wish quotes.
+- Spacing scale: 4, 8, 12, 16, 24, 32px (`--space-1…6`).
+- Header height 56px. Strip height 76px (64px under 900px).
+- Radii: 8px for controls, 10px for side actions, the popup and the minimap, 6px for tabs, 16px for sheets, and 50% for the zoom buttons.
+- Depth comes from the scene layers and the gold hairlines. There are no border-plus-shadow combinations. Text shadows sit only on text that overlays the scene.
 
 ## Components
 
-- **Primary button `.cta`**: gold fill with dark text, 44px minimum height. Hover lightens to `--gold-300`, pressed scales to 0.96, disabled is 60% opacity. `.cta.ghost` is the connected-address variant and `.cta.wide` is full width.
-- **Secondary button `.btn`** and **icon button `.icon-btn`**: night surface with a gold hairline border. Hover and pressed states use the night ramp. 44px targets.
-- **Close `.x`**: a 44px square with ×, always labelled.
-- **Segmented control `.seg`**: quantity presets 1, 5 and 10, a custom field (1–50), and the "Same for all" / "One per candle" choice. Uses `aria-pressed`.
-- **Style picker `.styles`**: a radio group of the seven candle sprites. The selected option has a gold border, and keyboard focus draws the ring around the tile.
-- **Wish field**: a textarea with a live counter (`n/280 characters · n/1120 bytes`) that turns coral, with a fix-it sentence, when over a limit. It is linked through `aria-describedby`.
-- **Summary tiles `.summary`**: label/value pairs in two columns, one under 640px.
-- **Burn stages `.stages`**: an ordered list (Allocated → Queued → Reserved in jobs → Dispatched → Burned on Base → Confirmed on Ethereum), each with a value and a sentence saying whether it is burned yet.
-- **List row `.row`**: 48px, number and then text, with an ellipsis for long wishes. Used for My candles, the register, activity and wallet rows.
-- **Connect sheet**: a dialog with EIP-6963 wallets by name and icon, then Coinbase Wallet. On phones it shows "Open in MetaMask / Coinbase Wallet / Rabby / Phantom" and Coinbase Smart Wallet. It is portalled to `<body>`; while open, `#root` is `inert` and Tab / Shift+Tab cycle inside the sheet. It closes with the backdrop, Escape or ×, and returns focus to Connect. When connected it shows the short address and a Disconnect item; on the wrong chain, "Switch to Ethereum".
-- **Toasts**: a live region for transactions recovered after a reload.
-- **Find**: the numeric field in the dock. An ID up to the onchain total that has not streamed in yet is read with `getCandle`, showing "Loading candle #N…" while it loads. If that read fails it says "Candle #N could not be loaded. Try again." Only IDs above the onchain total get "does not exist yet".
-- **Gas estimate**: the summary shows "Reading…" or "Unavailable" until a current gas price exists. A failed read adds a "Retry gas estimate" button, and approval stays disabled until there is an estimate.
-- **Unavailable values**: any treasury figure whose read failed shows "Unavailable", never 0. An alert offers Try again.
-- **Garden canvas**: focusable. Arrows pan, +/− zoom, drag pans, pinch and wheel zoom, and clicking a candle opens details. Empty holders are stone dishes without flame. Lit candles show a sprite, an animated flame (LOD 2) and a local glow. The selected candle gets an ivory ring and "my" candles get gold rings.
+- **Header** (`.top`): the brand (favicon and "Everlight Garden · on IMD"). The four tabs Garden / My Candles / Rewards / Treasury sit between gold hairline dividers, and the active tab is emerald with a gold border. Connect Wallet (`ConnectSheet`) is on the right. Under 1100px the tabs move into a menu button; the menu lists all six routes.
+- **Intro** (`.intro`): the h1 "Light a wish in the garden" with a centred gold rule, one plain line, a sales-status line with a live dot, and the fixture label when a fixture is active. Under 900px it also shows the primary CTA "Light a candle · 1 IMD".
+- **Side actions** (`.side`, desktop ≥900px): Light a candle · 1 IMD, My rewards and How it works. Each is a 96px gold-bordered tile.
+- **Bottom strip** (`.strip`):
+  - Find my candle: a crosshair icon, a numeric input and a button. It searches any id, including ids not loaded yet.
+  - A slot for the minimap (220×72 canvas, click to move).
+  - The economics as a `<details>` list: 30% Burn, 30% Previous paid candles, 30% Ecosystem, 5% Operations, 5% Founder. It is open on desktop and collapsed to a "Split of 1 IMD" sheet under 900px.
+- **Zoom** (`.zoom`): round + / − buttons at the left, above the strip.
+- **Candle popup** (`.detail-wrap.anchored`): 320px, anchored above the selected candle's flame with a pointer notch and clamped to the viewport. It shows the id, owner (explorer link), style, date, position, the public wish (italic serif, rendered as text) and "View onchain". Under 900px it becomes a sheet above the strip. Escape or × closes it.
+- **Panels** (`.panel`): Light a candle, My Candles, Rewards, Treasury and How it works. They open as a right drawer above the strip on desktop and as a 78% bottom sheet on phones. Escape returns to the garden, and focus moves to the panel on open.
+- **Sheets, menus, toasts:** gold hairline, emerald-black gradient.
+- **Controls:** each has rest, hover, pressed (scale 0.96–0.98), 2px ivory `:focus-visible` ring and disabled (60% opacity) states. Transitions are 150ms on named properties only.
 
 ## Responsive behaviour
 
 | Width | Behaviour |
 | --- | --- |
-| > 1100px | inline nav, right drawer, centred dock |
-| 641–1100px | menu icon with stacked nav, right drawer |
-| ≤ 640px | smaller h1/h2, full-width intro and dock, bottom-sheet panel and connect sheet, smaller minimap, single-column summaries |
-| ≤ 480px | wordmark text hidden (the favicon link remains), 12px padding on the header buttons |
+| ≥1500 | full strip, 20px percentages |
+| 1100–1500 | tighter economics (17px, 8px padding) |
+| <1100 | tabs collapse into the menu button; the "on IMD" suffix is hidden |
+| <900 | side actions hidden and the intro CTA shown; minimap 132×44 above the strip at right; zoom row at left; economics become a collapsible sheet; right frame hidden; left frame 30vh; canopy 9vh; the popup becomes a sheet |
+| <640 | the intro starts 40px below the header (keeps Connect from reading as an eyebrow); panels become bottom sheets; the strip hides under an open panel |
+| <480 | the wordmark collapses to the mark |
 
-Reduced motion: CSS transitions drop to 0.01ms, and the canvas stops flame animation and redraws only on interaction (0 frames drawn while idle, measured).
+At 390 wide the first screen shows the garden, the headline and the "Light a candle · 1 IMD" action (see `artifacts/screens/m390-live.webp`). Touch: drag pans, pinch zooms and tap opens a candle. Keyboard: arrows pan, + and − zoom, Find opens any id, and the register lists every candle. `prefers-reduced-motion` stops the flame flicker and the CSS transitions.
 
-## Do's and don'ts
+## Garden geometry (unchanged positions)
 
-- Do keep the garden dark: add light per candle, never a global brightness.
-- Do label queued and reserved burn amounts as not burned.
-- Don't add shadows to bordered surfaces, all-caps kickers, or a seventh font size.
-- Don't render wish text as HTML.
+The square-spiral sectors (1200×900, 96 slots) and the slot positions in `layout.ts` are unchanged, so every existing candle keeps its place. Each sector is staged in perspective: six terraces with 8, 12, 14, 18, 20 and 24 slots run from far to near. Candle and holder scale grows with depth (`depthScale`), and the stream meanders (`sway`). Hit testing uses the candle body, 42 depth units above the slot. LOD: below 0.3× zoom, cached sector images with cached per-sector light layers; from 0.3×, sprites; from 0.7×, animated flames.

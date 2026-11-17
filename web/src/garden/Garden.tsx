@@ -3,7 +3,7 @@ import type { Candle } from "../lib/candles";
 import { GardenRenderer } from "./renderer";
 import { hitTest, positionOf } from "./layout";
 
-const CAM_KEY = "everlight:v1:camera";
+const CAM_KEY = "everlight:v2:camera";
 
 export interface GardenHandle {
   jumpTo: (id: number) => void;
@@ -22,6 +22,8 @@ interface Props {
   onSelect: (id: number | null) => void;
   handleRef: (h: GardenHandle) => void;
   onStats?: (s: { fps: number; ms: number; drawn: number; lod: number; missing: number }) => void;
+  /** Screen position of the selected candle's flame, for the anchored popup (null when off screen). */
+  onAnchor?: (a: { x: number; y: number } | null) => void;
 }
 
 /** The canvas garden: pan by drag or arrow keys, zoom by wheel, pinch or +/-, click a candle to read it. */
@@ -44,10 +46,12 @@ export function Garden(p: Props) {
       const saved = JSON.parse(localStorage.getItem(CAM_KEY) ?? "null");
       if (saved && [saved.x, saved.y, saved.z].every((v: unknown) => typeof v === "number" && isFinite(v as number))) r.cam = saved;
     } catch { /* default camera */ }
-    if (innerWidth < 640 && !localStorage.getItem(CAM_KEY)) r.cam.z = 0.55;
+    const fresh = !localStorage.getItem(CAM_KEY);
+    let homed = false;
     rRef.current = r;
     const ro = new ResizeObserver(() => {
       r.resize(canvas.clientWidth, canvas.clientHeight);
+      if (fresh && !homed && r.w > 0) { r.home(); homed = true; }
       dirty.current = true;
     });
     ro.observe(canvas);
@@ -55,6 +59,7 @@ export function Garden(p: Props) {
     let frames = 0;
     let last = performance.now();
     let saveAt = 0;
+    let anchorKey = "";
     const loop = (t: number) => {
       raf = requestAnimationFrame(loop);
       const inp = inputRef.current;
@@ -63,6 +68,16 @@ export function Garden(p: Props) {
       dirty.current = false;
       r.clamp(Math.max(inp.total, inp.known));
       r.draw(inp, t);
+      if (inp.onAnchor) {
+        let a: { x: number; y: number } | null = null;
+        if (inp.selected) {
+          const pos = positionOf(inp.selected - 1);
+          const sp = r.toScreen(pos.x, pos.y - 56 * pos.scale);
+          if (sp.x >= 0 && sp.x <= r.w && sp.y >= 0 && sp.y <= r.h) a = { x: Math.round(sp.x), y: Math.round(sp.y) };
+        }
+        const k = a ? `${a.x},${a.y}` : "";
+        if (k !== anchorKey) { anchorKey = k; inp.onAnchor(a); }
+      }
       if (miniRef.current) r.drawMinimap(miniRef.current, inp);
       frames++;
       if (t - last > 1000) {
@@ -90,7 +105,7 @@ export function Garden(p: Props) {
     const r = rRef.current;
     if (!r) return;
     const pos = positionOf(id - 1);
-    r.cam = { x: pos.x, y: pos.y - 20, z: Math.max(r.cam.z, 1.4) };
+    r.cam = { x: pos.x, y: pos.y - 40, z: Math.max(r.cam.z, 1.4) };
     dirty.current = true;
   }, []);
   useEffect(() => p.handleRef({ jumpTo }), [jumpTo]);
@@ -186,6 +201,7 @@ export function Garden(p: Props) {
   };
 
   return (
+    <>
     <div className="garden">
       <canvas
         ref={canvasRef}
@@ -200,12 +216,14 @@ export function Garden(p: Props) {
         onWheel={onWheel}
         onKeyDown={onKey}
       />
+      </div>
+      {/* minimap and zoom sit outside the canvas wrapper so they stack above the bottom strip */}
       <div className="map-tools">
         <canvas
           ref={miniRef}
           className="minimap"
-          width={160}
-          height={110}
+          width={220}
+          height={72}
           aria-label="Minimap: click to move the view"
           role="img"
           onPointerDown={onMini}
@@ -215,6 +233,6 @@ export function Garden(p: Props) {
           <button type="button" className="icon-btn" onClick={() => zoom(1 / 1.3)} aria-label="Zoom out">−</button>
         </div>
       </div>
-    </div>
+    </>
   );
 }

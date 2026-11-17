@@ -28,11 +28,15 @@ web/                 Vite + React + TypeScript source (package.json, package-loc
   src/lib/           candle store (paged reads + cache), purchase state machine, wish limits, errors
   src/panels/        Light a candle, My candles, Rewards, Treasury, How it works, candle details
   src/components/    wallet connect sheet (EIP-6963 + Coinbase + open-in-wallet links)
-  public/art/        original SVG garden layers and seven candle styles (CC0, see LICENSE.md there)
+  src/garden/scenery.ts  procedural sector scenery (terraces, stream, waterfalls, bridges, pedestals)
+  art-src/           procedural painter (paint.js) and WebP generator (generate.mjs) for every scenery asset
+  public/art/        generated WebP scenery layers and sprites, seven candle styles (CC0, see LICENSE.md there)
   tests/             vitest unit tests (labelled mocks and fixtures)
 dist/                committed production export (relative URLs, base "./")
 DESIGN.md            implemented design system
 artifacts/validation.md  checks run, results and limitations
+artifacts/asset-manifest.md  every asset, its layer and its provenance
+artifacts/screens/   browser screenshots (1600 / 390, fixtures) and reference side-by-sides
 ```
 
 ## Install, preview, rebuild
@@ -51,6 +55,16 @@ npm run preview        # serve the built export locally
 
 `dist/` is a static export. Serve it from any static host, IPFS gateway subpath or ENS name; all asset URLs are relative, and pages use hash routes (`#/light`, `#/mine`, `#/rewards`, `#/treasury`, `#/how`).
 
+### Regenerate the artwork
+
+The scenery is original procedural artwork: no image-generation model was available for this job. To repaint it:
+
+```sh
+npm i --prefix /tmp/art @napi-rs/canvas
+CANVAS_MODULE=/tmp/art/node_modules/@napi-rs/canvas/index.js node web/art-src/generate.mjs   # writes web/public/art/*.webp
+cd web && npm run build
+```
+
 ### Test fixtures (no chain writes)
 
 - `?fixture=0`, `?fixture=100`, `?fixture=3000`, `?fixture=10000` replace live candles with a deterministic local fixture, shown with a "Test fixture … not onchain" label. The fixture includes HTML/script wishes, RTL, CJK, emoji and 280-character wishes to exercise escaping and layout.
@@ -62,16 +76,27 @@ npm run preview        # serve the built export locally
 - **Purchase**: check live sales flags, balance, allowance and ETH. Approve exactly `quantity × 1 IMD` if the allowance is short, wait for that receipt, simulate `buyCandles(styles, wishes)`, then request the purchase. Candles appear only after a successful receipt. Pending hashes are saved in `localStorage` and re-attached after a reload. A ref guard blocks duplicate clicks.
 - **Wishes**: optional, public and immutable. The client enforces both 280 Unicode code points and 1120 UTF-8 bytes, and rejects lone surrogates, mirroring `Utf8Wish.validate`. A privacy acknowledgement is required before any wish is sent. Wishes render as React text nodes, never as HTML.
 - **Gas**: the estimate uses the contract docs' bound `300,000 + 170,000 × candles + 1,300 × wish bytes`, times the live gas price (plus about 60,000 gas for an approval). Batches over the EIP-7825 cap of 16,777,216 gas are blocked with a request to split them.
+- **Scene layers**: a screen-space vista (`backdrop.webp`, with slight parallax), then per-sector scenery cached as one canvas each (`scenery.ts`: textured terraces with stone retaining walls, a moonlit stream that drops in a waterfall at every terrace, bridges, gazebo, trees, shrubs, decorative lanterns and the weathered pedestals that hold candles). Next come the purchased candles and their additive light, drawn per frame from contract data only, then the HTML foreground frames (arch, banner, brass frogs, flowers; `pointer-events: none`) and the UI. At zero purchases every pedestal is empty and nothing is lit except the fixed decorative castle windows and lanterns. Those are boxed and steady, never flames.
 - **Garden**: one canvas, with deterministic positions per candle id on a square spiral of 96-holder sectors. It uses viewport culling and three LODs: cached low-resolution sector art with cached per-sector light layers, sprites, and sprites with animated flames. Empty stone holders mark unsold places. Zoom, pan, pinch, keyboard, minimap, find by id, My candles rings and a paged candle register keep every candle reachable.
 
 ## Licenses
 
 - Source code: MIT.
-- Art in `web/public/art/`, `web/public/favicon.svg` and `web/public/og.png`: original work for this site, CC0 1.0 (`web/public/art/LICENSE.md`).
+- Art in `web/public/art/`, `web/public/favicon.svg` and `web/public/og.png`: original work for this site, CC0 1.0. The scenery is procedurally painted by `web/art-src/paint.js`, and the provenance is in `artifacts/asset-manifest.md` (copied to `web/public/art/LICENSE.md`). `og.png` is a screenshot of the export.
 - Wallet marks in `web/src/components/walletIcons.ts`: the vendors' marks, as shipped by RainbowKit 2.2.11 (MIT), used only to identify each wallet.
 - Fonts: none bundled. The site uses system serif and sans stacks.
 - npm dependencies keep their own licenses (React, wagmi, viem, TanStack Query: MIT).
 
 ## Validation
 
-See `artifacts/validation.md` for the commands that were run, measured performance, browser evidence and the remaining limitations.
+These are worker-side results from 2026-11-17. The full record is in `artifacts/validation.md`, and the screenshots are in `artifacts/screens/`.
+
+| Check | Result |
+| --- | --- |
+| `npm run typecheck` (`tsc --noEmit`) | exit 0 |
+| `npx vitest run` | 2 files, 26/26 passed (purchase/claim flow on labelled mocks, paging, layout, escaping) |
+| `npx vite build` | built into `dist/` |
+| design-critic probe `taste.mjs` | 16/16 checks passed at 320/390/1440 |
+| Headless Chromium on the export (live reads + `?fixture=0/100/3000/10000`) | routes, Find, click hit test, anchored popup, Escape, mobile menu and split sheet checked; frame times measured |
+
+**Limitations.** The scenery is procedural, not illustrated: no image-generation tool was available. It follows the reference's composition and palette but does **not** reach the requested 99% visual similarity, and no similarity score was measured. No wallet transaction ran in a browser. Hosting is done by the publishing plane from the committed `dist/`.

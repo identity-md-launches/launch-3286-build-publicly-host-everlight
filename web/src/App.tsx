@@ -7,6 +7,7 @@ import { LightPanel } from "./panels/LightPanel";
 import { CandleDetail, HowPanel, MinePanel, Register, RewardsPanel, TreasuryPanel } from "./panels/Panels";
 import { FIXTURE, store, useCandles, useMyIds, useReducedMotion, useStatus } from "./hooks";
 import { pendingStore, type PendingTx } from "./lib/purchase";
+import type { Candle } from "./lib/candles";
 
 const ROUTES = [
   ["garden", "Garden"],
@@ -50,6 +51,8 @@ export default function App() {
   const [highlightMine, setHighlightMine] = useState(false);
   const [query, setQuery] = useState("");
   const [findError, setFindError] = useState<string | null>(null);
+  const [findBusy, setFindBusy] = useState<number | null>(null);
+  const [extra, setExtra] = useState<Candle | null>(null); // a record read by Find before its page streamed in
   const [menu, setMenu] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [stats, setStats] = useState<{ fps: number; ms: number; drawn: number; lod: number; missing: number } | null>(null);
@@ -86,16 +89,32 @@ export default function App() {
     setSelected(id);
     garden.current?.jumpTo(id);
   };
-  const find = (e: React.FormEvent) => {
+  const find = async (e: React.FormEvent) => {
     e.preventDefault();
-    const id = Number(query.replace(/^#/, ""));
+    const id = Number(query.trim().replace(/^#/, ""));
     if (!Number.isInteger(id) || id < 1) return setFindError("Enter a candle number such as 12.");
-    if (id > total) return setFindError(total === 0 ? "No candle has been lit yet." : `Candle #${id} does not exist yet. The newest is #${total}.`);
+    if (findBusy !== null) return;
+    if (cs.candles[id - 1]) {
+      setFindError(null);
+      return jump(id);
+    }
+    setFindBusy(id);
     setFindError(null);
-    jump(id);
+    try {
+      const r = await store.lookup(id);
+      if (r.kind === "none") setFindError(r.total === 0 ? "No candle has been lit yet." : `Candle #${id} does not exist yet. The newest is #${r.total}.`);
+      else {
+        if (!store.get(id)) setExtra(r.candle);
+        jump(id);
+      }
+    } catch {
+      setFindError(`Candle #${id} could not be loaded. Try again.`);
+    } finally {
+      setFindBusy(null);
+    }
   };
 
-  const sel = selected ? cs.candles[selected - 1] : undefined;
+  const sel = selected ? cs.candles[selected - 1] ?? (extra?.id === selected ? extra : undefined) : undefined;
   const salesLine = status.data
     ? status.data.open ? "Sales open · 1 IMD per candle" : status.data.activated ? "Sales paused" : "Sales closed until activation"
     : status.isError ? "Sales status unavailable" : "Reading sales status…";
@@ -123,6 +142,8 @@ export default function App() {
 
       <Garden
         total={total}
+        known={Math.max(total, cs.total ?? 0)}
+        extra={extra}
         candles={cs.candles}
         selected={selected}
         mine={mine}
@@ -152,9 +173,10 @@ export default function App() {
           <form className="find" onSubmit={find} role="search">
             <label htmlFor="find" className="sr">Find candle by number</label>
             <input id="find" inputMode="numeric" placeholder="Candle #" value={query} onChange={(e) => setQuery(e.target.value)} aria-describedby={findError ? "find-err" : undefined} />
-            <button className="btn" type="submit">Find</button>
+            <button className="btn" type="submit" disabled={findBusy !== null}>Find</button>
           </form>
           <a className="btn" href="#/mine">My candles</a>
+          {findBusy !== null && <p className="find-err find-wait" role="status">Loading candle #{findBusy}…</p>}
           {findError && <p id="find-err" className="find-err" role="alert">{findError}</p>}
         </div>
 

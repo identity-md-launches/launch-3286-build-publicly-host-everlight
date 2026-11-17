@@ -15,6 +15,8 @@ export interface CandleSource {
   kind: "live" | "fixture";
   total(): Promise<number>;
   page(firstId: number, limit: number): Promise<Candle[]>;
+  /** One record by id (getCandle), for Find when its page has not streamed in yet. */
+  one(id: number): Promise<Candle>;
   idsOf(owner: string): Promise<number[]>;
 }
 
@@ -101,6 +103,18 @@ export class CandleStore {
   get(id: number): Candle | undefined {
     return this.state.candles[id - 1];
   }
+
+  /**
+   * Find support: the record for id from the streamed index, or a direct getCandle read when its page
+   * has not arrived (or failed). Existence is decided by the onchain total, not by how many are loaded.
+   */
+  async lookup(id: number): Promise<{ kind: "found"; candle: Candle } | { kind: "none"; total: number }> {
+    const have = this.state.candles[id - 1];
+    if (have) return { kind: "found", candle: have };
+    const total = this.state.total ?? (await this.source.total());
+    if (id > total) return { kind: "none", total };
+    return { kind: "found", candle: await this.source.one(id) };
+  }
 }
 
 /** Paginate candleIdsOf(owner, offset, 100) until the contract returns the end offset. */
@@ -137,6 +151,10 @@ export function liveSource(client: {
         position: Number(r.position),
         wish: r.wish as string,
       }));
+    },
+    async one(id) {
+      const r = (await read("getCandle", [BigInt(id)])) as any;
+      return { id, purchaser: r.purchaser as string, style: Number(r.style), createdAt: Number(r.createdAt), position: Number(r.position), wish: r.wish as string };
     },
     async idsOf(owner) {
       const count = Number(await read("candleCountOf", [owner as Address]));
@@ -181,6 +199,11 @@ export function fixtureSource(n: number, mine?: string): CandleSource {
     async page(firstId, limit) {
       if (limit < 1 || limit > PAGE_SIZE) throw new Error("InvalidPage");
       return all.slice(firstId - 1, firstId - 1 + limit);
+    },
+    async one(id) {
+      const c = all[id - 1];
+      if (!c) throw new Error("CandleNotFound");
+      return c;
     },
     async idsOf(owner) {
       return all.filter((c) => c.purchaser.toLowerCase() === owner.toLowerCase()).map((c) => c.id);

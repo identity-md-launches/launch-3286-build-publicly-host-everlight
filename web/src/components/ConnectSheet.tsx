@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useAccount, useConnect, useDisconnect, useSwitchChain, type Connector } from "wagmi";
 import { mainnet } from "wagmi/chains";
 import { WALLET_ICONS } from "./walletIcons";
@@ -35,16 +36,32 @@ export function ConnectSheet() {
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    // Modal: Escape closes, Tab cycles inside the sheet, and everything behind it is inert.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") return close();
+      if (e.key !== "Tab" || !sheet.current) return;
+      const items = [...sheet.current.querySelectorAll<HTMLElement>("button:not(:disabled), a[href]")];
+      if (items.length === 0) return;
+      const first = items[0], last = items[items.length - 1];
+      const inside = sheet.current.contains(document.activeElement);
+      if (e.shiftKey && (document.activeElement === first || !inside)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && (document.activeElement === last || !inside)) { e.preventDefault(); first.focus(); }
+    };
     addEventListener("keydown", onKey);
+    // the sheet is portalled to <body>, so the whole app behind it can be made inert
+    const root = document.getElementById("root");
+    root?.setAttribute("inert", "");
     sheet.current?.querySelector<HTMLElement>("button, a")?.focus();
-    return () => removeEventListener("keydown", onKey);
+    return () => {
+      removeEventListener("keydown", onKey);
+      root?.removeAttribute("inert");
+      opener.current?.focus(); // focus returns to Connect once the background is interactive again
+    };
   }, [open]);
   useEffect(() => { if (isConnected) setOpen(false); }, [isConnected]);
   const close = () => {
     setOpen(false);
     reset();
-    opener.current?.focus();
   };
 
   const named = connectors.some((c) => c.type === "injected" && c.id !== "injected");
@@ -77,7 +94,7 @@ export function ConnectSheet() {
   return (
     <>
       <button ref={opener} className="cta" onClick={() => setOpen(true)}>Connect</button>
-      {open && (
+      {open && createPortal(
         <div className="sheet-bg" onClick={close}>
           <div ref={sheet} className="sheet" role="dialog" aria-modal="true" aria-labelledby="connect-title" onClick={(e) => e.stopPropagation()}>
             <div className="sheet-head">
@@ -98,7 +115,8 @@ export function ConnectSheet() {
             ))}
             {error && <p className="note" role="alert">{/reject|denied/i.test(error.message) ? "The wallet request was declined." : "The wallet did not connect. Try again."}</p>}
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

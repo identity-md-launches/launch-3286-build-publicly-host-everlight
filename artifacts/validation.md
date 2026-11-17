@@ -14,7 +14,7 @@ Worker-side checks on 2026-11-17. They are recorded, not independently certified
 | Command (in `web/`) | Result |
 | --- | --- |
 | `npx tsc --noEmit` | exit 0, no errors (final source) |
-| `npx vitest run` | 2 files, **24/24 tests passed** |
+| `npx vitest run` | 2 files, **26/26 tests passed** (revision added 2 Find/`getCandle` tests) |
 | `npx vite build` | built; `dist/` 1.8 MB (JS 1.4 MB, gzip about 410 KB; og.png 332 KB; art 60 KB) |
 | `node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste` (repo root, Playwright 1.x from outside the repo) | **16/16 passed** on the final build (render, layout, targets, contrast, casing, tracking, eyebrows, type-sizes, type-faces, glyphs, slogans, repetition, copy-budget, chrome, motion, share) |
 | `node test/scratch/e2e.mjs` (Playwright headless Chromium on a local static server at a `/preview/` subpath) | all scenarios below ran with 0 page errors and 0 failed requests |
@@ -66,12 +66,31 @@ Screenshots were inspected in `test/scratch/shots/` and `test/scratch/taste/shot
 ## 5. Limitations (unresolved)
 
 - **No wallet transaction was exercised in a browser.** Purchase and claim logic was tested on labelled mocks (vitest), not on a mainnet fork. The live garden is not activated, so `buyCandles` simulation on mainnet would revert `PurchasesDisabled`. The claim UI was checked only with no wallet connected.
-- Connect sheet: only the headless "Browser wallet" / Coinbase rows were seen. Real EIP-6963 extensions, the Coinbase SDK popup, account/network-change events and the mobile "Open in" links were not run. The Rabby link uses the `go.rabby.io/mobile/` form and has no vendor documentation.
+- Connect sheet: real EIP-6963 extensions, the Coinbase SDK popup and the mobile "Open in" links were not run. A labelled EIP-6963 mock wallet was used for connection, wrong-network, `accountsChanged` and rejected `eth_sendTransaction` (revision, section 6). The Rabby link uses the `go.rabby.io/mobile/` form and has no vendor documentation.
 - Browser: headless Chromium with software rendering and emulated mobile viewports. No physical phone, Safari or Firefox, no screen-reader session, no native 200% zoom. FPS values are limited by headless rAF; draw-time ms is the meaningful measure.
 - The localStorage candle cache is best effort. At very large counts with long wishes it can exceed quota and fall back to memory, so a fresh load re-reads pages (100 per call).
 - Treasury activity covers at most the latest 40,000 blocks (8 × 5,000), so older events need an explorer link. Balances are unaffected.
 - `og:image` is a relative URL (`./og.png`) because the final host is not known here. Some unfurlers need absolute URLs.
 - The JS bundle is 1.4 MB uncompressed, mostly the wallet SDKs.
+
+## 6. Revision: reviewer findings (2026-11-17)
+
+Each finding was first reproduced in headless Chromium against the previously committed `dist/`, extracted with `git archive HEAD dist`. Then it was fixed and rechecked against the new export. The script was `test/scratch/verify.mjs`, which is not delivered. It used a labelled mock JSON-RPC (decoding multicall3 `aggregate3` against the pinned ABI) and a labelled EIP-6963 mock wallet that rejects every `eth_sendTransaction` with code 4001. Nothing was broadcast.
+
+| Finding | Old build | Fix | New build |
+| --- | --- | --- | --- |
+| Hidden individual wish at qty 1 (`LightPanel.tsx`) | reproduced: decoded wallet request `buyCandles([2],["HIDDEN WISH"])`; a 281-char visible wish was not flagged | one effective mode `each = mode==="each" && qty>1` drives both the editor and the submitted items | `buyCandles([6],["VISIBLE WISH"])`; 281 chars flagged "Fix the wish marked above" |
+| Header clips Connect / Switch (`styles.css`) | reproduced: header scrollWidth 324 at 320 (Connect); 397 at 320 and 390 (Switch to Ethereum) | ≤480px hides the wordmark text and keeps the labelled favicon link; `min-width:0`; the switch-error note floats below | scrollWidth = clientWidth at 320 and 390; every control's right edge ≤ viewport, with and without a wallet on chain 8453 |
+| Approval with no gas estimate | reproduced: "Estimated gas …", approve enabled | a gas query error or pending state blocks submission and is listed in problems; "Retry gas estimate" button | disabled with "Unavailable" and a retry; after retry the estimate shows and approve sends exactly `0x095ea7b3` (rejected by the mock) |
+| Wallet modal focus escapes | code read (no trap, no inert) | sheet portalled to body; `#root` inert while open; Tab/Shift+Tab cycle | 9 Tab/Shift+Tab presses stay inside; Escape clears inert and focuses Connect |
+| Treasury 0 on failed reads | code read: `?? 0n` | totals only when all parts are defined; every stage shows "Unavailable"; an alert offers Try again | withdrawal counters failing → "Withdrawn by owner: Unavailable" plus the alert |
+| Find vs loaded count | code read: compared against `candles.length` | `CandleStore.lookup` compares with the onchain total and reads `getCandle(id)` when the page is missing; loading/error messages | total 3000, pages after #100 failing: Find 3000 opens "Candle #3000"; with `getCandle` also failing: "Candle #3000 could not be loaded. Try again."; 3001 → "does not exist yet" |
+| My candles page on account change | code read: page index kept | reset to page 0 on address change; clamp when the page count shrinks | fixture 101: page 2 (1 row) → `accountsChanged` 0x2222… → 25 rows on page 1 |
+| Flat equal rows (taste) | `TERRACES` 162 units apart, every candle 28×56 | receding scene, see DESIGN.md "Garden scene" | screenshots at 1440 and 390 (0, 100 and 3000 fixtures) show a near/far plane. Last-frame draw cost measured 1.5–9 ms at 1440 and 7–10 ms at 390 (headless, software rendering) |
+
+The browser checks passed 17/17 on the new export. The taste probe passed **16/16** on the final build, and the 390 screenshot shows the h1, the status and the "Light a candle" dock on the first screen. `tsc --noEmit` exited 0 and `vite build` succeeded.
+
+Limits of this revision: the scene was judged from screenshots only, in headless Chromium. The candle layout changed from the previous round. Positions are still deterministic per candle ID, and no live candles exist yet (`totalCandles=0`), so no lit candle moves.
 
 ## Completion
 

@@ -11,6 +11,9 @@ export interface GardenHandle {
 
 interface Props {
   total: number;
+  /** Onchain total (≥ total loaded): positions up to it are lit even before their page streams in. */
+  known: number;
+  extra?: Candle | null;
   candles: Candle[];
   selected: number | null;
   mine: Set<number>;
@@ -58,7 +61,7 @@ export function Garden(p: Props) {
       const animate = !inp.reducedMotion && r.cam.z >= 0.7 && inp.candles.length > 0;
       if (!animate && !dirty.current) return;
       dirty.current = false;
-      r.clamp(inp.total);
+      r.clamp(Math.max(inp.total, inp.known));
       r.draw(inp, t);
       if (miniRef.current) r.drawMinimap(miniRef.current, inp);
       frames++;
@@ -81,7 +84,7 @@ export function Garden(p: Props) {
 
   useEffect(() => {
     dirty.current = true;
-  }, [p.total, p.candles, p.selected, p.mine, p.highlightMine, p.reducedMotion]);
+  }, [p.total, p.known, p.extra, p.candles, p.selected, p.mine, p.highlightMine, p.reducedMotion]);
 
   const jumpTo = useCallback((id: number) => {
     const r = rRef.current;
@@ -143,8 +146,8 @@ export function Garden(p: Props) {
       const r = rRef.current!;
       const rect = canvasRef.current!.getBoundingClientRect();
       const w = r.toWorld(e.clientX - rect.left, e.clientY - rect.top);
-      const pos = hitTest(w.x, w.y, p.total, Math.max(26, 18 / r.cam.z));
-      p.onSelect(pos !== null && pos < p.total ? pos + 1 : null);
+      const pos = hitTest(w.x, w.y, Math.max(p.total, p.known), Math.max(26, 18 / r.cam.z));
+      p.onSelect(pos !== null && (pos < p.total || p.extra?.id === pos + 1) ? pos + 1 : null);
     }
   };
   const onWheel = (e: React.WheelEvent) => {

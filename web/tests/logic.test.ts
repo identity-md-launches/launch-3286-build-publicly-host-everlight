@@ -169,3 +169,35 @@ describe("purchase flow (labelled mock chain, no real funds)", () => {
     expect(d.calls).not.toContain("buy");
   });
 });
+
+describe("Find beyond the streamed pages", () => {
+  const failing = (n: number, okUpTo: number, oneFails = false) => {
+    const src = fixtureSource(n);
+    return {
+      ...src,
+      async page(first: number, limit: number) {
+        if (first > okUpTo) throw new Error("RPC down");
+        return src.page(first, limit);
+      },
+      async one(id: number) {
+        if (oneFails) throw new Error("RPC down");
+        return src.one(id);
+      },
+    };
+  };
+  it("uses the onchain total, not the loaded count, and reads the record with getCandle", async () => {
+    const s = new CandleStore(failing(3000, 100), null);
+    await s.sync();
+    expect(s.state.candles.length).toBe(100);
+    expect(s.state.total).toBe(3000);
+    const r = await s.lookup(3000);
+    expect(r.kind).toBe("found");
+    if (r.kind === "found") expect(r.candle.id).toBe(3000);
+    expect(await s.lookup(3001)).toEqual({ kind: "none", total: 3000 });
+  });
+  it("throws (retryable) when the record cannot be read, instead of claiming it does not exist", async () => {
+    const s = new CandleStore(failing(3000, 100, true), null);
+    await s.sync();
+    await expect(s.lookup(3000)).rejects.toThrow();
+  });
+});

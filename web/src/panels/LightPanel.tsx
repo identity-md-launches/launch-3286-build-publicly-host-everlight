@@ -67,16 +67,21 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
   const [step, setStep] = useState<Step | null>(null);
   const busy = useRef(false);
 
+  // One effective mode drives both the editor that is shown and the items that are validated and
+  // submitted: a single candle always uses the visible single-candle style and wish.
+  const each = mode === "each" && qty > 1;
   const items = useMemo(() => {
-    if (mode === "same") return Array.from({ length: qty }, () => ({ style, wish }));
+    if (!each) return Array.from({ length: qty }, () => ({ style, wish }));
     return Array.from({ length: qty }, (_, i) => rows[i] ?? { style, wish: "" });
-  }, [mode, qty, style, wish, rows]);
+  }, [each, qty, style, wish, rows]);
   const checks = items.map((it) => checkWish(it.wish));
   const wishBytes = checks.reduce((a, c) => a + c.bytes, 0);
   const hasWish = items.some((it) => it.wish.length > 0);
   const bound = gasBound(qty, wishBytes);
   const needApproval = !wallet.data || wallet.data.allowance < BigInt(qty) * 10n ** 18n;
-  const gasEth = gas.data ? (bound + (needApproval ? 60_000n : 0n)) * gas.data : undefined;
+  // A gas quote is current only while the query has fresh data; a failed refetch withdraws it.
+  const gasOk = gas.data !== undefined && !gas.isError;
+  const gasEth = gasOk ? (bound + (needApproval ? 60_000n : 0n)) * gas.data! : undefined;
   const total = BigInt(qty) * 10n ** 18n;
 
   const open = status.data?.open === true;
@@ -89,6 +94,8 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
   if (checks.some((c) => !c.ok)) problems.push("Fix the wish marked above.");
   if (bound > TX_GAS_CAP) problems.push("This batch is too large for one Ethereum transaction. Buy fewer candles or shorten the wishes, and split it into several purchases.");
   if (hasWish && !ack) problems.push("Confirm that your wish will be public and permanent.");
+  if (gas.isError) problems.push("The ETH gas estimate could not be read. Retry it before approving.");
+  else if (!gasOk) problems.push("Reading the current gas price for the ETH estimate…");
   if (wallet.data && wallet.data.balance < total) problems.push(`You hold ${imd(wallet.data.balance)} IMD; this needs ${qty}.`);
   const running = step !== null && !["done", "error"].includes(step.name);
   const disabled = problems.length > 0 || running;
@@ -181,7 +188,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
         </fieldset>
       )}
 
-      {mode === "same" || qty === 1 ? (
+      {!each ? (
         <>
           <StylePicker value={style} onChange={setStyle} name="style-all" />
           <WishField id="wish-all" value={wish} onChange={setWish} label={qty > 1 ? `Wish for all ${qty} candles (optional)` : "Your wish (optional)"} />
@@ -209,10 +216,15 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
         <div><dt>Total</dt><dd>{qty} IMD</dd></div>
         <div><dt>Your balance</dt><dd>{address ? (wallet.data ? `${imd(wallet.data.balance)} IMD` : "…") : "Not connected"}</dd></div>
         <div><dt>Approval</dt><dd>{address && wallet.data ? (needApproval ? `Needed: exactly ${qty} IMD` : "Already covered") : "Checked when you connect"}</dd></div>
-        <div><dt>Estimated gas</dt><dd>{gasEth !== undefined ? `≤ ${eth(gasEth)} ETH` : "…"}</dd></div>
+        <div><dt>Estimated gas</dt><dd>{gasEth !== undefined ? `≤ ${eth(gasEth)} ETH` : gas.isError ? "Unavailable" : "Reading…"}</dd></div>
       </dl>
       <p className="fine">Gas is an upper bound from the contract docs ({bound.toLocaleString("en-US")} gas for this batch{needApproval ? " plus about 60,000 for the approval" : ""}) at the current gas price. Candles appear in the garden only after the purchase receipt confirms.</p>
 
+      {gas.isError && (
+        <button type="button" className="btn" onClick={() => gas.refetch()} disabled={gas.isFetching}>
+          {gas.isFetching ? "Retrying gas estimate…" : "Retry gas estimate"}
+        </button>
+      )}
       {problems.length > 0 && !running && (
         <ul className="problems" aria-live="polite">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
       )}

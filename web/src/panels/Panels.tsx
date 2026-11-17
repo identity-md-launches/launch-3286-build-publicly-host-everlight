@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAccount } from "wagmi";
 import { simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
 import { useQueryClient } from "@tanstack/react-query";
@@ -41,6 +41,10 @@ export function MinePanel({ candles, onJump, highlight, setHighlight }: { candle
   const ids = useMyIds(address);
   const [page, setPage] = useState(0);
   const per = 25;
+  const pages = Math.max(1, Math.ceil((ids.data?.length ?? 0) / per));
+  // A different wallet starts on its first page; a shrinking list never leaves the view past its end.
+  useEffect(() => setPage(0), [address]);
+  useEffect(() => setPage((p) => Math.min(p, pages - 1)), [pages]);
   if (!address)
     return (
       <section aria-labelledby="mine-title">
@@ -49,7 +53,8 @@ export function MinePanel({ candles, onJump, highlight, setHighlight }: { candle
       </section>
     );
   const list = ids.data ?? [];
-  const shown = list.slice(page * per, page * per + per);
+  const current = Math.min(page, pages - 1);
+  const shown = list.slice(current * per, current * per + per);
   return (
     <section aria-labelledby="mine-title">
       <h2 id="mine-title">My candles</h2>
@@ -75,7 +80,7 @@ export function MinePanel({ candles, onJump, highlight, setHighlight }: { candle
               );
             })}
           </ul>
-          <Pager page={page} pages={Math.ceil(list.length / per)} setPage={setPage} />
+          <Pager page={current} pages={pages} setPage={setPage} />
         </>
       )}
     </section>
@@ -196,27 +201,36 @@ export function TreasuryPanel() {
   const row = (label: string, v: bigint | undefined, note?: string) => (
     <div><dt>{label}{note && <span className="muted"> · {note}</span>}</dt><dd>{v === undefined ? "Unavailable" : `${imd(v)} IMD`}</dd></div>
   );
+  /** A failed field read is shown as Unavailable, never as zero. */
+  const amt = (v: bigint | undefined) => (v === undefined ? "Unavailable" : `${imd(v)} IMD`);
+  const sum = (...vs: (bigint | undefined)[]) => (vs.every((v) => v !== undefined) ? vs.reduce((x, y) => x! + y!, 0n) : undefined);
+  const missing = e ? Object.values(e).some((v) => v === undefined) || !b || Object.values(b).some((v) => v === undefined) : false;
   return (
     <section aria-labelledby="treasury-title">
       <h2 id="treasury-title">Treasury</h2>
       <p className="lede">Live reads from the garden contract on Ethereum and the burn receiver on Base. Nothing here is estimated.</p>
       {t.isLoading && <p role="status">Reading the treasury…</p>}
       {t.isError && <p className="bad" role="alert">The treasury could not be read from any RPC. <button className="link" onClick={() => t.refetch()}>Try again</button></p>}
+      {e && missing && (
+        <p className="bad" role="alert">
+          Some figures could not be read and are marked Unavailable. <button className="link" onClick={() => t.refetch()} disabled={t.isFetching}>{t.isFetching ? "Retrying…" : "Try again"}</button>
+        </p>
+      )}
       {e && (
         <>
           <h3>Payments</h3>
           <dl className="summary">
-            <div><dt>Paid candles</dt><dd>{String(e.totalCandles ?? "…")}</dd></div>
+            <div><dt>Paid candles</dt><dd>{e.totalCandles === undefined ? "Unavailable" : String(e.totalCandles)}</dd></div>
             {row("Total payments", e.totalPayments)}
             {row("IMD held by the garden", e.heldIMD)}
-            <div><dt>Sales</dt><dd>{e.activated ? (e.purchasesPaused ? "Paused" : "Open") : "Not activated"}</dd></div>
+            <div><dt>Sales</dt><dd>{e.activated === undefined || e.purchasesPaused === undefined ? "Unavailable" : e.activated ? (e.purchasesPaused ? "Paused" : "Open") : "Not activated"}</dd></div>
           </dl>
           <h3>Buckets</h3>
           <dl className="summary">
             {row("Ecosystem (30%)", e.ecosystemBalance, "owner-managed")}
             {row("Operations (5%)", e.operationsBalance)}
             {row("Founder (5%)", e.founderBalance)}
-            {row("Withdrawn by owner", (e.totalEcosystemWithdrawn ?? 0n) + (e.totalOperationsWithdrawn ?? 0n) + (e.totalFounderWithdrawn ?? 0n))}
+            {row("Withdrawn by owner", sum(e.totalEcosystemWithdrawn, e.totalOperationsWithdrawn, e.totalFounderWithdrawn))}
           </dl>
           <p className="fine">Ecosystem funds are managed by the owner ({addrLink(OWNER)}). They are not owned by candle buyers.</p>
           <h3>Rewards (30%)</h3>
@@ -227,12 +241,12 @@ export function TreasuryPanel() {
           </dl>
           <h3>Burn (30%), stage by stage</h3>
           <ol className="stages">
-            <li><strong>Allocated</strong><span>{imd(e.totalBurnAllocated)} IMD</span><em>Set aside on Ethereum by purchases. Not burned yet.</em></li>
-            <li><strong>Queued</strong><span>{imd(e.burnQueued)} IMD</span><em>Waiting for the owner to open a burn job. Not burned yet.</em></li>
-            <li><strong>Reserved in jobs</strong><span>{imd(e.burnReserved)} IMD</span><em>In {String(e.burnJobCount ?? 0)} burn job(s); {imd(e.failedBurnAmount)} IMD of it failed a send and awaits retry.</em></li>
-            <li><strong>Dispatched to Base</strong><span>{imd(e.burnInTransit)} IMD</span><em>Sent across the bridge, not yet acknowledged.</em></li>
-            <li><strong>Burned on Base</strong><span>{b?.totalBurned !== undefined ? `${imd(b.totalBurned)} IMD` : "Unavailable"}</span><em>Base supply reduced. {b ? `${imd(b.pendingBurn)} IMD received and pending burn.` : "The Base RPC did not answer."}</em></li>
-            <li><strong>Confirmed on Ethereum</strong><span>{imd(e.confirmedBurn)} IMD</span><em>Base burn receipts acknowledged by the garden.</em></li>
+            <li><strong>Allocated</strong><span>{amt(e.totalBurnAllocated)}</span><em>Set aside on Ethereum by purchases. Not burned yet.</em></li>
+            <li><strong>Queued</strong><span>{amt(e.burnQueued)}</span><em>Waiting for the owner to open a burn job. Not burned yet.</em></li>
+            <li><strong>Reserved in jobs</strong><span>{amt(e.burnReserved)}</span><em>In {e.burnJobCount === undefined ? "an unknown number of" : String(e.burnJobCount)} burn job(s); {amt(e.failedBurnAmount)} of it failed a send and awaits retry.</em></li>
+            <li><strong>Dispatched to Base</strong><span>{amt(e.burnInTransit)}</span><em>Sent across the bridge, not yet acknowledged.</em></li>
+            <li><strong>Burned on Base</strong><span>{amt(b?.totalBurned)}</span><em>Base supply reduced. {b ? `${amt(b.pendingBurn)} received and pending burn.` : "The Base RPC did not answer."}</em></li>
+            <li><strong>Confirmed on Ethereum</strong><span>{amt(e.confirmedBurn)}</span><em>Base burn receipts acknowledged by the garden.</em></li>
           </ol>
           <p className="fine">A purchase does not burn IMD instantly. Burning crosses chains in owner-started jobs, and this site never sends owner transactions.</p>
         </>

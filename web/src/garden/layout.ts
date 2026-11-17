@@ -6,10 +6,24 @@
 export const SECTOR_W = 1200;
 export const SECTOR_H = 900;
 export const SLOTS_PER_SECTOR = 96;
-const ROWS = 4;
-const PER_ROW = SLOTS_PER_SECTOR / ROWS;
-/** Terrace baselines (fraction of sector height) for the four candle paths. */
-export const TERRACES = [0.3, 0.48, 0.66, 0.84];
+/**
+ * Each sector is staged as one scene receding toward a vanishing point at its top centre: a stream
+ * and candle path run down the middle, and six terraces line it on both sides. Far terraces are
+ * shorter, closer together and hold smaller candles; near terraces are wide and hold larger ones.
+ */
+export const ROW_COUNTS = [8, 12, 14, 18, 20, 24]; // sums to SLOTS_PER_SECTOR
+export const VANISH_X = SECTOR_W / 2;
+/** Depth of each terrace: 0 = far, 1 = near. */
+export const DEPTHS = ROW_COUNTS.map((_, i) => i / (ROW_COUNTS.length - 1));
+/** Terrace baseline (fraction of sector height): spacing compresses with distance. */
+export const terraceY = (d: number) => 0.24 + 0.66 * Math.pow(d, 1.45);
+/** Candle/holder scale at a depth. */
+export const depthScale = (d: number) => 0.5 + 0.7 * Math.pow(d, 1.2);
+/** Half-width of the central stream path and of the terrace at a depth. */
+export const pathHalf = (d: number) => 22 + 110 * d;
+export const terraceHalf = (d: number) => 160 + 420 * d;
+/** Terrace baselines as fractions of sector height (kept for callers that draw ledges). */
+export const TERRACES = DEPTHS.map(terraceY);
 
 export function mulberry(seed: number) {
   let a = seed >>> 0;
@@ -49,27 +63,38 @@ export function sectorOrigin(sector: number): [number, number] {
   return [gx * SECTOR_W, gy * SECTOR_H];
 }
 
-/** Local slot coordinates within a sector, cached: a gentle curve per terrace with a seeded jitter. */
-const slotCache: [number, number][] = (() => {
+/** Local slot coordinates and scale within a sector, cached: both sides of the path, a gentle bow, seeded jitter. */
+const slotCache: [number, number, number][] = (() => {
   const r = mulberry(7);
-  const out: [number, number][] = [];
-  for (let row = 0; row < ROWS; row++) {
-    for (let i = 0; i < PER_ROW; i++) {
-      const u = (i + 0.5) / PER_ROW;
-      const x = 60 + u * (SECTOR_W - 120) + (r() - 0.5) * 14;
-      const y = TERRACES[row] * SECTOR_H + Math.sin(u * Math.PI * 2 + row) * 18 + (r() - 0.5) * 8;
-      out.push([x, y]);
+  const out: [number, number, number][] = [];
+  ROW_COUNTS.forEach((count, row) => {
+    const d = DEPTHS[row];
+    const sc = depthScale(d);
+    const inner = pathHalf(d) + 14 * sc;
+    const outer = terraceHalf(d);
+    const per = count / 2;
+    const used = [0, 0];
+    for (let i = 0; i < count; i++) {
+      // fill both banks from the path outward in an L R R L order, so a filling sector lights both banks evenly
+      const left = (i + (i >> 1)) % 2 === 0;
+      const side = left ? -1 : 1;
+      const k = used[left ? 0 : 1]++;
+      const u = (k + 0.5) / per;
+      const off = inner + u * (outer - inner) + (r() - 0.5) * 6 * sc;
+      const x = VANISH_X + side * off;
+      const y = terraceY(d) * SECTOR_H - u * u * 16 * sc + (r() - 0.5) * 4 * sc;
+      out.push([x, y, sc]);
     }
-  }
+  });
   return out;
 })();
 
-export function positionOf(position: number): { x: number; y: number; sector: number; slot: number } {
+export function positionOf(position: number): { x: number; y: number; scale: number; sector: number; slot: number } {
   const sector = Math.floor(position / SLOTS_PER_SECTOR);
   const slot = position % SLOTS_PER_SECTOR;
   const [ox, oy] = sectorOrigin(sector);
-  const [lx, ly] = slotCache[slot];
-  return { x: ox + lx, y: oy + ly, sector, slot };
+  const [lx, ly, scale] = slotCache[slot];
+  return { x: ox + lx, y: oy + ly, scale, sector, slot };
 }
 
 /** Number of sectors to show: every filled sector plus one sector of empty holders to grow into. */
@@ -98,9 +123,9 @@ export function hitTest(x: number, y: number, total: number, radius: number): nu
   let best: number | null = null;
   let bd = radius * radius;
   for (let s = 0; s < SLOTS_PER_SECTOR; s++) {
-    const [sx, sy] = slotCache[s];
+    const [sx, sy, sc] = slotCache[s];
     const dx = sx - lx;
-    const dy = sy - 20 - ly; // candle body sits above its base point
+    const dy = sy - 20 * sc - ly; // candle body sits above its base point
     const d = dx * dx + dy * dy;
     if (d < bd) {
       bd = d;

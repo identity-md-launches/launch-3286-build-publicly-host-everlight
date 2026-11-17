@@ -1,5 +1,5 @@
 import type { Candle } from "../lib/candles";
-import { HOLDER_TOP, SECTOR_H, SECTOR_W, SLOTS_PER_SECTOR, positionOf, sectorCount, sectorOrigin, worldBounds } from "./layout";
+import { HOLDER_TOP, HORIZON_CUT, SECTOR_H, SECTOR_MARGIN, SECTOR_W, SLOTS_PER_SECTOR, neighbours, positionOf, sectorCount, sectorOrigin, worldBounds } from "./layout";
 import { drawSectorArt } from "./scenery";
 
 export interface Camera { x: number; y: number; z: number }
@@ -43,8 +43,9 @@ export class GardenRenderer {
   private ctx: CanvasRenderingContext2D;
   private candleImgs: Img[] = [];
   private layerImgs: Record<string, Img> = {};
-  private sectorCache = new Map<number, HTMLCanvasElement>();
-  private sectorLowCache = new Map<number, HTMLCanvasElement>();
+  private sectorCache = new Map<string, HTMLCanvasElement>();
+  private sectorLowCache = new Map<string, HTMLCanvasElement>();
+  private groundPat: CanvasPattern | null = null;
   private litCache = new Map<number, { count: number; canvas: HTMLCanvasElement }>();
   private glow: HTMLCanvasElement;
   missingAssets = 0;
@@ -74,12 +75,18 @@ export class GardenRenderer {
     this.canvas.height = Math.round(h * this.dpr);
   }
 
-  /** Opening view: the first sector fills the width, the vista and moon show above its far terrace. */
+  /**
+   * Opening view, composed like the approved reference: the founding pedestal (candle #1) stands in the
+   * near left at about (0.30 W, 0.70 H) at the head of the entrance walk; the garden recedes behind it to
+   * the hillside edge, and the vista with moon and castle fills the top of the screen.
+   */
   home() {
     const mobile = this.w < 640;
-    const z = mobile ? 0.62 : Math.min(1.6, Math.max(0.5, this.w / 1180));
-    this.cam = { x: SECTOR_W / 2 + (mobile ? 0 : 20), y: 0, z };
-    this.cam.y = 150 + (0.5 - (mobile ? 0.34 : 0.3)) * (this.h / z);
+    const z = mobile ? 0.62 : Math.min(1.4, Math.max(0.5, this.w / 1500));
+    const hero = positionOf(0);
+    this.cam = mobile
+      ? { x: hero.x + 0.2 * (this.w / z), y: 400, z }
+      : { x: hero.x + 0.2 * (this.w / z), y: hero.y - 0.2 * (this.h / z), z };
   }
 
   toWorld(sx: number, sy: number) {
@@ -97,20 +104,64 @@ export class GardenRenderer {
   }
 
   /** Pre-render one sector's static layers once (terraces, stream, arches, frogs, flowers, holders). */
-  private sector(index: number, low = false): HTMLCanvasElement {
+  private sector(index: number, count: number, low = false): HTMLCanvasElement {
     const cache = low ? this.sectorLowCache : this.sectorCache;
-    const hit = cache.get(index);
+    const nb = neighbours(index, count);
+    const key = `${index}:${nb.map(Number).join("")}`; // rebuilt when a neighbour appears and features run on into it
+    const hit = cache.get(key);
     if (hit) return hit;
-    const scale = low ? 0.125 : 0.75;
+    const scale = low ? 0.125 : 0.7;
     const c = document.createElement("canvas");
-    c.width = SECTOR_W * scale;
-    c.height = SECTOR_H * scale;
+    c.width = Math.round((SECTOR_W + 2 * SECTOR_MARGIN) * scale);
+    c.height = Math.round((SECTOR_H + 2 * SECTOR_MARGIN) * scale);
     const g = c.getContext("2d")!;
     g.scale(scale, scale);
-    drawSectorArt(g, index, this.layerImgs);
-    if (!low && cache.size > 24) cache.delete(cache.keys().next().value!);
-    cache.set(index, c);
+    drawSectorArt(g, index, this.layerImgs, nb);
+    if (cache.size > (low ? 400 : 20)) cache.delete(cache.keys().next().value!);
+    cache.set(key, c);
     return c;
+  }
+
+  /** Ground: one world-aligned texture under every sector, so neighbouring sectors share it without a seam. */
+  private drawGround(visible: number[], count: number, lod: number) {
+    const { ctx } = this;
+    const ground = this.layerImgs["ground.webp"];
+    if (ground && !this.groundPat) {
+      // night: the lawn sits in near-black shadow so candlelight and moonlit water carry the scene;
+      // the shade is baked into the tile once instead of a second full-screen pass per frame
+      const tile = document.createElement("canvas");
+      tile.width = ground.width; tile.height = ground.height;
+      const tg = tile.getContext("2d")!;
+      tg.drawImage(ground, 0, 0);
+      tg.fillStyle = "rgba(2,8,5,0.32)";
+      tg.fillRect(0, 0, tile.width, tile.height);
+      this.groundPat = ctx.createPattern(tile, "repeat");
+    }
+    ctx.fillStyle = lod === 0 || !this.groundPat ? "#0c2016" : this.groundPat;
+    for (const s of visible) {
+      const [ox, oy] = sectorOrigin(s);
+      const nb = neighbours(s, count);
+      const y0 = nb[0] ? oy : oy + HORIZON_CUT + 40;
+      ctx.fillRect(ox - 1, y0 - 1, SECTOR_W + 2, oy + SECTOR_H - y0 + 2);
+    }
+
+    // open edges of the garden fade into the night instead of ending on a drawn line
+    const F = 220;
+    for (const s of visible) {
+      const [ox, oy] = sectorOrigin(s);
+      const nb = neighbours(s, count);
+      const y0 = nb[0] ? oy : oy + HORIZON_CUT + 40;
+      const edge = (x0: number, y0e: number, x1: number, y1: number, rx: number, ry: number, rw: number, rh: number) => {
+        const gr = ctx.createLinearGradient(x0, y0e, x1, y1);
+        gr.addColorStop(0, "rgba(6,19,12,0)");
+        gr.addColorStop(1, "rgba(6,19,12,0.96)");
+        ctx.fillStyle = gr;
+        ctx.fillRect(rx, ry, rw, rh);
+      };
+      if (!nb[2]) edge(0, oy + SECTOR_H - F, 0, oy + SECTOR_H, ox - 1, oy + SECTOR_H - F, SECTOR_W + 2, F + 1);
+      if (!nb[1]) edge(ox + SECTOR_W - F, 0, ox + SECTOR_W, 0, ox + SECTOR_W - F, y0, F + 1, oy + SECTOR_H - y0);
+      if (!nb[3]) edge(ox + F, 0, ox, 0, ox - 1, y0, F + 1, oy + SECTOR_H - y0);
+    }
   }
 
   /** Overview LOD: one pre-rendered light layer per sector, rebuilt only when that sector gains candles. */
@@ -122,12 +173,13 @@ export class GardenRenderer {
     if (hit && hit.count === count) return hit.canvas;
     const scale = 0.25;
     const c = hit?.canvas ?? document.createElement("canvas");
-    c.width = SECTOR_W * scale;
-    c.height = SECTOR_H * scale;
+    c.width = (SECTOR_W + 2 * SECTOR_MARGIN) * scale;
+    c.height = (SECTOR_H + 2 * SECTOR_MARGIN) * scale;
     const g = c.getContext("2d")!;
     g.clearRect(0, 0, c.width, c.height);
     g.scale(scale, scale);
-    const [ox, oy] = sectorOrigin(index);
+    const [sx, sy] = sectorOrigin(index);
+    const ox = sx - SECTOR_MARGIN, oy = sy - SECTOR_MARGIN;
     g.globalCompositeOperation = "lighter";
     for (let p = first; p < first + count; p++) {
       const pos = positionOf(p);
@@ -177,7 +229,8 @@ export class GardenRenderer {
     const visible: number[] = [];
     for (let s = 0; s < n; s++) {
       const [ox, oy] = sectorOrigin(s);
-      if (ox + SECTOR_W < tl.x || ox > br.x || oy + SECTOR_H < tl.y || oy > br.y) continue; // viewport culling
+      const M = SECTOR_MARGIN;
+      if (ox + SECTOR_W + M < tl.x || ox - M > br.x || oy + SECTOR_H + M < tl.y || oy - M > br.y) continue; // viewport culling
       visible.push(s);
     }
     ctx.save();
@@ -187,9 +240,11 @@ export class GardenRenderer {
     ctx.imageSmoothingEnabled = true;
     // LOD: 0 = cached light layers per sector, 1 = sprites, 2 = sprites with animated flames
     const lod = cam.z < 0.3 ? 0 : cam.z < 0.7 ? 1 : 2;
+    this.drawGround(visible, n, lod);
+    const M = SECTOR_MARGIN;
     for (const s of visible) {
       const [ox, oy] = sectorOrigin(s);
-      ctx.drawImage(this.sector(s, lod === 0), ox, oy, SECTOR_W, SECTOR_H);
+      ctx.drawImage(this.sector(s, n, lod === 0), ox - M, oy - M, SECTOR_W + 2 * M, SECTOR_H + 2 * M);
     }
     (window as any).__gardenFrames = ((window as any).__gardenFrames ?? 0) + 1;
     if (lod === 0) {
@@ -198,7 +253,7 @@ export class GardenRenderer {
         const layer = this.litLayer(s, input.candles);
         if (!layer) continue;
         const [ox, oy] = sectorOrigin(s);
-        ctx.drawImage(layer, ox, oy, SECTOR_W, SECTOR_H);
+        ctx.drawImage(layer, ox - M, oy - M, SECTOR_W + 2 * M, SECTOR_H + 2 * M);
         drawn += Math.max(0, Math.min(SLOTS_PER_SECTOR, input.candles.length - s * SLOTS_PER_SECTOR));
       }
       const ring = (id: number, color: string) => {
@@ -302,7 +357,7 @@ export class GardenRenderer {
     for (let i = 0; i < sectorCount(extent); i++) {
       const [x, y] = sectorOrigin(i);
       g.fillStyle = "#123323";
-      g.fillRect(x * s + ox + 0.5, y * s + oy + 0.5, SECTOR_W * s - 1, SECTOR_H * s - 1);
+      g.fillRect(x * s + ox, y * s + oy, SECTOR_W * s + 0.5, SECTOR_H * s + 0.5); // one continuous landmass
     }
     g.fillStyle = "#f2c35f";
     const step = input.candles.length > 4000 ? 2 : 1;

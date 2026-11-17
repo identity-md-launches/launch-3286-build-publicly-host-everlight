@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { checkWish, gasBound } from "../src/lib/wish";
 import { CandleStore, fixtureSource, readAllIds } from "../src/lib/candles";
-import { hitTest, positionOf, sectorCount, SLOTS_PER_SECTOR } from "../src/garden/layout";
+import { hitTest, positionOf, sectorAt, sectorCount, sectorPlan, spiral, streamX, pathY, worldBounds, SECTOR_H, SECTOR_W, SLOTS_PER_SECTOR } from "../src/garden/layout";
 import { pendingStore, runPurchase, type PurchaseDeps, type Step } from "../src/lib/purchase";
 
 class MemStorage {
@@ -91,6 +91,51 @@ describe("garden layout", () => {
   it("hit test finds the candle under the pointer", () => {
     const p = positionOf(4321);
     expect(hitTest(p.x, p.y - 20, 10000, 20)).toBe(4321);
+  });
+  it("inverts the sector spiral in closed form with no cap", () => {
+    for (let n = 0; n < 20000; n++) { const [x, y] = spiral(n); expect(sectorAt(x, y)).toBe(n); }
+    for (const n of [4096, 99999, 393216, 1234567]) { const [x, y] = spiral(n); expect(sectorAt(x, y)).toBe(n); }
+  });
+  it("hit test works past 4,096 sectors (400,000 candles)", () => {
+    const p = positionOf(4096 * SLOTS_PER_SECTOR + 7);
+    expect(hitTest(p.x, p.y - 42 * p.scale, 400000, 30)).toBe(4096 * SLOTS_PER_SECTOR + 7);
+  });
+  it("fills every sector with holders that avoid the stream and path", () => {
+    for (let s = 0; s < 120; s++) {
+      const plan = sectorPlan(s);
+      expect(plan.slots.length).toBe(SLOTS_PER_SECTOR);
+      for (const [x, y] of plan.slots.slice(s === 0 ? 1 : 0)) {
+        expect(Math.abs(x - streamX(plan.gx, y))).toBeGreaterThan(60);
+        expect(Math.abs(y - pathY(plan.gy, x))).toBeGreaterThan(40);
+      }
+    }
+  });
+  it("is not a repeated tile: sectors differ and terraces are curved arcs", () => {
+    const a = sectorPlan(1).slots.map(([x, y]) => [x % SECTOR_W, y % SECTOR_H].map(Math.round).join());
+    const b = sectorPlan(5).slots.map(([x, y]) => [((x % SECTOR_W) + SECTOR_W) % SECTOR_W, ((y % SECTOR_H) + SECTOR_H) % SECTOR_H].map(Math.round).join());
+    expect(a.filter((k) => b.includes(k)).length).toBeLessThan(3);
+    for (let n = 0; n < 5000; n++) expect(spiral(n)[1]).toBeGreaterThanOrEqual(0); // never north of the home row
+    const ys = new Set(sectorPlan(2).slots.map(([, y]) => Math.round(y / 4)));
+    expect(ys.size).toBeGreaterThan(40); // no flat rows
+  });
+  it("streams and paths join across sector edges", () => {
+    for (let gy = -3; gy < 3; gy++) {
+      const y = gy * SECTOR_H;
+      expect(streamX(2, y - 0.001)).toBeCloseTo(streamX(2, y + 0.001), 1);
+    }
+    for (let gx = -3; gx < 3; gx++) {
+      const x = gx * SECTOR_W;
+      expect(pathY(1, x - 0.001)).toBeCloseTo(pathY(1, x + 0.001), 1);
+    }
+  });
+  it("world bounds contain every sector", () => {
+    for (const total of [0, 100, 3000, 10000]) {
+      const b = worldBounds(total);
+      for (let s = 0; s < sectorCount(total); s++) {
+        const p = positionOf(s * SLOTS_PER_SECTOR);
+        expect(p.x >= b.minX && p.x <= b.maxX && p.y >= b.minY && p.y <= b.maxY).toBe(true);
+      }
+    }
   });
 });
 

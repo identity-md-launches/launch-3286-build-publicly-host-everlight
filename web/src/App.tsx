@@ -211,7 +211,7 @@ export default function App() {
           <div className="intro">
             <h1>Light a wish in the garden</h1>
             <p className="intro-line">Permanent candles on Ethereum: 1 IMD each, with a public wish.</p>
-            <a className="cta intro-cta" href="#/light">Light a candle · 1 IMD</a>
+            <a className="cta intro-cta" href="#/light">{"Light a candle\u00a0· 1\u00a0IMD"}</a>
             <p className="status-line" role="status">
               <span className={`dot ${status.data?.open ? "on" : ""}`} aria-hidden="true" /> {salesLine} · {cs.total === null ? "counting candles…" : `${total} lit`}
               {cs.loading && cs.total !== null && total < cs.total ? ` (loading ${total} of ${cs.total})` : ""}
@@ -222,7 +222,7 @@ export default function App() {
         )}
 
         <nav className="side" aria-label="Quick actions">
-          <a className="side-act" href="#/light"><img src="./art/candle-0.svg" alt="" width={20} height={40} /><span>Light a candle · 1 IMD</span></a>
+          <a className="side-act" href="#/light"><img src="./art/candle-0.svg" alt="" width={20} height={40} /><span>{"Light a candle\u00a0· 1\u00a0IMD"}</span></a>
           <a className="side-act" href="#/rewards"><Icon name="layers" /><span>My rewards</span></a>
           <a className="side-act" href="#/how"><Icon name="sprout" /><span>How it works</span></a>
         </nav>

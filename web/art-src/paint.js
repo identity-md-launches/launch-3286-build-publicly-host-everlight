@@ -322,7 +322,7 @@
     g.fillStyle = sky; g.fillRect(0, 0, W, H);
     for (let i = 0; i < 900; i++) { const y = Math.pow(r(), 1.6) * H * 0.6; g.fillStyle = `rgba(220,232,255,${0.15 + r() * 0.6})`; const s = r() < 0.04 ? 2.2 : 1.1; g.fillRect(r() * W, y, s, s); }
     // moon
-    const mx = W * 0.72, my = H * 0.13, mr = 46;
+    const mx = W * 0.655, my = H * 0.1, mr = 40;
     glow(g, mx, my, 360, "#9fc4e8", 0.22); glow(g, mx, my, 120, "#e8f2ff", 0.4);
     const mg = g.createRadialGradient(mx - 14, my - 14, 4, mx, my, mr);
     mg.addColorStop(0, "#fffef6"); mg.addColorStop(0.7, "#e4e8e2"); mg.addColorStop(1, "#b9c2c4");
@@ -346,11 +346,25 @@
     const mist1 = g.createLinearGradient(0, H * 0.3, 0, H * 0.55); mist1.addColorStop(0, "rgba(90,130,160,0)"); mist1.addColorStop(1, "rgba(90,130,160,0.22)");
     g.fillStyle = mist1; g.fillRect(0, H * 0.3, W, H * 0.25);
     ridge(H * 0.56, 200, 300, "#0e1f22", 7);
-    // castle hill (upper right) with castle
-    g.fillStyle = "#0d1c1a"; g.beginPath(); g.moveTo(W * 0.62, H * 0.6); g.bezierCurveTo(W * 0.7, H * 0.36, W * 0.76, H * 0.26, W * 0.84, H * 0.25); g.bezierCurveTo(W * 0.92, H * 0.26, W * 0.97, H * 0.4, W, H * 0.46); g.lineTo(W, H * 0.6); g.fill();
-    castle(g, W * 0.84, H * 0.27, 1.25, r);
+    // castle hill: the castle crowns a hill at about (0.75 W, 0.2 H) of this layer, which the renderer places
+    // near (0.78, 0.12) of a desktop screen, clear of the side actions; its lights trail down the slope
+    const hillTop = (x) => { const u = (x - W * 0.79) / (W * 0.2); return H * 0.215 + H * 0.3 * u * u * (u < 0 ? 1 : 1.3) - fbm(x / 60, 4, 3) * 18; };
+    g.fillStyle = "#0e1e1d"; g.beginPath(); g.moveTo(W * 0.5, H * 0.7);
+    for (let x = W * 0.5; x <= W; x += 6) g.lineTo(x, Math.min(H * 0.7, hillTop(x)));
+    g.lineTo(W, H * 0.7); g.fill();
+    // moonlit flank of the hill
+    const flank = g.createLinearGradient(W * 0.6, 0, W * 0.9, 0); flank.addColorStop(0, "rgba(120,160,190,0)"); flank.addColorStop(0.6, "rgba(120,160,190,0.10)"); flank.addColorStop(1, "rgba(120,160,190,0)");
+    g.fillStyle = flank; g.fillRect(W * 0.5, H * 0.18, W * 0.5, H * 0.5);
+    // a switchback road from the gate down the slope, lined by small square windows (decor, not candles)
+    const road = []; for (let k = 0; k <= 60; k++) { const t = k / 60; road.push([W * 0.79 - t * W * 0.22 + Math.sin(t * 11) * W * 0.035, H * 0.235 + t * H * 0.33]); }
+    g.strokeStyle = "rgba(200,170,110,0.22)"; g.lineWidth = 2; g.beginPath(); road.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y))); g.stroke();
+    road.forEach(([x, y], k) => { if (k % 2 || r() < 0.25) return; const off = (r() - 0.5) * 40;
+      g.fillStyle = "#162826"; g.fillRect(x + off - 7, y - 9, 14, 10); g.fillStyle = r() < 0.5 ? "#f2c06a" : "#e2a24e"; g.fillRect(x + off - 2, y - 6, 3, 4); if (r() < 0.6) g.fillRect(x + off + 2, y - 6, 3, 4); });
+    castle(g, W * 0.79, H * 0.225, 0.42, r);
+    const haze0 = g.createLinearGradient(0, H * 0.3, 0, H * 0.62); haze0.addColorStop(0, "rgba(100,135,160,0)"); haze0.addColorStop(1, "rgba(100,135,160,0.16)");
+    g.fillStyle = haze0; g.fillRect(0, H * 0.3, W, H * 0.32);
     // second smaller castle/temple on the left hills
-    castle(g, W * 0.36, H * 0.43, 0.55, r);
+    castle(g, W * 0.36, H * 0.43, 0.3, r);
     // distant terraced hills with tree clusters and warm windows
     for (let band = 0; band < 5; band++) {
       const y0 = H * (0.5 + band * 0.1), col = ["#0b1d18", "#0a1c15", "#091a13", "#08170f", "#06130c"][band];

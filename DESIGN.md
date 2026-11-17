@@ -24,7 +24,8 @@ There is no purple, no dashboard cards, and no reference pixels anywhere.
 | # | Layer | Source | Notes |
 | --- | --- | --- | --- |
 | 1 | Vista | `art/backdrop.webp` drawn in screen space | parallax of 0.02× pan; fades into `#06130c` at its foot |
-| 2 | Sector scenery | `drawSectorArt()` in `scenery.ts`, cached per sector (0.75× hi-res, ≤24 cached; 0.125× overview) | the top band is transparent so the vista shows between sector rows |
+| 2a | Ground | `drawGround()` in `renderer.ts`: `ground.webp` darkened once and filled as one world-aligned pattern under every sector | no seam between sectors; open garden edges fade into `#06130c` over 220 units |
+| 2b | Sector scenery | `drawSectorArt()` in `scenery.ts`, drawn in world coordinates onto a canvas covering the sector plus a 180-unit margin; cached (0.7× hi-res, ≤20 cached; 0.125× overview), keyed by which neighbours exist | the stream and path are world-space curves drawn identically by neighbours; the home row has an irregular land edge with three receding hill bands and haze, so the vista shows above it |
 | 3 | Candle holders | `drawPedestal()` at each slot from `positionOf()`, inside the sector cache | the cup sits `HOLDER_TOP` = 24 depth units above the slot point |
 | 4 | Lighting | additive glow sprite per lit candle: a halo of radius 80k at 34% alpha, plus a ground pool of 92k×34k at 30% | flicker only without reduced motion |
 | 5 | Purchased candles | `drawCandle()`: style sprite at 0.5k scale, flame at 1.5k | from contract data only; never pre-lit |
@@ -95,14 +96,14 @@ Contrast: the design probe measured all first-screen text at 320, 390 and 1440 w
 
 ## Components
 
-- **Header** (`.top`): the brand (favicon and "Everlight Garden · on IMD"). The four tabs Garden / My Candles / Rewards / Treasury sit between gold hairline dividers, and the active tab is emerald with a gold border. Connect Wallet (`ConnectSheet`) is on the right. Under 1100px the tabs move into a menu button; the menu lists all six routes.
+- **Header** (`.top`): the brand (favicon and "Everlight Garden · on IMD"; under 480px the name stays, set on two lines at 17px, and only " · on IMD" drops). The four tabs Garden / My Candles / Rewards / Treasury sit between gold hairline dividers, and the active tab is emerald with a gold border. The wallet button (`ConnectSheet`) is on the right: "Connect wallet" from 600px, "Connect" below 600px, with `aria-label="Connect wallet"` at every width. Under 1100px the tabs move into a menu button; the menu lists all six routes.
 - **Intro** (`.intro`): the h1 "Light a wish in the garden" with a centred gold rule, one plain line, a sales-status line with a live dot, and the fixture label when a fixture is active. Under 900px it also shows the primary CTA "Light a candle · 1 IMD".
-- **Side actions** (`.side`, desktop ≥900px): Light a candle · 1 IMD, My rewards and How it works. Each is a 96px gold-bordered tile.
+- **Side actions** (`.side`, desktop ≥900px): Light a candle · 1 IMD (non-breaking spaces keep "1 IMD" together and the dot with "candle"), My rewards and How it works. Each is a 96px gold-bordered tile.
 - **Bottom strip** (`.strip`):
   - Find my candle: a crosshair icon, a numeric input and a button. It searches any id, including ids not loaded yet.
   - A slot for the minimap (220×72 canvas, click to move).
   - The economics as a `<details>` list: 30% Burn, 30% Previous paid candles, 30% Ecosystem, 5% Operations, 5% Founder. It is open on desktop and collapsed to a "Split of 1 IMD" sheet under 900px.
-- **Zoom** (`.zoom`): round + / − buttons at the left, above the strip.
+- **Zoom** (`.zoom`): round + / − buttons at the left, above the strip. Under 900px the map tools (zoom and minimap) are hidden while a candle sheet is open (`.map-tools.has-selection`), so nothing covers the sheet's last line, the explorer link.
 - **Candle popup** (`.detail-wrap.anchored`): 320px, anchored above the selected candle's flame with a pointer notch and clamped to the viewport. It shows the id, owner (explorer link), style, date, position, the public wish (italic serif, rendered as text) and "View onchain". Under 900px it becomes a sheet above the strip. Escape or × closes it.
 - **Panels** (`.panel`): Light a candle, My Candles, Rewards, Treasury and How it works. They open as a right drawer above the strip on desktop and as a 78% bottom sheet on phones. Escape returns to the garden, and focus moves to the panel on open.
 - **Sheets, menus, toasts:** gold hairline, emerald-black gradient.
@@ -117,10 +118,18 @@ Contrast: the design probe measured all first-screen text at 320, 390 and 1440 w
 | <1100 | tabs collapse into the menu button; the "on IMD" suffix is hidden |
 | <900 | side actions hidden and the intro CTA shown; minimap 132×44 above the strip at right; zoom row at left; economics become a collapsible sheet; right frame hidden; left frame 30vh; canopy 9vh; the popup becomes a sheet |
 | <640 | the intro starts 40px below the header (keeps Connect from reading as an eyebrow); panels become bottom sheets; the strip hides under an open panel |
-| <480 | the wordmark collapses to the mark |
+| <600 | the wallet button reads "Connect" (accessible name "Connect wallet") |
+| <480 | the wordmark stays: mark plus "Everlight Garden" on two lines at 17px; " · on IMD" hidden |
 
 At 390 wide the first screen shows the garden, the headline and the "Light a candle · 1 IMD" action (see `artifacts/screens/m390-live.webp`). Touch: drag pans, pinch zooms and tap opens a candle. Keyboard: arrows pan, + and − zoom, Find opens any id, and the register lists every candle. `prefers-reduced-motion` stops the flame flicker and the CSS transitions.
 
-## Garden geometry (unchanged positions)
+## Garden geometry (continuous landscape)
 
-The square-spiral sectors (1200×900, 96 slots) and the slot positions in `layout.ts` are unchanged, so every existing candle keeps its place. Each sector is staged in perspective: six terraces with 8, 12, 14, 18, 20 and 24 slots run from far to near. Candle and holder scale grows with depth (`depthScale`), and the stream meanders (`sway`). Hit testing uses the candle body, 42 depth units above the slot. LOD: below 0.3× zoom, cached sector images with cached per-sector light layers; from 0.3×, sprites; from 0.7×, animated flames.
+`layout.ts` lays the garden out as one landscape seen from a raised three-quarter view. Sectors (1200×900 world units, 96 holders) are bookkeeping only; they grow in U-shaped half-rings from the founding sector (`spiral()`, inverted in closed form by `sectorAt()`, with no cap), never north of the home row, so the vista always sits behind the garden's northern edge.
+
+- **Streams** wind north-south (`streamX(gx, y)`): each sector edge has a seeded crossing point shared by both sectors on it, joined by a smoothstep plus a seeded sin² bend, so the curve is continuous and smooth across edges.
+- **Paths** wind east-west the same way (`pathY(gy, x)`) and cross each stream on a bridge rotated to the path slope.
+- **Terraces** are curved ledges: arcs of ellipses with `TILT` = 0.42 (circles on the tilted ground plane), with seeded centre, radius (90–260), arc length, wall height and candle scale (about 0.8–1.0). They are fitted around the stream, path, pools, waterfall and gazebo by seeded rejection sampling (`sectorPlan()`), so no two sectors share a layout and nothing sits on a rectangular grid.
+- **Founding pedestal**: slot 0 (candle #1) stands at 2.1× scale on a round plinth at the head of a broad entrance walk from the near-left corner; the opening view (`home()`) places it at about (0.30 W, 0.70 H) on desktop.
+
+Positions depend only on a candle's position (id − 1), so they are stable across reloads and new purchases. This layout differs from the previous round. No live candle exists yet (`totalCandles = 0`), so no lit candle moves. Hit testing searches the 3×3 sector neighbourhood around the pointer, using the candle body 42 units above the slot. LOD: below 0.3× zoom, cached low-resolution sector images with cached per-sector light layers; from 0.3×, sprites; from 0.7×, animated flames.

@@ -28,7 +28,8 @@ web/                 Vite + React + TypeScript source (package.json, package-loc
   src/lib/           candle store (paged reads + cache), purchase state machine, wish limits, errors
   src/panels/        Light a candle, My candles, Rewards, Treasury, How it works, candle details
   src/components/    wallet connect sheet (EIP-6963 + Coinbase + open-in-wallet links)
-  src/garden/scenery.ts  procedural sector scenery (terraces, stream, waterfalls, bridges, pedestals)
+  src/garden/layout.ts   continuous landscape geometry: winding streams/paths, curved terraces, slot positions, hit test
+  src/garden/scenery.ts  procedural sector scenery (terraces, stream, pools, waterfall, bridge, pedestals)
   art-src/           procedural painter (paint.js) and WebP generator (generate.mjs) for every scenery asset
   public/art/        generated WebP scenery layers and sprites, seven candle styles (CC0, see LICENSE.md there)
   tests/             vitest unit tests (labelled mocks and fixtures)
@@ -77,7 +78,7 @@ cd web && npm run build
 - **Wishes**: optional, public and immutable. The client enforces both 280 Unicode code points and 1120 UTF-8 bytes, and rejects lone surrogates, mirroring `Utf8Wish.validate`. A privacy acknowledgement is required before any wish is sent. Wishes render as React text nodes, never as HTML.
 - **Gas**: the estimate uses the contract docs' bound `300,000 + 170,000 × candles + 1,300 × wish bytes`, times the live gas price (plus about 60,000 gas for an approval). Batches over the EIP-7825 cap of 16,777,216 gas are blocked with a request to split them.
 - **Scene layers**: a screen-space vista (`backdrop.webp`, with slight parallax), then per-sector scenery cached as one canvas each (`scenery.ts`: textured terraces with stone retaining walls, a moonlit stream that drops in a waterfall at every terrace, bridges, gazebo, trees, shrubs, decorative lanterns and the weathered pedestals that hold candles). Next come the purchased candles and their additive light, drawn per frame from contract data only, then the HTML foreground frames (arch, banner, brass frogs, flowers; `pointer-events: none`) and the UI. At zero purchases every pedestal is empty and nothing is lit except the fixed decorative castle windows and lanterns. Those are boxed and steady, never flames.
-- **Garden**: one canvas, with deterministic positions per candle id on a square spiral of 96-holder sectors. It uses viewport culling and three LODs: cached low-resolution sector art with cached per-sector light layers, sprites, and sprites with animated flames. Empty stone holders mark unsold places. Zoom, pan, pinch, keyboard, minimap, find by id, My candles rings and a paged candle register keep every candle reachable.
+- **Garden**: one canvas showing one continuous landscape: winding streams and paths that run through every sector, and curved terraces with seeded, irregular arcs. Positions are deterministic per candle id; sectors of 96 holders grow in half-rings south of the home row, with no cap. It uses viewport culling and three LODs: cached low-resolution sector art with cached per-sector light layers, sprites, and sprites with animated flames. Empty stone holders mark unsold places. Zoom, pan, pinch, keyboard, minimap, find by id, My candles rings and a paged candle register keep every candle reachable.
 
 ## Licenses
 
@@ -94,9 +95,9 @@ These are worker-side results from 2026-11-17. The full record is in `artifacts/
 | Check | Result |
 | --- | --- |
 | `npm run typecheck` (`tsc --noEmit`) | exit 0 |
-| `npx vitest run` | 2 files, 26/26 passed (purchase/claim flow on labelled mocks, paging, layout, escaping) |
+| `npx vitest run` | 2 files, 32/32 passed (purchase/claim flow on labelled mocks, paging, layout continuity, closed-form sector index past 4,096 sectors, escaping) |
 | `npx vite build` | built into `dist/` |
 | design-critic probe `taste.mjs` | 16/16 checks passed at 320/390/1440 |
 | Headless Chromium on the export (live reads + `?fixture=0/100/3000/10000`) | routes, Find, click hit test, anchored popup, Escape, mobile menu and split sheet checked; frame times measured |
 
-**Limitations.** The scenery is procedural, not illustrated: no image-generation tool was available. It follows the reference's composition and palette but does **not** reach the requested 99% visual similarity, and no similarity score was measured. No wallet transaction ran in a browser. Hosting is done by the publishing plane from the committed `dist/`.
+**Limitations.** The scenery is procedural, not illustrated: no image-generation tool was available. It follows the reference's composition and palette but does **not** reach the requested 99% visual similarity, and no similarity score was measured (compare `artifacts/screens/side-by-side-1600.webp`). No wallet transaction ran in a browser. Hosting is done by the publishing plane from the committed `dist/`.

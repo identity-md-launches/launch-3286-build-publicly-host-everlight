@@ -93,7 +93,7 @@ export function ConnectSheet() {
   }
   return (
     <>
-      <button ref={opener} className="cta" onClick={() => setOpen(true)}>Connect</button>
+      <button ref={opener} className="cta" aria-label="Connect wallet" onClick={() => setOpen(true)}>Connect<span className="wide-word"> wallet</span></button>
       {open && createPortal(
         <div className="sheet-bg" onClick={close}>
           <div ref={sheet} className="sheet" role="dialog" aria-modal="true" aria-labelledby="connect-title" onClick={(e) => e.stopPropagation()}>

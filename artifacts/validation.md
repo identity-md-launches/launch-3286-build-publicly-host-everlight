@@ -1,5 +1,65 @@
 # Everlight Garden: validation record
 
+## Revision 3: reviewer findings on revision 2 (2026-11-17)
+
+These are worker-side checks in headless Chromium (Playwright's Chromium headless shell, software rendering), run against the committed `dist/` served at a `/preview/` subpath. They are recorded here, not independently certified. **Live** means reads from mainnet RPCs. **Simulated** means `?fixture=N`, labelled on screen "Test fixture … not onchain". No transaction was sent, and no address, ABI or economic rule changed.
+
+### Findings
+
+| Finding | Reproduced on the revision 2 export | Fix | Recheck on the new export |
+| --- | --- | --- | --- |
+| Grid of identical sector tiles, flat rows, straight canal (`layout.ts:65`) | yes: the code put every 96 slots on the same six straight ledges (`ROW_COUNTS`) either side of one canal, on a square spiral of rectangles | `web/src/garden/layout.ts` rewritten: world-space `streamX`/`pathY` curves with seeded crossing points shared by both sectors on each edge; terraces are seeded elliptical arcs fitted around stream, path, pools and gazebo (`sectorPlan`); sectors grow in half-rings south of the home row. `scenery.ts` draws in world coordinates on a canvas with a 180-unit margin; `renderer.ts` fills the ground as one world-aligned pattern, and open garden edges fade into the night | `d1600-f3000-overview.webp`, `d1600-f10000-overview.webp`: one landscape with winding streams and paths, no tile seams or dark bands. `d1600-f100-pan.webp` (drag 800,500 → 200,300): terraces continue into the next sector. Unit tests: streams/paths continuous across edges, two sectors share fewer than 3 slot positions, more than 40 distinct slot heights per sector |
+| Zoom and minimap cover the candle sheet at 390 (`styles.css:402`) | yes, by code: `.zoom` and `.detail-wrap` shared `bottom: calc(var(--strip-h) + var(--space-3))` under 900px | `Garden.tsx` adds `has-selection` to `.map-tools` while a candle is selected; under 900px `.map-tools.has-selection` (and its `.zoom`) is `display: none` | 390×844, touch, `?fixture=100`, Find 40: last sheet line at [29,720,361,739]; `elementFromPoint` there returns the sheet's own `.fine` line; zoom not displayed (`m390-candle.webp`) |
+| Screenshots and asset manifest cited but missing | yes: `artifacts/` held only `validation.md` | committed `artifacts/screens/` (28 WebP files) and `artifacts/asset-manifest.md` (every file in `web/public/art`, its layer, generator function and licence; same text as `web/public/art/LICENSE.md`) | listed below |
+| Frontal symmetric diagram, castle behind the side actions (`paint.js:351`) | yes: straight horizon, mirror-symmetric ledges, castle block at x≈1130–1330 | castle on its hill at (0.79 W, 0.22 H) of the backdrop, scale 0.42, landing near (0.78 W, 0.12 H) of a 1600 screen, clear of the side column, with a switchback road and square window lights down the slope; moon moved left; haze band. The home row now ends in an irregular land edge with three receding hill bands, tree lines, far pavilions and mist. Candle #1 is a 2.1× founding pedestal on a plinth at the head of a broad stone walk from the near left; the opening view puts it at about (0.30 W, 0.70 H). The stream bends and widens into pools with lily pads, has one seeded waterfall per sector, and the bridge is rotated to the path slope | `side-by-side-1600.webp` and `side-by-side-1600-f100.webp`. Still far from the illustrated reference in density and detail; see limitations |
+| Header says "Connect" (advisory) | yes | "Connect wallet" from 600px; "Connect" below, with `aria-label="Connect wallet"` | `d1600-live.webp`; the shot script clicks `getByRole("button", { name: "Connect wallet" })` at 1600 and 390 (`d1600-connect`, `m390-connect`) |
+| Brand hidden at 390 (advisory) | yes: `.brand span { display: none }` under 480px | only `.brand-on` hidden; the name is set at 17px on two lines | 390 body text starts "Skip to the garden tools \| EVERLIGHT GARDEN \| Connect"; no horizontal overflow at 320/390 (taste layout check) |
+| Price split from its unit (advisory) | yes: "candle · 1" / "IMD" | `Light a candle\u00a0· 1\u00a0IMD` in the side action and intro CTA | side action reads "Light a / candle · / 1 IMD" (`d1600-live.webp`) |
+| Hit test stops after 4,096 sectors (advisory) | yes: `sectorAt` filled a 4,096-entry map | closed-form `sectorAt` (inverse of the half-ring order) and a 3×3 neighbourhood hit test | vitest: `sectorAt(spiral(n)) === n` for n < 20,000 and n = 99,999, 393,216, 1,234,567; hit test at position 4096×96+7 with total 400,000 returns that position |
+
+### Commands and results (final source)
+
+| Command | Result |
+| --- | --- |
+| `cd web && npx tsc --noEmit` | exit 0 |
+| `cd web && npx vitest run` | 2 files, **32/32 passed** (6 new layout tests) |
+| `cd web && npx vite build` | built into `dist/` |
+| `node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste` (Playwright from outside the repo) | **16/16 passed** on the final export (render, layout, targets, contrast, casing, tracking, eyebrows, type-sizes, type-faces, glyphs, slogans, repetition, copy-budget, chrome, motion, share) |
+| `test/scratch/shoot.mjs` (not delivered) | 28 scenarios, **0 page errors, 0 action errors, 0 failed requests**, no horizontal overflow in any |
+
+### Screenshots (`artifacts/screens/`, actual browser captures)
+
+- Side-by-side reference vs actual: `side-by-side-1600.webp` (live, 0 candles) and `side-by-side-1600-f100.webp` (fixture 100, candle #40 open).
+- Desktop 1600×1000: `d1600-live` (**live**: activated=false, 0 candles, every holder empty), `d1600-f0`, `d1600-f100`, `d1600-f3000`, `d1600-f10000` (**simulated fixtures**), `d1600-f3000-overview`, `d1600-f10000-overview`, `d1600-f100-pan`, `d1600-popup` (Find 40), `d1600-f10000-find9876`, and panels `d1600-light`, `d1600-treasury`, `d1600-rewards`, `d1600-mine`, `d1600-how`, `d1600-connect`.
+- Mobile 390×844 (touch): `m390-live`, `m390-f0`, `m390-f100`, `m390-f3000`, `m390-f10000`, `m390-candle`, `m390-menu`, `m390-light`, `m390-treasury`, `m390-connect`.
+
+### Rendering and interaction performance (headless, software rendering, 1600×1000)
+
+`__lastFrame.ms` (draw time of the last frame) after each of 8 drags, then again after zooming out 6 steps.
+
+| Fixture | Detail view median / p95 | Sectors / candles drawn | Overview median / p95 | Sectors / candles drawn | Find → popup |
+| --- | --- | --- | --- | --- | --- |
+| 0 (live layout) | 0.2 / 0.3 ms | 1 / 0 | 0.1 / 0.2 ms | 1 / 0 | n/a |
+| 100 | 2.1 / 3.0 ms | 2 / 96 | 0.2 / 0.2 ms | 2 / 100 | 300 ms |
+| 3,000 | 1.9 / 4.5 ms | 6 / 123 | 0.4 / 0.7 ms | 28 / 2,688 | 395 ms |
+| 10,000 | 2.9 / 3.7 ms | 6 / 123 | 0.4 / 0.5 ms | 28 / 2,688 | 437 ms |
+
+Building one sector's cached art costs about 50–80 ms (the first-frame values in the shot log), paid once per sector and neighbour set. Headless rAF caps FPS, so draw time is the meaningful measure.
+
+### Better Interface review, revision 3
+
+All six domains were rechecked on the changed surfaces. Accessibility: the wallet button has the accessible name "Connect wallet" at every width, and with map tools hidden the sheet's link is reachable by tap and Tab. Layout: no control covers the sheet at 390 or 320, and no overflow. Writing: the amount stays with its unit. Typography: the brand uses the existing 17px step, so the scale still has six sizes (probe: type-sizes pass). Colors: unchanged tokens. UI: the header now names the site on phones. Contrast inside the popup and panels was viewed in screenshots, not measured.
+
+### Remaining limitations (revision 3)
+
+- **Visual fidelity.** No image-generation tool was available, so the scene is procedural (Skia via `@napi-rs/canvas`). It now follows the reference's structure: vista with moon and castle on a hill, layered horizon, winding streams and paths, curved terraces, bridges, pools, a waterfall, a gazebo, a foreground founding pedestal, frogs and arches. It is still much less dense and detailed than the illustrated reference, and it does **not** meet the owner's 99% target. No similarity score was measured.
+- At very wide overviews, streams appear in every sector column and paths in every row. They wind and are seeded, but the spacing is regular.
+- The candle layout changed from revision 2. Positions are deterministic per candle id, and the contract has 0 candles, so no live candle moved.
+- No wallet transaction ran in a browser; write flows remain covered by the labelled vitest mocks. No physical phone, Safari, Firefox or screen reader was used.
+- Hosting is done by the publishing plane from the committed `dist/`. No publish command was run, and the public URL is not verified here.
+
+---
+
 ## Revision 2: reference redesign (2026-11-17)
 
 These are worker-side checks. They are recorded here, not independently certified.
@@ -14,7 +74,7 @@ No transaction was sent and no contract, address, ABI or economic rule changed.
 - **No image-generation tool was available.** All scenery is original procedural artwork from `web/art-src/paint.js`, rendered with Skia (`@napi-rs/canvas`, installed outside the repo) to WebP. See `artifacts/asset-manifest.md`.
 - It replaces the primitive SVG scenery, which was deleted.
 - It follows the reference's composition: framed foreground, terraced middle distance with stream, waterfalls, bridges and a gazebo, and a vista with moon, mountains and castle. It follows the palette and the UI placement too.
-- **It does not reach the owner's 99% visual-similarity target.** The painting is much simpler than the illustrated reference, and the overview at 3,000–10,000 candles shows the repeating sector grid. **No similarity score was measured or is claimed.** Compare `artifacts/screens/side-by-side-*.webp`.
+- **It does not reach the owner's 99% visual-similarity target.** The painting is much simpler than the illustrated reference. (The repeating sector grid noted here in revision 2 was replaced in revision 3, below.) **No similarity score was measured or is claimed.** Compare `artifacts/screens/side-by-side-*.webp`.
 - Browser: Playwright's headless Chromium shell. It ran on Ubuntu runtime libraries and DejaVu/Liberation fonts extracted into a temp dir, because the machine has neither installed. Screenshots therefore use Liberation Serif in place of Iowan/Palatino. Rendering is software (SwiftShader), with no GPU.
 
 ### Commands and results
@@ -69,7 +129,7 @@ The first paint of a sector costs about 350–500 ms (one-off sector cache build
 
 ### Remaining limitations
 
-- The visual result is procedural and simpler than the reference (see above). The scene uses the same perspective sector for every 96 candles, so it looks repetitive when zoomed far out.
+- The visual result is procedural and simpler than the reference (see above). Revision 3 replaced the repeated perspective sector with a continuous landscape.
 - Foreground frames sit over the garden edges; candles behind them stay reachable through Find, the register and panning.
 - No wallet transaction was exercised in a browser. Purchase, approval and claim logic is covered only by the vitest mocks from the previous job, unchanged. The contract is not activated, so live purchases are disabled.
 - The mobile routing check of `#/mine` crashed the headless browser once in this environment, so that screenshot is missing; `m390-light.webp` shows the mobile bottom-sheet panel.

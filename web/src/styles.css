@@ -275,8 +275,10 @@ textarea:focus-visible, .custom input:focus-visible, .find input:focus-visible {
 
 /* narrow phones: the wordmark collapses to the labelled mark so menu and wallet actions keep their full labels */
 @media (max-width: 480px) {
-  .brand span { display: none; }
-  .brand { flex: none; min-width: 44px; justify-content: center; }
+  /* the name stays visible on phones, set on two short lines beside the mark; only " · on IMD" drops */
+  .brand .brand-on { display: none; }
+  .brand { flex: none; min-width: 44px; gap: var(--space-2); }
+  .brand .brand-name { font-size: var(--text-md); white-space: normal; line-height: 1.05; max-width: 6.2em; }
   .top .cta { padding: 0 var(--space-3); }
 }
 
@@ -400,6 +402,12 @@ textarea:focus-visible, .custom input:focus-visible, .find input:focus-visible {
   .fr-left { height: 42vh; opacity: 0.95; }
   .fr-canopy { height: 12vh; }
   .detail-wrap { bottom: calc(var(--strip-h) + var(--space-3)); }
+  /* the candle sheet shares the bottom edge with zoom and minimap: hide the map tools while a candle is open,
+     so nothing paints over the sheet's last line (the explorer link) */
+  .map-tools.has-selection, .map-tools.has-selection .zoom { display: none; }
+}
+@media (max-width: 599px) {
+  .wide-word { display: none; }
 }
 @media (max-width: 640px) {
   .top { padding: 0 var(--space-3); }

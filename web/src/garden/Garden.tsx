@@ -3,7 +3,7 @@ import type { Candle } from "../lib/candles";
 import { GardenRenderer } from "./renderer";
 import { hitTest, positionOf } from "./layout";
 
-const CAM_KEY = "everlight:v2:camera";
+const CAM_KEY = "everlight:v3:camera"; // v3: continuous landscape layout
 
 export interface GardenHandle {
   jumpTo: (id: number) => void;
@@ -218,7 +218,7 @@ export function Garden(p: Props) {
       />
       </div>
       {/* minimap and zoom sit outside the canvas wrapper so they stack above the bottom strip */}
-      <div className="map-tools">
+      <div className={p.selected ? "map-tools has-selection" : "map-tools"}>
         <canvas
           ref={miniRef}
           className="minimap"

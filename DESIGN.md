@@ -8,7 +8,7 @@ A nocturnal fantasy garden fills the viewport, staged after the owner's approved
 
 - **Foreground frame:** carved stone columns and an arch, an emerald banner, white flowers and brass frog sculptures, with overhanging leaves along the top.
 - **Middle distance:** terraced gardens with stone retaining walls, a moonlit stream that drops in a waterfall at every terrace, arched bridges, a domed gazebo and trees.
-- **Distance:** misty terraced hills, mountains, a moon and a softly lit castle.
+- **Distance:** nine interlocking raised terraces climb the hills to the castle: block-jointed stone retaining walls, hedge lines and tree masses, pools with moon glints, waterfalls between terraces, seven arched bridges at different elevations and angles, domed pavilions, winding paths and layered mist under a moon and a spired castle with lit windows.
 
 The interface is compact antique-gold chrome on near-black emerald:
 
@@ -25,7 +25,7 @@ There is no purple, no dashboard cards, and no reference pixels anywhere.
 | --- | --- | --- | --- |
 | 1 | Vista | `art/backdrop.webp` drawn in screen space | parallax of 0.02× pan; fades into `#06130c` at its foot |
 | 2a | Ground | `drawGround()` in `renderer.ts`: `ground.webp` darkened once and filled as one world-aligned pattern under every sector | no seam between sectors; open garden edges fade into `#06130c` over 220 units |
-| 2b | Sector scenery | `drawSectorArt()` in `scenery.ts`, drawn in world coordinates onto a canvas covering the sector plus a 180-unit margin; cached (0.7× hi-res, ≤20 cached; 0.125× overview), keyed by which neighbours exist | the stream and path are world-space curves drawn identically by neighbours; the home row has an irregular land edge with three receding hill bands and haze, so the vista shows above it |
+| 2b | Sector scenery | `drawSectorArt()` in `scenery.ts`, drawn in world coordinates onto a canvas covering the sector plus a 180-unit margin; cached (0.7× hi-res, ≤20 cached; 0.125× overview), keyed by which neighbours exist | the stream and path are world-space curves drawn identically by neighbours; the home row ends in an irregular land edge with a dense tree line and light haze; above it the painted vista's terraces continue up the hills (no flat hill band is drawn in the world). Ground cover (70 shrubs, flowering bushes, cypresses and mossy rocks per sector) is painted before terraces, paths and holders |
 | 3 | Candle holders | `drawPedestal()` at each slot from `positionOf()`, inside the sector cache | the cup sits `HOLDER_TOP` = 24 depth units above the slot point |
 | 4 | Lighting | additive glow sprite per lit candle: a halo of radius 80k at 34% alpha, plus a ground pool of 92k×34k at 30% | flicker only without reduced motion |
 | 5 | Purchased candles | `drawCandle()`: style sprite at 0.5k scale, flame at 1.5k | from contract data only; never pre-lit |
@@ -130,6 +130,6 @@ At 390 wide the first screen shows the garden, the headline and the "Light a can
 - **Streams** wind north-south (`streamX(gx, y)`): each sector edge has a seeded crossing point shared by both sectors on it, joined by a smoothstep plus a seeded sin² bend, so the curve is continuous and smooth across edges.
 - **Paths** wind east-west the same way (`pathY(gy, x)`) and cross each stream on a bridge rotated to the path slope.
 - **Terraces** are curved ledges: arcs of ellipses with `TILT` = 0.42 (circles on the tilted ground plane), with seeded centre, radius (90–260), arc length, wall height and candle scale (about 0.8–1.0). They are fitted around the stream, path, pools, waterfall and gazebo by seeded rejection sampling (`sectorPlan()`), so no two sectors share a layout and nothing sits on a rectangular grid.
-- **Founding pedestal**: slot 0 (candle #1) stands at 2.1× scale on a round plinth at the head of a broad entrance walk from the near-left corner; the opening view (`home()`) places it at about (0.30 W, 0.70 H) on desktop.
+- **Founding pedestal**: slot 0 (candle #1) stands at 2.1× scale on a round plinth at the head of a broad entrance walk from the near-left corner; the opening view (`home()`, zoom `w / 2000` clamped to 0.5–1.1) places it at about (0.30 W, 0.77 H) on desktop, which puts the land edge near mid-screen so the terraced vista fills the upper half.
 
 Positions depend only on a candle's position (id − 1), so they are stable across reloads and new purchases. This layout differs from the previous round. No live candle exists yet (`totalCandles = 0`), so no lit candle moves. Hit testing searches the 3×3 sector neighbourhood around the pointer, using the candle body 42 units above the slot. LOD: below 0.3× zoom, cached low-resolution sector images with cached per-sector light layers; from 0.3×, sprites; from 0.7×, animated flames.

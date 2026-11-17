@@ -45,30 +45,8 @@ export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: 
     const bx0 = nb[3] ? ox : ox - M, bx1 = nb[1] ? ox + W : ox + W + M;
     g.save();
     g.beginPath(); g.rect(bx0, oy - M, bx1 - bx0, HORIZON_CUT + M + 120); g.clip();
-    // receding hill bands behind the land edge: each farther band is lower in contrast and hazier
-    for (let b = 3; b >= 1; b--) {
-      const far = (x: number) => edge(x) - 38 * b - 30 * Math.sin(x / (240 - 40 * b) + b * 2.1) * Math.sin(x / 113 + b);
-      g.beginPath();
-      g.moveTo(ox - M, edge(ox - M) + 20);
-      for (let x = ox - M; x <= ox + W + M; x += 14) g.lineTo(x, far(x));
-      g.lineTo(ox + W + M, edge(ox + W + M) + 20);
-      g.closePath();
-      g.fillStyle = ["#0d221c", "#11272a", "#152c35"][b - 1];
-      g.fill();
-      g.fillStyle = `rgba(90,130,155,${0.06 + 0.07 * b})`;
-      g.fill();
-      for (let x = bx0 + 20 + r() * 40; x < bx1 - 20; x += 18 + r() * 34) {
-        put(r() < 0.4 ? "tree-2" : "tree-0", x, far(x) + 6, (46 - 10 * b) * (0.7 + r() * 0.6), r() < 0.5, 0.55 - 0.1 * b);
-      }
-      // a far terrace wall and the odd pavilion on the nearer bands
-      if (b < 3) {
-        g.strokeStyle = `rgba(190,170,120,${0.12 / b})`; g.lineWidth = 1;
-        g.beginPath();
-        for (let x = ox - M; x <= ox + W + M; x += 14) { const y = far(x) + 12 + 6 * Math.sin(x / 90); x === ox - M ? g.moveTo(x, y) : g.lineTo(x, y); }
-        g.stroke();
-        if (r() < 0.8) { const x = ox + 100 + r() * (W - 200); put("gazebo", x, far(x) + 10, 40 / b, false, 0.6); }
-      }
-    }
+    // the painted vista (backdrop layer) shows above this edge: terraces, pools and bridges recede up the
+    // hills to the castle, so no flat hill band is drawn here and the join is a soft, irregular tree line
     g.beginPath();
     g.moveTo(ox - M, oy + HORIZON_CUT + 80);
     for (let x = ox - M; x <= ox + W + M; x += 16) g.lineTo(x, edge(x));
@@ -77,13 +55,13 @@ export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: 
     g.fillStyle = groundPat ?? "#0c2117";
     g.fill();
     const fade = g.createLinearGradient(0, oy + HORIZON_CUT - 110, 0, oy + HORIZON_CUT + 80);
-    fade.addColorStop(0, "rgba(16,36,44,0.9)");
-    fade.addColorStop(0.6, "rgba(10,28,26,0.45)");
+    fade.addColorStop(0, "rgba(16,36,44,0.4)");
+    fade.addColorStop(0.6, "rgba(10,28,26,0.18)");
     fade.addColorStop(1, "rgba(10,28,26,0)");
     g.fillStyle = fade;
     g.fill();
-    for (let x = bx0 + 24 + r() * 30; x < bx1 - 24; x += 26 + r() * 40) {
-      put(r() < 0.35 ? "tree-2" : r() < 0.5 ? "tree-1" : "tree-0", x, edge(x) + 8, 50 + r() * 50, r() < 0.5, 0.75);
+    for (let x = bx0 + 12 + r() * 20; x < bx1 - 12; x += 14 + r() * 24) {
+      put(r() < 0.35 ? "tree-2" : r() < 0.5 ? "tree-1" : "tree-0", x, edge(x) + 10 + r() * 14, 40 + r() * 60, r() < 0.5, 0.85);
     }
     g.restore();
   }
@@ -99,6 +77,24 @@ export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: 
     g.save(); g.translate(x, y); g.scale(1, TILT * 1.4); g.translate(-x, -y);
     g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2); g.fill();
     g.restore();
+  }
+
+  // ground cover: low shrubs, flowering bushes, cypresses and mossy rocks break up the lawn; drawn before
+  // terraces, paths and holders so anything placed later sits on top of it
+  for (let i = 0; i < 70; i++) {
+    const x = ox - 40 + r() * (W + 80), y = top + 90 + r() * (oy + H - top - 90);
+    const kind = r();
+    if (kind < 0.12) put("tree-2", x, y, 70 + r() * 60, r() < 0.5, 0.92);
+    else if (kind < 0.24) put("tree-0", x, y, 90 + r() * 70, r() < 0.5, 0.9);
+    else if (kind < 0.62) put("bush-plain", x, y, 26 + r() * 30, r() < 0.5, 0.95);
+    else if (kind < 0.8) put("bush", x, y, 24 + r() * 26, r() < 0.5, 0.95);
+    else {
+      const rr = 8 + r() * 16;
+      const gr = g.createRadialGradient(x - rr * 0.3, y - rr * 0.5, 1, x, y - rr * 0.3, rr);
+      gr.addColorStop(0, "#5b5747"); gr.addColorStop(0.6, "#2a2a22"); gr.addColorStop(1, "#0e0f0c");
+      g.fillStyle = gr; g.beginPath(); g.ellipse(x, y - rr * 0.3, rr, rr * 0.6, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "rgba(30,80,46,0.6)"; g.beginPath(); g.ellipse(x - rr * 0.2, y - rr * 0.7, rr * 0.6, rr * 0.22, 0, 0, Math.PI * 2); g.fill();
+    }
   }
 
   // ---- the path: an east-west flagstone walk, warm-lit, running on into the neighbours ----

@@ -77,16 +77,16 @@ export class GardenRenderer {
 
   /**
    * Opening view, composed like the approved reference: the founding pedestal (candle #1) stands in the
-   * near left at about (0.30 W, 0.70 H) at the head of the entrance walk; the garden recedes behind it to
+   * near left at about (0.30 W, 0.77 H) at the head of the entrance walk; the garden recedes behind it to
    * the hillside edge, and the vista with moon and castle fills the top of the screen.
    */
   home() {
     const mobile = this.w < 640;
-    const z = mobile ? 0.62 : Math.min(1.4, Math.max(0.5, this.w / 1500));
+    const z = mobile ? 0.62 : Math.min(1.1, Math.max(0.5, this.w / 2000));
     const hero = positionOf(0);
     this.cam = mobile
       ? { x: hero.x + 0.2 * (this.w / z), y: 400, z }
-      : { x: hero.x + 0.2 * (this.w / z), y: hero.y - 0.2 * (this.h / z), z };
+      : { x: hero.x + 0.2 * (this.w / z), y: hero.y - 0.27 * (this.h / z), z }; // land edge near mid-screen, vista above
   }
 
   toWorld(sx: number, sy: number) {
@@ -133,7 +133,7 @@ export class GardenRenderer {
       tile.width = ground.width; tile.height = ground.height;
       const tg = tile.getContext("2d")!;
       tg.drawImage(ground, 0, 0);
-      tg.fillStyle = "rgba(2,8,5,0.32)";
+      tg.fillStyle = "rgba(2,8,5,0.5)";
       tg.fillRect(0, 0, tile.width, tile.height);
       this.groundPat = ctx.createPattern(tile, "repeat");
     }

@@ -1,5 +1,61 @@
 # Everlight Garden: validation record
 
+## Revision 4: reviewer findings on revision 3 (2026-11-17)
+
+Worker-side checks in Playwright's headless Chromium shell (software rendering, Liberation fonts), against the committed `dist/` served at a `/preview/` subpath. **Live** means read-only calls to mainnet RPCs. **Simulated** means `?fixture=N`, labelled on screen "Test fixture … not onchain". No transaction was sent. No address, ABI or economic rule changed.
+
+### Findings
+
+| Finding | Reproduced on revision 3 | Fix | Recheck |
+| --- | --- | --- | --- |
+| `04172db3…` Screenshots and `artifacts/asset-manifest.md` cited but missing | yes: `git ls-files artifacts` listed only `validation.md`. The revision 3 captures were written but never staged | regenerated all captures from the new export and committed them. `artifacts/screens/` holds **28 WebP files**: 26 browser captures and 2 side-by-sides. `artifacts/asset-manifest.md` is committed with the same text as `web/public/art/LICENSE.md` | `git ls-files artifacts` in the submitted commit lists 30 files |
+| `e75b5598…` Garden simplifies the reference into flat sprite scenery: one frontal bridge, empty lawn, gradient frogs, rectangular castle, straight hill/ground join at y≈508 | yes, at 1600×1000 with `?fixture=0` (`artifacts/screens/side-by-side-1600.webp` before this change showed the same) | **Vista** (`paint.js` `vista()`): nine interlocking raised terraces climb the castle hill and the west hills. They have block-jointed stone retaining walls with moss and ivy, hedge lines and moonlit tree masses, pools with lily pads and moon glints, and waterfalls between terraces. There are **seven arched bridges** (`farBridge()`, 2–5 spans at different elevations, lengths and angles), six domed pavilions, winding paths and layered mist. **Castle** (`castle()`): slender spired towers, stepped halls, arched lit windows, a rose window and a curtain wall with gatehouse towers. **Frog** (`frog()`): rounded cast-brass volumes lit by candlelight with a moonlit rim, lidded eyes, webbed toes, cast warts and verdigris, on a mossy rock. **Join** (`scenery.ts`): the three opaque hill bands drawn by the world above the land edge were removed. The edge is now a dense, irregular tree line under a lighter haze, so the vista's terraces carry on down to it. **Lawn**: 70 ground-cover pieces per sector (shrubs, flowering bushes, cypresses, mossy rocks), and the ground tile is darkened from 32% to 50%. **Camera** (`renderer.ts` `home()`): desktop zoom is `w/2000` (0.8 at 1600), with the founding pedestal at about (0.30 W, 0.77 H), so the land edge sits near mid-screen and the terraced vista fills the upper half, as in the reference | `side-by-side-1600.webp` (fixture 0) and `side-by-side-1600-f100.webp`. The middle distance now shows receding terraces, pools, waterfalls and several bridges up to the castle, and the straight hill band is gone. **The result is still clearly below the reference** in density, illustration quality and lighting. See limitations |
+
+### Commands and results (final source)
+
+| Command | Result |
+| --- | --- |
+| `CANVAS_MODULE=… node web/art-src/generate.mjs backdrop frog frame-left frame-right` | regenerated 4 assets (backdrop 2400×1000, 111 KB) |
+| `cd web && npx tsc --noEmit` | exit 0 |
+| `cd web && npx vitest run` | 2 files, **32/32 passed** |
+| `cd web && npx vite build` | built into `dist/` (after the last source change) |
+| `taste.mjs --out test/scratch/taste` (Playwright outside the repo via `IMD_PLAYWRIGHT`) | **16/16 passed**: render, layout, targets, contrast, casing, tracking, eyebrows, type-sizes, type-faces, glyphs, slogans, repetition, copy-budget, chrome, motion, share |
+| capture script (outside the repo, not delivered) | 26 scenarios: **0 page errors, 0 failed local requests, 0 action errors, no horizontal overflow** |
+
+### Screenshots (`artifacts/screens/`, actual browser captures at deviceScaleFactor 1)
+
+- **Side-by-sides** (left: approved reference scaled to 1600×1000; right: actual capture; each labelled): `side-by-side-1600.webp` (fixture 0, simulated zero-purchase state, every holder unlit) and `side-by-side-1600-f100.webp` (fixture 100).
+- **Desktop 1600×1000.** `d1600-live` is **live** (`#/garden`, 9 s for the reads: sales closed until activation, 0 lit). The **simulated** captures are `d1600-f0`, `d1600-f100`, `d1600-f3000`, `d1600-f10000`, the six-step zoom-outs `d1600-f3000-overview` and `d1600-f10000-overview`, the drag `d1600-f100-pan`, and the Find captures `d1600-popup` (Find 40, anchored popup) and `d1600-f10000-find9876`. Panels: `d1600-light`, `d1600-treasury` (live), `d1600-rewards`, `d1600-mine`, `d1600-how` and `d1600-connect`.
+- **Mobile 390×844**, touch: `m390-live` (live), `m390-f0`, `m390-f100`, `m390-f3000`, `m390-f10000`, `m390-candle` (Find 40, sheet), `m390-menu`, `m390-light`, `m390-treasury` (live) and `m390-connect`.
+
+### Rendering and interaction performance (headless, software rendering, 1600×1000)
+
+`__lastFrame.ms` is the draw time of the last frame. It was read after each of 8 drags, then again after zooming out 6 steps.
+
+| Fixture | Detail median / p95 | Sectors / candles drawn | Overview median / p95 | Sectors / candles drawn |
+| --- | --- | --- | --- | --- |
+| 0 | 0.5 / 1.2 ms | 1 / 0 | 0.2 / 1.9 ms | 1 / 0 |
+| 100 | 1.8 / 3.4 ms | 2 / 100 | 0.3 / 0.5 ms | 2 / 100 |
+| 3,000 | 2.9 / 48.9 ms | 6 / 164 | 0.6 / 0.7 ms | 32 / 3,000 |
+| 10,000 | 4.1 / 7.1 ms | 6 / 164 | 55.9 / 74.0 ms | 67 / 6,352 |
+
+The p95 spikes are frames that build a sector's cached art for the first time. Each sector now carries more ground cover, and the lower opening zoom shows more sectors, so the 10,000 overview reaches 67 sectors. Every drag there brings new sectors into view, and their 0.125× caches are built during those frames. Once built, the same frames cost under 1 ms (fixture 3,000 overview).
+
+### Better Interface review, revision 4
+
+The changes are scenery and camera only; no HTML, CSS, copy or control changed. Accessibility: unchanged. The canvas keeps its `aria-label`, and Find and the register still open any candle without pointing. Layout: no overflow at 320, 390 or 1440 (probe) or in the 26 captures. Writing and typography: unchanged, still six sizes (probe: type-sizes pass). Colors: the scene is darker, and contrast on the HTML text passes in the probe. Text over the canvas sits on its own scrims. UI: the side actions and header are unchanged. Contrast inside the popup and panels was viewed in screenshots, not measured.
+
+### Remaining limitations (revision 4)
+
+- **Visual fidelity: not met.** No image-generation tool was available on this machine, and no licensed illustration was used. All scenery is original procedural painting (Skia via `@napi-rs/canvas`). This revision replaces the flat middle distance with terraces, pools, waterfalls, seven bridges, pavilions, a detailed castle and a modelled frog. It is still visibly simpler than the illustrated reference: flatter shading, less dense foliage, the cutout tree sprites in the near world, and far less architectural detail. It does **not** meet the owner's 99% target. **No similarity score was measured or is claimed.** Reaching it needs an illustrator or an image-generation tool producing layered scenery and transparent sprites.
+- The 390 view keeps its own camera (zoom 0.62), so on phones the vista occupies only a small band above the garden.
+- The vista is one screen-space layer. Panning far east or west shows the same vista with parallax, not new distant scenery.
+- No wallet transaction ran in a browser. Write flows remain covered by the labelled vitest mocks. No physical phone, Safari, Firefox or screen reader was used.
+- Hosting is done by the publishing plane from the committed `dist/`. No publish command was run, and the public URL is not verified here.
+
+---
+
+
 ## Revision 3: reviewer findings on revision 2 (2026-11-17)
 
 These are worker-side checks in headless Chromium (Playwright's Chromium headless shell, software rendering), run against the committed `dist/` served at a `/preview/` subpath. They are recorded here, not independently certified. **Live** means reads from mainnet RPCs. **Simulated** means `?fixture=N`, labelled on screen "Test fixture … not onchain". No transaction was sent, and no address, ABI or economic rule changed.

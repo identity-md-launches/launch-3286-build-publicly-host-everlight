@@ -10,9 +10,11 @@ import { STYLE_NAMES, eth, imd } from "../lib/format";
 import { explainError } from "../lib/errors";
 import { awaitBuy, isRunning, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step } from "../lib/purchase";
 import { readReceipt } from "../lib/receipt";
+import { minedTx, settleBuyReceipt, submissionMeta } from "../lib/chain";
 import { rememberTx } from "../lib/txhash";
 import { parseQuantity } from "../lib/quantity";
 import { ConnectButton } from "../components/ConnectSheet";
+import { WrongNetwork } from "../components/WrongNetwork";
 
 import { store, useGasPrice, useStatus, useWallet } from "../hooks";
 
@@ -33,7 +35,8 @@ export function recoverBuy(tx: PendingTx): Promise<Step> {
   onStep({ name: "buy-pending", hash: tx.hash });
   return awaitBuy(
     {
-      wait: async (hash) => readReceipt(await ethClient.waitForTransactionReceipt({ hash, timeout: 10 * 60_000 })),
+      // locates a replacement from the saved sender, nonce and submission block, then verifies its calldata and events
+      wait: (hash, saved) => settleBuyReceipt(hash, saved),
       remember: rememberTx,
       explain: () => "The receipt of the purchase you sent could not be read yet. It is still saved and this form stays locked so it is not sent twice.",
     },
@@ -173,7 +176,11 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
           ethBalance: () => ethClient.getBalance({ address: account }),
           approve: (amount) => writeContract(config, { address: IMD, abi: erc20Abi, functionName: "approve", args: [GARDEN, amount], chainId: 1 }),
           // follows sped-up or cancelled replacements; the purchase is settled from the mined receipt's own logs
-          wait: async (hash: Hash) => readReceipt(await waitForTransactionReceipt(config, { hash, chainId: 1 })),
+          wait: async (hash: Hash) => {
+            const rec = await waitForTransactionReceipt(config, { hash, chainId: 1 });
+            return readReceipt(rec, (await minedTx(rec.transactionHash)) ?? undefined);
+          },
+          submission: () => submissionMeta(account),
           remember: rememberTx,
           simulate: async (styles, wishes) => {
             const { request } = await simulateContract(config, {
@@ -201,9 +208,12 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
   }
 
   return (
-    <section aria-labelledby="light-title">
-      <h2 id="light-title">Light a candle</h2>
-      <p className="lede">Each candle costs 1 IMD on Ethereum and stays lit in its own place forever. All seven styles cost the same and carry the same rights.</p>
+    <section aria-labelledby="light-title" className="light">
+      <div className="light-head">
+        <h2 id="light-title">Light your candle</h2>
+        <p className="light-price">1 IMD per candle</p>
+      </div>
+      <CandlePreview style={each ? items[0]?.style ?? style : style} />
       {status.data && !open && (
         <p className="notice" role="status">
           {status.data.activated ? "Sales are paused by the owner." : "Sales are closed: the garden has not been activated yet."} You can still compose a candle, browse the garden and claim any rewards.
@@ -212,20 +222,28 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
 
       {/* while a sent purchase has no settled receipt, its draft is locked so it cannot be sent a second time */}
       <fieldset className="draft-lock" disabled={running}>
+      {!each && (
+        <>
+          <StylePicker value={style} onChange={setStyle} name="style-all" />
+          <WishField id="wish-all" value={wish} onChange={setWish} label={qty > 1 ? `Wish for all ${qty} candles (optional)` : "Your wish (optional)"} />
+        </>
+      )}
+      <p className="public-note">Wishes are public and permanent onchain: anyone can read them, and they can never be edited or deleted.</p>
+
       <fieldset className="field">
         <legend>How many candles</legend>
-        <div className="seg">
+        <div className="seg qty">
           {[1, 5, 10].map((n) => (
             <button key={n} type="button" className={preset === n && custom === "" ? "on" : ""} aria-pressed={preset === n && custom === ""} onClick={() => { setCustom(""); setPreset(n); }}>{n}</button>
           ))}
-          <label className="custom">
+          <label className={custom !== "" ? "custom on" : "custom"}>
             <span>Custom</span>
             <input id="qty-custom" type="text" inputMode="numeric" autoComplete="off" value={custom} placeholder={`1–${MAX_BATCH}`}
               aria-invalid={!qtyValid} aria-describedby="qty-help" onChange={(e) => setCustom(e.target.value)} />
           </label>
         </div>
         <p id="qty-help" className={qtyValid ? "fine" : "count bad"} role={qtyValid ? undefined : "alert"}>
-          {parsed.ok ? `${qty} candle${qty > 1 ? "s" : ""} · whole numbers from 1 to ${MAX_BATCH}` : parsed.error}
+          {parsed.ok ? `${qty} candle${qty > 1 ? "s" : ""}, from 1 to ${MAX_BATCH}. New candles take the next free places in the garden.` : parsed.error}
         </p>
       </fieldset>
 
@@ -239,12 +257,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
         </fieldset>
       )}
 
-      {!each ? (
-        <>
-          <StylePicker value={style} onChange={setStyle} name="style-all" />
-          <WishField id="wish-all" value={wish} onChange={setWish} label={qty > 1 ? `Wish for all ${qty} candles (optional)` : "Your wish (optional)"} />
-        </>
-      ) : (
+      {each && (
         <ol className="rows">
           {items.map((it, i) => (
             <li key={i}>
@@ -264,14 +277,12 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
       )}
       </fieldset>
 
-      <dl className="summary">
-        <div><dt>Candles</dt><dd>{qtyValid ? qty : "—"}</dd></div>
-        <div><dt>Total</dt><dd>{qtyValid ? `${qty} IMD` : "—"}</dd></div>
-        <div><dt>Your balance</dt><dd>{address ? (wallet.data ? `${imd(wallet.data.balance)} IMD` : "…") : "Not connected"}</dd></div>
-        <div><dt>Approval</dt><dd>{!qtyValid ? "—" : address && wallet.data ? (needApproval ? `Needed: exactly ${qty} IMD` : "Already covered") : "Checked when you connect"}</dd></div>
-        <div><dt>Estimated gas</dt><dd>{gasEth !== undefined ? `≤ ${eth(gasEth)} ETH` : gas.isError ? "Unavailable" : "Reading…"}</dd></div>
-      </dl>
-      <p className="fine">Gas is an upper bound from the contract docs ({bound.toLocaleString("en-US")} gas for this batch{needApproval ? " plus about 60,000 for the approval" : ""}) at the current gas price. Candles appear in the garden only after the purchase receipt confirms.</p>
+      <p className="total"><span>Total</span> <strong>{qtyValid ? `${qty} IMD` : "—"}</strong></p>
+      <ol className="stages" aria-label="Purchase stages">
+        <li className={stageClass(step, "approve", needApproval)}>{needApproval ? `Approve exactly ${qtyValid ? qty : "…"} IMD` : "Approval covered"}</li>
+        <li className={stageClass(step, "buy", needApproval)}>Confirm the purchase</li>
+        <li className={stageClass(step, "done", needApproval)}>Receipt verified, candles lit</li>
+      </ol>
 
       {gas.isError && (
         <button type="button" className="btn" onClick={() => gas.refetch()} disabled={gas.isFetching}>
@@ -279,12 +290,16 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
         </button>
       )}
       {!isConnected && <ConnectButton label="Connect wallet to light" />}
+      {isConnected && chainId !== 1 && <WrongNetwork action="light candles" />}
       {problems.length > 0 && !running && (
         <ul className="problems" aria-live="polite">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
       )}
-      <button type="button" className="cta wide" disabled={disabled} aria-disabled={disabled} onClick={submit}>
-        {pendingBuy && !isRunning(step) ? "Waiting for the earlier purchase" : running ? "Working…" : !qtyValid ? "Enter 1 to 50 candles" : needApproval && address ? `Approve and light ${qty} candle${qty > 1 ? "s" : ""}` : `Light ${qty} candle${qty > 1 ? "s" : ""}`}
-      </button>
+      {isConnected && (
+        <button type="button" className="cta wide" disabled={disabled} aria-disabled={disabled} onClick={submit}>
+          {pendingBuy && !isRunning(step) ? "Waiting for the earlier purchase" : running ? "Working…" : !qtyValid ? "Enter 1 to 50 candles" : needApproval && address ? `Approve and light ${qty} candle${qty > 1 ? "s" : ""}` : `Light ${qty} candle${qty > 1 ? "s" : ""}`}
+        </button>
+      )}
+      <p className="net-line">Ethereum · gas paid separately</p>
       <div aria-live="polite" className="steps">
         {step && step.name !== "error" && step.name !== "buy-unknown" && (
           <p>
@@ -308,6 +323,40 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
           </div>
         )}
       </div>
+
+      <details className="costs">
+        <summary>Cost details</summary>
+        <dl className="summary">
+          <div><dt>Candles</dt><dd>{qtyValid ? qty : "—"}</dd></div>
+          <div><dt>Total</dt><dd>{qtyValid ? `${qty} IMD` : "—"}</dd></div>
+          <div><dt>Your balance</dt><dd>{address ? (wallet.data ? `${imd(wallet.data.balance)} IMD` : "…") : "Not connected"}</dd></div>
+          <div><dt>Approval</dt><dd>{!qtyValid ? "—" : address && wallet.data ? (needApproval ? `Needed: exactly ${qty} IMD` : "Already covered") : "Checked when you connect"}</dd></div>
+          <div><dt>Estimated gas</dt><dd>{gasEth !== undefined ? `≤ ${eth(gasEth)} ETH` : gas.isError ? "Unavailable" : "Reading…"}</dd></div>
+        </dl>
+        <p className="fine">Gas is an upper bound from the contract docs ({bound.toLocaleString("en-US")} gas for this batch{needApproval ? " plus about 60,000 for the approval" : ""}) at the current gas price. All seven styles cost the same and carry the same rights. Candles appear in the garden only after the purchase receipt is verified.</p>
+      </details>
     </section>
+  );
+}
+
+/** The three purchase stages, marked from the shared purchase step. */
+function stageClass(step: Step | null, stage: "approve" | "buy" | "done", needApproval: boolean): string {
+  const n = step?.name;
+  const at = n === "approve-wallet" || n === "approve-pending" ? 0 : n === "simulating" || n === "buy-wallet" || n === "buy-pending" || n === "buy-unknown" ? 1 : n === "done" ? 3 : -1;
+  const i = ["approve", "buy", "done"].indexOf(stage);
+  if (stage === "approve" && !needApproval && at < 0) return "stage ok";
+  if (at > i) return "stage ok";
+  if (at === i) return "stage now";
+  return "stage";
+}
+
+/** Wick tops (y in the 40x80 candle art) so the live preview flame sits on the wick of every style. */
+const WICK = [10, 10, 0, 30, 10, 22, 36];
+export function CandlePreview({ style }: { style: number }) {
+  return (
+    <div className="preview" aria-hidden="true">
+      <img className="preview-candle" src={ART(style)} alt="" width={80} height={160} />
+      <span className="preview-flame" style={{ "--wick": WICK[style] ?? 10 } as React.CSSProperties} />
+    </div>
   );
 }

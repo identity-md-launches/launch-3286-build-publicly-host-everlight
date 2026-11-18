@@ -58,3 +58,8 @@ Nothing in any layer is copied from the reference image, and no candle is pre-li
 - Removed from the site: `backdrop.webp` (a complete painted garden drawn in screen space behind the world, which caused the picture-in-picture effect) and the screen-fixed foreground frames `canopy.webp`, `frame-left.webp`, `frame-right.webp`. Their generators remain in `web/art-src/paint.js` but are no longer exported to `web/public/art/`.
 - Added: the procedural distant vista in `web/src/garden/vista.ts` (sky, moon, clouds, three ridges, castle, far terraces). Original code, CC0 1.0, no third-party or reference pixels.
 - **Art blocker (unresolved):** the brief asks for illustrated landscape layers and transparent assets made with image-generation or illustration tools. None was available to this worker: no image-generation tool or illustration agent was offered in this environment. Every asset here is therefore procedural (canvas-painted). It is **not** claimed to match the approved reference; see `artifacts/screens/side-by-side-*.jpg` for an honest comparison. To close this, the requester must supply illustrated layers or run the job with an image-generation tool; the renderer accepts replacements of the same names (sprites in `web/public/art/`, the vista via `makeVista()`).
+
+## Revision 4
+- `web/src/garden/vista.ts`: repainted procedural vista (original, CC0 like the rest of the art): tiled sky/far/mid/near ridge layers plus one castle image (moon, castle hill with empty terraces and falls, castle). No image-generation or 3D tool was available; no third-party art was added.
+- `web/public/og.png`: screenshot of this export at 1200×630 with fixture 0 (empty garden), fixture label removed.
+- Candle preview flame: CSS only (`web/src/everlight.css`).

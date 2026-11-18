@@ -1,13 +1,16 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { placePopup, type Placement } from "./lib/popup";
 import { useAccount } from "wagmi";
-import { ETHERSCAN, ethClient } from "./config";
+import { ETHERSCAN } from "./config";
 import { Garden, SHEET_QUERY, type GardenHandle } from "./garden/Garden";
 import { ConnectSheet } from "./components/ConnectSheet";
 import { LightPanel, recoverBuy } from "./panels/LightPanel";
 import { CandleDetail, HowPanel, MinePanel, Register, RewardsPanel, TreasuryPanel } from "./panels/Panels";
 import { FIXTURE, store, useCandles, useMyIds, useReducedMotion, useStatus } from "./hooks";
 import { pendingStore, type PendingTx } from "./lib/purchase";
+import { settleReceipt } from "./lib/chain";
+import { settleClaim } from "./lib/receipt";
+import { imd } from "./lib/format";
 import type { Candle } from "./lib/candles";
 
 const ROUTES = [
@@ -19,7 +22,9 @@ const ROUTES = [
   ["how", "How it works"],
 ] as const;
 /** Header tabs, in the reference order; Light a candle and How it works live in the side actions. */
-const NAV = ROUTES.slice(0, 4);
+const NAV = [...ROUTES.slice(0, 4), ROUTES[5]];
+/** At this width the Light your candle form is docked beside the garden, as in the approved design. */
+const DOCK_QUERY = "(min-width: 1180px)";
 /** Contract split of every 1 IMD candle (WishGarden): unchanged economics. */
 const SPLIT = [
   ["30%", "Burn", "flame"],
@@ -65,21 +70,27 @@ function usePendingRecovery(push: (t: Toast) => void) {
         });
         return;
       }
-      ethClient
-        .waitForTransactionReceipt({ hash: tx.hash, timeout: 10 * 60_000 })
-        .then((r) => {
+      // approvals and claims: follow a replacement from the saved sender/nonce; a claim counts only with the
+      // garden RewardsClaimed event for this account in the mined transaction (never for a cancel/self-transfer)
+      settleReceipt(tx.hash, tx)
+        .then(({ receipt: r, mined }) => {
           pendingStore.remove(tx.hash);
-          const ok = r.status === "success";
-          push({ id: tx.hash, bad: !ok, href: `${ETHERSCAN}/tx/${tx.hash}`, text: ok ? (tx.kind === "buy" ? "Your earlier purchase confirmed. Its candles are lit." : `Your earlier ${tx.kind} confirmed.`) : `Your earlier ${tx.kind === "buy" ? "purchase" : tx.kind} reverted.` });
-          if (ok) store.sync();
+          const href = `${ETHERSCAN}/tx/${r.transactionHash}`;
+          if (tx.kind === "claim") {
+            const v = settleClaim(r, mined, tx.account);
+            push({ id: tx.hash, bad: !v.ok, href, text: v.ok ? `Your earlier claim confirmed: ${imd(v.amount)} IMD claimed.` : v.message });
+          } else {
+            const ok = r.status === "success" && r.transactionHash === tx.hash;
+            push({ id: tx.hash, bad: !ok, href, text: ok ? "Your earlier approval confirmed." : "Your earlier approval was replaced or reverted; approve again when you light candles." });
+          }
+          store.sync();
         })
         .catch(() => push({ id: tx.hash, bad: true, href: `${ETHERSCAN}/tx/${tx.hash}`, text: "An earlier transaction has no receipt yet. It is still saved; reload later to check again." }));
     });
   }, []);
 }
 
-function useNarrow() {
-  const q = SHEET_QUERY;
+function useNarrow(q = SHEET_QUERY) {
   const [n, setN] = useState(() => matchMedia(q).matches);
   useEffect(() => {
     const m = matchMedia(q);
@@ -112,6 +123,8 @@ export default function App() {
   const mine = useMemo(() => new Set(myIds.data ?? []), [myIds.data]);
   const total = cs.candles.length;
   const narrow = useNarrow();
+  const wide = useNarrow(DOCK_QUERY);
+  const docked = wide && (route === "garden" || route === "light");
   // the split disclosure is a sheet on phones: while it is open the map tools step aside
   const [splitOpen, setSplitOpen] = useState(() => !matchMedia(SHEET_QUERY).matches);
   useEffect(() => setSplitOpen(!narrow), [narrow]);
@@ -128,7 +141,7 @@ export default function App() {
     const strip = document.querySelector(".strip")?.getBoundingClientRect().top ?? innerHeight;
     const intro = document.querySelector(".intro")?.getBoundingClientRect() ?? null;
     const base = (el.offsetParent as HTMLElement | null)?.getBoundingClientRect().top ?? 0;
-    const p = placePopup(anchor, { w: el.offsetWidth, h: el.offsetHeight }, { w: innerWidth, top: header, bottom: strip }, intro && intro.height > 0 ? intro : null);
+    const p = placePopup(anchor, { w: el.offsetWidth, h: el.offsetHeight }, { w: document.querySelector(".light-dock")?.getBoundingClientRect().left ?? innerWidth, top: header, bottom: strip }, intro && intro.height > 0 ? intro : null);
     setPlace((old) => (old && old.left === p.left && old.top === p.top && old.hidden === p.hidden && old.below === p.below && old.overlapsAvoid === p.overlapsAvoid && old.base === base ? old : { ...p, base }));
   });
 
@@ -144,7 +157,7 @@ export default function App() {
     return () => removeEventListener("hashchange", f);
   }, []);
   useEffect(() => {
-    if (route !== "garden") panelHeading.current?.focus();
+    if (route !== "garden" && !matchMedia(DOCK_QUERY).matches) panelHeading.current?.focus();
   }, [route]);
   // Escape closes the innermost layer: the candle popup, then the menu, then an open panel.
   useEffect(() => {
@@ -230,15 +243,15 @@ export default function App() {
         handleRef={(h) => (garden.current = h)}
         onStats={setStats}
         onAnchor={setAnchor}
-        toolsHidden={route !== "garden" || menu || (narrow && (!!sel || splitOpen))}
+        toolsHidden={(route !== "garden" && !docked) || menu || (narrow && (!!sel || splitOpen))}
       />
 
 
       <main id="main" className="overlay">
-        {route === "garden" && (
+        {(route === "garden" || docked) && (
           <div className={(anchored && place?.overlapsAvoid && !place.hidden) || (narrow && !!sel) ? "intro intro-yield" : "intro"}>
-            <h1>Light a wish in the garden</h1>
-            <p className="intro-line">Permanent candles on Ethereum: 1 IMD each, with a public wish.</p>
+            <h1>A wish, a flame, a place forever</h1>
+            <p className="intro-line">Write a wish and light a permanent candle in the garden for 1 IMD on Ethereum.</p>
             <a className="cta intro-cta" href="#/light">{"Light a candle\u00a0· 1\u00a0IMD"}</a>
             <p className="status-line" role="status">
               <span className={`dot ${status.data?.open ? "on" : ""}`} aria-hidden="true" /> {salesLine} · {cs.total === null ? "counting candles…" : `${total} lit`}
@@ -255,7 +268,7 @@ export default function App() {
           <a className="side-act" href="#/how"><Icon name="sprout" /><span>How it works</span></a>
         </nav>
 
-        <div className={route === "garden" ? "strip" : "strip strip-under"}>
+        <div className={route === "garden" || docked ? "strip" : "strip strip-under"}>
           <form className="find" onSubmit={find} role="search">
             <label htmlFor="find" className="sr">Find a candle by its number</label>
             <svg className="find-ic" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><circle cx="12" cy="12" r="7" /><circle cx="12" cy="12" r="2.5" /><path d="M12 2v3m0 14v3M2 12h3m14 0h3" /></svg>
@@ -275,7 +288,13 @@ export default function App() {
           {findError && <p id="find-err" className="find-err" role="alert">{findError}</p>}
         </div>
 
-        {route !== "garden" && (
+        {docked && (
+          <aside className="light-dock" aria-label="Light your candle">
+            <LightPanel onLit={(id) => { if (id) jump(id); }} />
+          </aside>
+        )}
+
+        {route !== "garden" && !docked && (
           <aside tabIndex={-1} className="panel" aria-label={ROUTES.find(([k]) => k === route)![1]} ref={panelHeading}>
             <a className="x panel-x" href="#/garden" aria-label="Close panel and return to the garden">×</a>
             <div className="panel-body">

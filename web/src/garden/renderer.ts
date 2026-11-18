@@ -1,7 +1,7 @@
 import type { Candle } from "../lib/candles";
 import { HOLDER_TOP, HORIZON_CUT, SECTOR_H, SECTOR_MARGIN, SECTOR_W, SLOTS_PER_SECTOR, cameraBounds, horizonY, positionOf, sectorAt, sectorCount, sectorOrigin, streamX } from "./layout";
 import { BASE_PAD, drawSectorBase, drawSectorUpright } from "./scenery";
-import { VISTA_CASTLE_X, VISTA_FOOT, VISTA_H, VISTA_TOP, VISTA_W, makeVista } from "./vista";
+import { CASTLE_W, VISTA_CASTLE_X, VISTA_FOOT, VISTA_H, VISTA_TOP, VISTA_W, makeVista, type Vista } from "./vista";
 
 export interface Camera { x: number; y: number; z: number }
 
@@ -59,7 +59,9 @@ export class GardenRenderer {
   /** Cells built per frame are limited; when the budget runs out the frame is redrawn next tick. */
   private budget = 6;
   pending = false;
-  private vista: HTMLCanvasElement;
+  private vista: Vista;
+  private frameNo = 0;
+  private openW = 0;
   private groundPat: CanvasPattern | null = null;
   private litCache = new Map<number, { count: number; canvas: HTMLCanvasElement }>();
   private glow: HTMLCanvasElement;
@@ -204,15 +206,22 @@ export class GardenRenderer {
     ctx.fillRect(0, 0, this.w, this.h);
     if (hy < -40) return;
     const v = this.vista;
+    const cw = CASTLE_W;
     // scale with zoom like a far layer, but never taller than the visible sky band, so moon and castle stay in view
     const vsMax = (Math.min(Math.max(this.h * 0.7, 320), 760) / VISTA_H) * Math.min(1.25, Math.max(0.62, 0.85 + 0.3 * Math.log2(cam.z + 0.35)));
     const vs = Math.min(vsMax, Math.max(0.3, (hy - 30) / (VISTA_H * 0.78))); // 70px of the band sits under the header
     const tw = VISTA_W * vs, th = VISTA_H * vs;
     const top = hy + 40 * vs - th;
     // parallax: the castle sits right of centre at the opening view and drifts slowly as the camera pans
-    let x = (900 - cam.x) * cam.z * 0.12 + this.w * 0.68 - VISTA_CASTLE_X * tw;
-    x = (((x % tw) + tw) % tw) - tw;
-    for (; x < this.w; x += tw) ctx.drawImage(v, x, top, tw + 1, th);
+    // the castle sits right of centre in the part of the screen the docked form leaves open
+    if (this.frameNo++ % 30 === 0) this.openW = Math.min(this.w, document.querySelector(".light-dock")?.getBoundingClientRect().left ?? this.w);
+    const x0 = (900 - cam.x) * cam.z * 0.12 + (this.openW || this.w) * 0.66 - VISTA_CASTLE_X * tw;
+    const start = (((x0 % tw) + tw) % tw) - tw;
+    v.layers.forEach((layer, i) => {
+      for (let x = start; x < this.w; x += tw) ctx.drawImage(layer, x, top, tw + 1, th);
+      // the castle is one image, drawn once: wide screens never repeat it
+      if (i === v.castleAfter) ctx.drawImage(v.castle, x0 + VISTA_CASTLE_X * tw - (cw * vs) / 2, top, cw * vs, th);
+    });
     ctx.fillStyle = VISTA_FOOT;
     ctx.fillRect(0, top + th - 1, this.w, this.h);
   }

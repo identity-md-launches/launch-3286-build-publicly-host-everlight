@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { config } from "./config";
 import App from "./App";
 import "./styles.css";
+import "./everlight.css";
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 2, staleTime: 15_000, refetchOnWindowFocus: false } } });
 

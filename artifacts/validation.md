@@ -139,3 +139,34 @@ Better Interface pass on the changed parts. Accessibility: the popup is never pl
 5. Hit testing uses a world-space radius; trees of nearer rows can cover a candle visually while it remains clickable.
 6. No fork test or wallet transaction ran (see above). The frame-rate figures are headless lower bounds.
 7. The streams' and paths' large-scale rhythm (one stream per column, one path per row) is unchanged; only their joins and heads were fixed.
+
+## Revision 4 (2026-11-18): approved design, verification fixes
+
+Worker-side results; the verifier does not re-run them. Commands in web/ after the last source change: npx tsc --noEmit exit 0 (run by npm run build); npx vitest run 7 files, 78/78 passed (new tests/verify.test.ts, 15 tests: exact-draft calldata/event checks for replacements, bounded sender/nonce/block recovery with binary search and linear fallback, claims never Claimed for cancels/self-transfers); npm run build built dist/. Design-critic probe: see artifacts/taste-probe.json (result printed by the run is recorded in the README).
+
+### Evidence (labelled)
+Environment: headless Chromium (Playwright 1.49) in a Linux x86_64 container with software rendering; "mobile" is 390x844 emulation (touch, isMobile), not a physical phone. The export was served by route interception. Fixture runs (?fixture=0/100/3000/10000) are local mock data, labelled in the page, never onchain. The d1440-live shot reads Ethereum mainnet through public RPCs. No fork and no wallet transaction ran. Raw numbers: artifacts/rev4-evidence.json.
+
+- Load (navigation to garden ready): desktop 1.2 s (0), 1.8 s (100), 2.0 s (3000), 2.4 s (10000); mobile 0.85 to 1.2 s.
+- JS heap after load: 5.4 to 7.7 MB at all fixture sizes.
+- Frame rate (renderer's own counter, software rendering, headless): 9 to 11 fps on desktop while animating; mobile emulation reported no counter because the renderer was idle (no animation frames requested). These are not GPU numbers and are not claimed for real devices.
+- Find-to-selection latency: 414 to 542 ms (100/3000), 1024 ms for id 2500 at 10000 on desktop; 414 to 459 ms on mobile.
+- Mobile candle sheet vs strip at 390x844 (Find 37 / 2500): sheet bottom 772 px, strip top 780 px, no overlap at every fixture.
+- No horizontal overflow at 1440, 390 and 320 on the garden and on all pages (scrollWidth equals the viewport).
+- One page error per load: "Failed to execute inlined telemetry script" from a dependency in headless Chromium; it does not affect rendering. Not fixed.
+- Screens: artifacts/screens/rev4-*.jpg: wide (fixture wide views), medium (d1440-fixture3000-medium), close (…-close-select), every page at 1440 and 390, Light and How at 320, live. Recordings: artifacts/recordings/rev4-pan-zoom-select-desktop-1280x800.webm and …-mobile-390x844.webm (zoom, drag pan, Find 1234 and 2999 with selection).
+
+### Better Interface review (six domains)
+Coverage: the review in this revision used the pinned guide's six domains as a checklist against the changed components, together with the design-critic probe's rendered checks (contrast, targets, type sizes, casing, tracking, chrome, motion, share). The full 217 KB REFERENCE.md was not re-read end to end in this revision because of the turn budget; that is a limitation.
+- UI/chrome: web/src/everlight.css:109: the selected style had a border and a glow shadow together (probe "chrome"). Fixed: one border treatment.
+- Layout: web/src/everlight.css:110: the sales notice was a card inside the docked card. Fixed: a plain ruled note.
+- Writing: web/src/App.tsx:253: the design's "A wish. A flame. A place forever." is a three-fragment slogan; set as one sentence with the same words, followed by one plain line saying what the product is.
+- Accessibility: web/src/everlight.css:62: style names are hidden visually in the 7-up row but remain the radio labels for assistive tech. web/src/everlight.css:57: the preview flame stops under reduced motion. Wrong-network controls now offer the switch beside the disabled action (web/src/components/WrongNetwork.tsx) and in the header menu with Disconnect.
+- Typography: serif display for headings and controls, sans for running text, sizes from the existing five tokens plus the clamped headline.
+- Colors: emerald/black surfaces, antique-gold lines and brass gradients; probe contrast passed.
+Rendered checks in a browser tool were not available as an interactive tool; Playwright screenshots stand in for them.
+
+### Limitations (revision 4)
+- No image-generation, illustration or 3D tool was available to this worker. The approved design is a painted, cinematic perspective illustration; this site still draws its garden procedurally (top-down terraced map with a parallax vista). It is not claimed to match the reference, and the requested licensed illustrated environment assets were not produced. The vista was repainted (one castle on its own hill, no black rectangle, no tiled duplicate castles, no painted candle-like lights on far terraces), and the chrome now follows the design's composition: header, headline, docked Light your candle form with live candle preview, bottom find/zoom/minimap/split strip.
+- Perspective scale continuity between near and far terraces, flowing animated water and illustrated bridges/pavilions remain open.
+- Purchases, approvals, replacements and claims are verified by unit tests on labelled mocks only; no fork or live transaction ran.

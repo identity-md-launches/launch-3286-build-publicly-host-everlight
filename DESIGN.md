@@ -134,3 +134,22 @@ At 390 wide the first screen shows the garden, the headline and the "Light a can
 - **Springs**: in the home row each stream starts at `springY(gx)`, 95 units below the skyline at the stream's x, in a small pool under a cluster of mossy boulders with a short cascade; the stream widens from 30% over its first 140 units. The column's sector waterfall moves at least 150 units downstream of the spring and is left out where that would put it on the bridge.
 
 Positions depend only on a candle's position (id − 1), so they are stable across reloads and new purchases. Slot positions (`sectorPlan`, `positionOf`) are unchanged from the previous round; this round changed only how scenery is drawn around them. Hit testing searches the 3×3 sector neighbourhood around the pointer, using the candle body 42 units above the slot. LOD: below 0.3× zoom, cached low-resolution sector images with cached per-sector light layers; from 0.3×, sprites; from 0.7×, animated flames.
+
+## Revision 4 additions (implemented in `web/src/everlight.css`, loaded after `styles.css`)
+
+**Tokens.** `--dock-w: 380px`; brass `--brass-1 #f3d48a`, `--brass-2 #b88a35`, `--brass-3 #5c4115`; `--panel-bg` a vertical gradient `rgb(9 26 19 / .96) → rgb(4 12 8 / .97) → rgb(3 8 6 / .98)`. Existing colour, spacing and radius tokens are unchanged.
+
+**Typography.** Headline: serif italic, `clamp(var(--text-xl), 3.2vw, 2.75rem)` (one sentence, "A wish, a flame, a place forever"); 360 px and below it drops to `--text-lg`. Form labels, legends, quantity pills, Total and Cost details use the serif at weight 400; helper text is sans `--text-sm`. No other sizes were added.
+
+**Components.**
+- *Header*: Connect wallet is outlined gold on near-black; the current page tab has a 2 px gold underline; Wrong network is a coral-bordered button opening a menu (account, Switch to Ethereum, Disconnect).
+- *Light dock* (`.light-dock`, ≥1180 px): fixed right, between header and strip, 380 px, gold hairline border with an inset double frame, scrolls internally.
+- *Candle preview* (`.preview`): 200 px (168 px on phones) dark emerald well with a warm radial glow, the selected style's SVG at 2× and a brass rim; a CSS flame sits on each style's wick (`--wick`) and flickers, static under reduced motion.
+- *Style row*: seven equal tiles in one grid row; the selected tile has a gold border and a lighter emerald fill; names are visually hidden but remain the radio labels.
+- *Quantity*: three pill buttons plus a wider Custom pill with an inline numeric input (wraps to its own row at ≤360 px).
+- *Total* with gold hairlines either side; *Stages* list (dot markers: outline = to do, gold glow = now, emerald = done).
+- *Primary CTA*: brass gradient, 52 px tall, 12 px radius; muted bronze when disabled.
+- *Wrong-network box*: coral border, explanation plus Switch to Ethereum.
+- *Candle popup*: title, the wish in serif (wraps anywhere), then the record and explorer links.
+
+**Responsive behaviour.** ≥1180 px: form docked, quick-action column hidden, headline limited to the open area, toasts move left of the dock, castle placed in the open area. 901–1179 px: previous layout (side actions, form in a panel). ≤900 px: candle sheet above the strip (`z-index 30`, scrolls internally), map tools hidden while it is open. ≤360 px: tighter style row, Custom on its own row, smaller headline.

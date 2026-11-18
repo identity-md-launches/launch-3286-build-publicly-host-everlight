@@ -8,6 +8,13 @@ export interface PendingTx {
   account: string;
   quantity?: number;
   createdAt: number;
+  /** Sender, nonce and the block current at submission: bound the search for a replacement after a reload. */
+  from?: string;
+  nonce?: number;
+  block?: string;
+  /** The exact draft that was signed (buy only): a replacement must carry the same calldata and events. */
+  styles?: number[];
+  wishes?: string[];
 }
 
 const PENDING_KEY = "everlight:v1:pending";
@@ -69,7 +76,16 @@ export interface Receipt {
   /** Hash of the mined transaction: differs from the sent hash when the wallet sped up or replaced it. */
   hash?: Hash;
   purchase?: PurchaseEvent | null;
+  /** CandleCreated events emitted by the garden in this receipt. */
+  created?: { id: number; purchaser: string; style: number; wish: string }[];
+  /** The mined transaction: sender, target and decoded buyCandles calldata (null when it is not buyCandles). */
+  from?: string;
+  to?: string | null;
+  call?: { styles: number[]; wishes: string[] } | null;
 }
+export interface Draft { styles: number[]; wishes: string[] }
+
+const same = (a: readonly unknown[], b: readonly unknown[]) => a.length === b.length && a.every((v, i) => v === b[i]);
 
 export const REPLACED_MESSAGE =
   "This purchase was cancelled or replaced in your wallet, so no candles were lit and no IMD was taken for them. Your wish is kept; you can light it again.";
@@ -78,11 +94,23 @@ export const REPLACED_MESSAGE =
  * A purchase is complete only when its mined receipt succeeded and carries the garden's CandlesPurchased
  * event for this buyer and quantity. The mined hash (a sped-up replacement's, if any) is the one linked.
  */
-export function settleBuy(r: Receipt, sent: Hash, account: string, quantity?: number): Step {
+export function settleBuy(r: Receipt, sent: Hash, account: string, quantity?: number, draft?: Draft): Step {
   if (r.status !== "success") return { name: "error", message: "The purchase reverted onchain. Your IMD was not taken; only gas was spent." };
   const ev = r.purchase;
-  if (!ev || ev.purchaser.toLowerCase() !== account.toLowerCase() || (quantity !== undefined && ev.quantity !== quantity)) {
+  const q = draft ? draft.styles.length : quantity;
+  if (!ev || ev.purchaser.toLowerCase() !== account.toLowerCase() || (q !== undefined && ev.quantity !== q)) {
     return { name: "error", message: REPLACED_MESSAGE };
+  }
+  if (draft) {
+    // the mined transaction (the sent one or its replacement) must be this account calling buyCandles with
+    // exactly the signed styles and wishes, and the garden must have created exactly those candles in order
+    if (r.from !== undefined && r.from.toLowerCase() !== account.toLowerCase()) return { name: "error", message: REPLACED_MESSAGE };
+    if (r.call !== undefined && (!r.call || !same(r.call.styles, draft.styles) || !same(r.call.wishes, draft.wishes))) return { name: "error", message: REPLACED_MESSAGE };
+    if (r.created !== undefined) {
+      const c = [...r.created].sort((a, b) => a.id - b.id);
+      const ok = c.length === draft.styles.length && c.every((x, i) => x.id === ev.firstId + i && x.purchaser.toLowerCase() === account.toLowerCase() && x.style === draft.styles[i] && x.wish === draft.wishes[i]);
+      if (!ok) return { name: "error", message: REPLACED_MESSAGE };
+    }
   }
   return { name: "done", hash: r.hash ?? sent, firstId: ev.firstId };
 }
@@ -112,12 +140,14 @@ export interface PurchaseDeps {
   allowance: () => Promise<bigint>;
   ethBalance: () => Promise<bigint>;
   approve: (amount: bigint) => Promise<Hash>;
-  /** Resolves with the mined receipt (following replacements); throws only on RPC failure. */
-  wait: (hash: Hash) => Promise<Receipt>;
+  /** Resolves with the mined receipt (following replacements, or recovering them from the saved sender and nonce). */
+  wait: (hash: Hash, tx?: PendingTx) => Promise<Receipt>;
   /** Records candle id -> mined transaction hash for the explorer links. */
   remember?: (firstId: number, quantity: number, hash: Hash) => void;
   simulate: (styles: number[], wishes: string[]) => Promise<unknown>;
   buy: (request: unknown) => Promise<Hash>;
+  /** Sender nonce and current block read just before the purchase is requested (for bounded recovery). */
+  submission?: () => Promise<{ nonce: number; block: bigint }>;
   explain: (e: unknown) => string;
   storage?: Storage | null;
 }
@@ -159,11 +189,16 @@ export async function runPurchase(
     }
     onStep({ name: "simulating" });
     const request = await deps.simulate(styles, wishes);
+    const sub = await deps.submission?.().catch(() => undefined);
     onStep({ name: "buy-wallet" });
     const hash = await deps.buy(request);
-    pendingStore.add({ hash, kind: "buy", account: deps.account, quantity: styles.length, createdAt: Date.now() }, deps.storage);
+    const tx: PendingTx = {
+      hash, kind: "buy", account: deps.account, quantity: styles.length, createdAt: Date.now(),
+      from: deps.account, nonce: sub?.nonce, block: sub?.block.toString(), styles: [...styles], wishes: [...wishes],
+    };
+    pendingStore.add(tx, deps.storage);
     onStep({ name: "buy-pending", hash });
-    return await awaitBuy(deps, { hash, kind: "buy", account: deps.account, quantity: styles.length, createdAt: 0 }, onStep);
+    return await awaitBuy(deps, tx, onStep);
   } catch (e) {
     return fail(deps.explain(e));
   }
@@ -180,14 +215,15 @@ export async function awaitBuy(
 ): Promise<Step> {
   let r: Receipt;
   try {
-    r = await deps.wait(tx.hash);
+    r = await deps.wait(tx.hash, tx);
   } catch (e) {
     const s: Step = { name: "buy-unknown", hash: tx.hash, message: deps.explain(e) };
     onStep(s);
     return s;
   }
   pendingStore.remove(tx.hash, deps.storage);
-  const s = settleBuy(r, tx.hash, tx.account, tx.quantity);
+  const draft = tx.styles && tx.wishes && tx.styles.length === tx.wishes.length ? { styles: tx.styles, wishes: tx.wishes } : undefined;
+  const s = settleBuy(r, tx.hash, tx.account, tx.quantity, draft);
   if (s.name === "done" && r.purchase) deps.remember?.(r.purchase.firstId, r.purchase.quantity, s.hash);
   onStep(s);
   return s;

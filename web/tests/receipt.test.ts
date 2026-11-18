@@ -15,7 +15,7 @@ const log = (address: string, first: bigint, qty: bigint) => ({
 describe("purchase receipts (labelled encoded logs, no chain)", () => {
   const B = `0x${"c3".repeat(32)}` as const;
   it("reads the garden's CandlesPurchased event and the mined hash", () => {
-    expect(readReceipt({ status: "success", transactionHash: B, logs: [log(GARDEN, 1n, 3n)] })).toEqual({
+    expect(readReceipt({ status: "success", transactionHash: B, logs: [log(GARDEN, 1n, 3n)] })).toMatchObject({
       status: "success", hash: B, purchase: { purchaser: buyer, firstId: 1, quantity: 3 },
     });
   });

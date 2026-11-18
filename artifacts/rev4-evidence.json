@@ -1,0 +1,233 @@
+{
+ "environment": "Headless Chromium 131.0.6778.33 (Playwright 1.49), Linux x86_64 container, software rendering; mobile = 390x844 emulation (isMobile, touch, DPR 1), not a real phone",
+ "runs": [
+  {
+   "view": "d1440",
+   "fixture": 0,
+   "loadMs": 1215,
+   "heapMB": 5.4,
+   "fps": null,
+   "note": "no render-stats element: renderer idle",
+   "scrollWidth": 1440,
+   "errors": [
+    "undefined"
+   ]
+  },
+  {
+   "view": "d1440",
+   "fixture": 100,
+   "loadMs": 1824,
+   "heapMB": 5.7,
+   "fps": 11,
+   "ms": 52.3,
+   "drawn": 96,
+   "lod": 2,
+   "scrollWidth": 1440,
+   "errors": [
+    "undefined"
+   ],
+   "findLatencyMs": 474
+  },
+  {
+   "view": "d1440",
+   "fixture": 3000,
+   "loadMs": 2043,
+   "heapMB": 7.7,
+   "fps": 9,
+   "ms": 60.4,
+   "drawn": 168,
+   "lod": 2,
+   "scrollWidth": 1440,
+   "errors": [
+    "undefined"
+   ],
+   "findLatencyMs": 542
+  },
+  {
+   "view": "d1440",
+   "fixture": 10000,
+   "loadMs": 2416,
+   "heapMB": 7.4,
+   "fps": 9,
+   "ms": 42.1,
+   "drawn": 168,
+   "lod": 2,
+   "scrollWidth": 1440,
+   "errors": [
+    "undefined"
+   ],
+   "findLatencyMs": 1024
+  },
+  {
+   "view": "m390",
+   "fixture": 0,
+   "loadMs": 851,
+   "heapMB": 5.4,
+   "fps": null,
+   "note": "no render-stats element: renderer idle",
+   "scrollWidth": 390,
+   "errors": [
+    "undefined"
+   ]
+  },
+  {
+   "view": "m390",
+   "fixture": 100,
+   "loadMs": 847,
+   "heapMB": 6.2,
+   "fps": null,
+   "note": "no render-stats element: renderer idle",
+   "scrollWidth": 390,
+   "errors": [
+    "undefined"
+   ],
+   "findLatencyMs": 414,
+   "sheet": {
+    "sheetBottom": 772,
+    "stripTop": 780,
+    "overlapsStrip": false
+   }
+  },
+  {
+   "view": "m390",
+   "fixture": 3000,
+   "loadMs": 965,
+   "heapMB": 5.7,
+   "fps": null,
+   "note": "no render-stats element: renderer idle",
+   "scrollWidth": 390,
+   "errors": [
+    "undefined"
+   ],
+   "findLatencyMs": 455,
+   "sheet": {
+    "sheetBottom": 772,
+    "stripTop": 780,
+    "overlapsStrip": false
+   }
+  },
+  {
+   "view": "m390",
+   "fixture": 10000,
+   "loadMs": 1202,
+   "heapMB": 6.7,
+   "fps": null,
+   "note": "no render-stats element: renderer idle",
+   "scrollWidth": 390,
+   "errors": [
+    "undefined"
+   ],
+   "findLatencyMs": 459,
+   "sheet": {
+    "sheetBottom": 772,
+    "stripTop": 780,
+    "overlapsStrip": false
+   }
+  },
+  {
+   "view": "d1440",
+   "page": "light",
+   "scrollWidth": 1440,
+   "errors": [
+    "undefined"
+   ]
+  },
+  {
+   "view": "d1440",
+   "page": "mine",
+   "scrollWidth": 1440,
+   "errors": [
+    "undefined"
+   ]
+  },
+  {
+   "view": "d1440",
+   "page": "rewards",
+   "scrollWidth": 1440,
+   "errors": [
+    "undefined"
+   ]
+  },
+  {
+   "view": "d1440",
+   "page": "treasury",
+   "scrollWidth": 1440,
+   "errors": [
+    "undefined"
+   ]
+  },
+  {
+   "view": "d1440",
+   "page": "how",
+   "scrollWidth": 1440,
+   "errors": [
+    "undefined"
+   ]
+  },
+  {
+   "view": "m390",
+   "page": "light",
+   "scrollWidth": 390,
+   "errors": [
+    "undefined"
+   ]
+  },
+  {
+   "view": "m390",
+   "page": "mine",
+   "scrollWidth": 390,
+   "errors": [
+    "undefined"
+   ]
+  },
+  {
+   "view": "m390",
+   "page": "rewards",
+   "scrollWidth": 390,
+   "errors": [
+    "undefined"
+   ]
+  },
+  {
+   "view": "m390",
+   "page": "treasury",
+   "scrollWidth": 390,
+   "errors": [
+    "undefined"
+   ]
+  },
+  {
+   "view": "m390",
+   "page": "how",
+   "scrollWidth": 390,
+   "errors": [
+    "undefined"
+   ]
+  },
+  {
+   "view": "s320",
+   "page": "light",
+   "scrollWidth": 320,
+   "errors": [
+    "undefined"
+   ]
+  },
+  {
+   "view": "s320",
+   "page": "how",
+   "scrollWidth": 320,
+   "errors": [
+    "undefined"
+   ]
+  },
+  {
+   "view": "d1440",
+   "live": true,
+   "loadMs": 1215,
+   "status": " Sales closed until activation · 0 lit",
+   "errors": [
+    "undefined"
+   ]
+  }
+ ]
+}

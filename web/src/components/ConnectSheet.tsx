@@ -80,10 +80,17 @@ export function ConnectSheet() {
     if (chainId !== mainnet.id)
       return (
         <div className="wallet-ctl">
-          <button className="cta" onClick={() => switchChain({ chainId: mainnet.id })} disabled={switching}>
-            {switching ? "Switching…" : "Switch to Ethereum"}
-          </button>
-          {switchError && <span className="note" role="alert">Switch in your wallet, then try again.</span>}
+          <button className="cta warn" aria-expanded={menu} onClick={() => setMenu((m) => !m)}>Wrong network</button>
+          {menu && (
+            <div className="wallet-menu">
+              <p className="note">{short(address)} is on another network. Purchases and claims need Ethereum.</p>
+              <button className="row" onClick={() => switchChain({ chainId: mainnet.id }, { onSuccess: () => setMenu(false) })} disabled={switching}>
+                {switching ? "Confirm in your wallet…" : "Switch to Ethereum"}
+              </button>
+              <button className="row" onClick={() => { setMenu(false); disconnect(); }}>Disconnect</button>
+              {switchError && <p className="note bad" role="alert">The switch was not completed. Approve it in your wallet, then try again.</p>}
+            </div>
+          )}
         </div>
       );
     return (

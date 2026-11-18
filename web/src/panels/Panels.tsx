@@ -1,3 +1,6 @@
+import { minedTx, submissionMeta } from "../lib/chain";
+import { settleClaim } from "../lib/receipt";
+import { WrongNetwork } from "../components/WrongNetwork";
 import { useEffect, useRef, useState } from "react";
 import { useAccount } from "wagmi";
 import { simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
@@ -40,6 +43,7 @@ export function CandleDetail({ c, onClose, mine }: { c: Candle; onClose: () => v
         <h2 id="detail-title">Candle #{c.id}</h2>
         <button className="x" aria-label="Close candle details" onClick={onClose}>×</button>
       </div>
+      {c.wish ? <blockquote className="wish">{c.wish}</blockquote> : <p className="muted">No wish was written for this candle.</p>}
       <div className="detail-body">
         <img src={`./art/candle-${c.style}.svg`} alt="" width={40} height={80} />
         <dl className="kv">
@@ -50,7 +54,6 @@ export function CandleDetail({ c, onClose, mine }: { c: Candle; onClose: () => v
           <div><dt>Transaction</dt><dd><TxCell c={c} /></dd></div>
         </dl>
       </div>
-      {c.wish ? <blockquote className="wish">{c.wish}</blockquote> : <p className="muted">No wish was written for this candle.</p>}
       <p className="full-addr"><code>{c.purchaser}</code> <CopyAddress value={c.purchaser} /></p>
       {FIXTURE === null
         ? (
@@ -158,7 +161,7 @@ export function Register({ candles, onJump }: { candles: Candle[]; onJump: (id: 
   );
 }
 
-type ClaimState = { s: "idle" } | { s: "wallet" } | { s: "pending"; hash: string } | { s: "done"; hash: string } | { s: "error"; msg: string };
+type ClaimState = { s: "idle" } | { s: "wallet" } | { s: "pending"; hash: string } | { s: "done"; hash: string; amount: bigint } | { s: "error"; msg: string };
 
 export function RewardsPanel() {
   const { address, chainId } = useAccount();
@@ -172,12 +175,15 @@ export function RewardsPanel() {
     try {
       setSt({ s: "wallet" });
       const { request } = await simulateContract(config, { address: GARDEN, abi: wishGardenAbi, functionName: "claimRewards", account: address, chainId: 1 });
+      const sub = await submissionMeta(address).catch(() => undefined);
       const hash = await writeContract(config, request);
-      pendingStore.add({ hash, kind: "claim", account: address, createdAt: Date.now() });
+      pendingStore.add({ hash, kind: "claim", account: address, createdAt: Date.now(), from: address, nonce: sub?.nonce, block: sub?.block.toString() });
       setSt({ s: "pending", hash });
+      // follows a sped-up or cancelled replacement; only a verified RewardsClaimed from the garden shows Claimed
       const rec = await waitForTransactionReceipt(config, { hash, chainId: 1 });
       pendingStore.remove(hash);
-      setSt(rec.status === "success" ? { s: "done", hash } : { s: "error", msg: "The claim reverted onchain. Only gas was spent." });
+      const v = settleClaim(rec, await minedTx(rec.transactionHash), address);
+      setSt(v.ok ? { s: "done", hash: rec.transactionHash, amount: v.amount } : { s: "error", msg: v.message });
       qc.invalidateQueries();
     } catch (e) {
       setSt({ s: "error", msg: explainError(e) });
@@ -206,10 +212,10 @@ export function RewardsPanel() {
           {st.s === "wallet" ? "Confirm in your wallet…" : st.s === "pending" ? "Claiming…" : d.claimable === 0n ? "Nothing to claim yet" : `Claim ${imd(d.claimable)} IMD`}
         </button>
       )}
-      {address && chainId !== 1 && <p className="bad">Switch your wallet to Ethereum to claim.</p>}
+      {address && chainId !== 1 && <WrongNetwork action="claim" />}
       <div aria-live="polite" className="steps">
         {st.s === "pending" && <p>Claim sent. Waiting for its receipt… <a href={`${ETHERSCAN}/tx/${st.hash}`} target="_blank" rel="noreferrer">View transaction</a></p>}
-        {st.s === "done" && <p>Claimed. <a href={`${ETHERSCAN}/tx/${st.hash}`} target="_blank" rel="noreferrer">View transaction</a></p>}
+        {st.s === "done" && <p>Claimed {imd(st.amount)} IMD. <a href={`${ETHERSCAN}/tx/${st.hash}`} target="_blank" rel="noreferrer">View transaction</a></p>}
         {st.s === "error" && <p className="bad" role="alert">{st.msg}</p>}
       </div>
       <h3>How rewards accrue</h3>

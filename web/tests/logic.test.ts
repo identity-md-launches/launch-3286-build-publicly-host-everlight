@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { checkWish, gasBound } from "../src/lib/wish";
 import { CandleStore, fixtureSource, readAllIds } from "../src/lib/candles";
 import { hitTest, positionOf, sectorAt, sectorCount, sectorPlan, spiral, streamX, pathY, worldBounds, SECTOR_H, SECTOR_W, SLOTS_PER_SECTOR } from "../src/garden/layout";
-import { pendingStore, runPurchase, type PurchaseDeps, type Step } from "../src/lib/purchase";
+import { awaitBuy, pendingStore, REPLACED_MESSAGE, runPurchase, type PurchaseDeps, type Step } from "../src/lib/purchase";
 
 class MemStorage {
   m = new Map<string, string>();
@@ -142,6 +142,7 @@ describe("garden layout", () => {
 function deps(over: Partial<PurchaseDeps> = {}): PurchaseDeps & { calls: string[] } {
   const calls: string[] = [];
   let allowance = 0n;
+  let n = 0;
   const d: PurchaseDeps & { calls: string[] } = {
     calls,
     account: "0xabc",
@@ -152,8 +153,8 @@ function deps(over: Partial<PurchaseDeps> = {}): PurchaseDeps & { calls: string[
     allowance: async () => allowance,
     ethBalance: async () => 10n ** 18n,
     approve: async (amt) => { calls.push(`approve:${amt}`); allowance = amt; return "0xa1" as const; },
-    wait: async (h) => { calls.push(`wait:${h}`); return { status: "success", firstId: 7 }; },
-    simulate: async (s, w) => { calls.push(`simulate:${s.length}:${w.length}`); return { req: true }; },
+    wait: async (h) => { calls.push(`wait:${h}`); return { status: "success", hash: h, purchase: { purchaser: "0xABC", firstId: 7, quantity: n } }; },
+    simulate: async (s, w) => { calls.push(`simulate:${s.length}:${w.length}`); n = s.length; return { req: true }; },
     buy: async () => { calls.push("buy"); return "0xb1" as const; },
     explain: (e) => (e instanceof Error ? e.message : String(e)),
     ...over,
@@ -202,11 +203,62 @@ describe("purchase flow (labelled mock chain, no real funds)", () => {
     expect(r).toMatchObject({ name: "error", message: expect.stringContaining("reverted") });
     expect(pendingStore.list(d.storage)).toEqual([]);
   });
-  it("keeps the pending hash when the RPC fails while waiting (reload recovery)", async () => {
+  it("keeps the pending hash and stays locked when the RPC fails while waiting (reload recovery)", async () => {
     const d = deps({ allowance: async () => 10n ** 30n, wait: async () => { throw new Error("HTTP request failed"); } });
     const r = await runPurchase(d, [1], [""], () => {});
-    expect(r.name).toBe("error");
+    expect(r).toMatchObject({ name: "buy-unknown", hash: "0xb1" });
     expect(pendingStore.list(d.storage).map((t) => t.hash)).toEqual(["0xb1"]);
+  });
+  it("a successful replacement without the garden event is not a purchase (cancelled in the wallet)", async () => {
+    const remembered: unknown[] = [];
+    const d = deps({ allowance: async () => 10n ** 30n, remember: (...a) => remembered.push(a), wait: async () => ({ status: "success", hash: "0xc3", purchase: null }) });
+    const r = await runPurchase(d, [1, 2, 3], ["a", "b", "c"], () => {});
+    expect(r).toEqual({ name: "error", message: REPLACED_MESSAGE });
+    expect(remembered).toEqual([]);
+    expect(pendingStore.list(d.storage)).toEqual([]);
+  });
+  it("a sped-up purchase links the mined replacement hash, not the sent one", async () => {
+    const remembered: unknown[] = [];
+    const d = deps({
+      allowance: async () => 10n ** 30n,
+      remember: (...a) => remembered.push(a),
+      wait: async () => ({ status: "success", hash: "0xc3", purchase: { purchaser: "0xabc", firstId: 1, quantity: 3 } }),
+    });
+    const r = await runPurchase(d, [0, 1, 2], ["", "", ""], () => {});
+    expect(r).toEqual({ name: "done", hash: "0xc3", firstId: 1 });
+    expect(remembered).toEqual([[1, 3, "0xc3"]]);
+  });
+  it("an event for another buyer or quantity does not complete the purchase", async () => {
+    for (const purchase of [{ purchaser: "0xdef", firstId: 1, quantity: 1 }, { purchaser: "0xabc", firstId: 1, quantity: 2 }]) {
+      const r = await runPurchase(deps({ allowance: async () => 10n ** 30n, wait: async () => ({ status: "success", purchase }) }), [1], [""], () => {});
+      expect(r).toEqual({ name: "error", message: REPLACED_MESSAGE });
+    }
+  });
+});
+
+describe("purchase recovery after a reload (labelled mock chain)", () => {
+  const tx = { hash: "0xa0" as const, kind: "buy" as const, account: "0xabc", quantity: 3, createdAt: 1 };
+  const setup = () => { const storage = new MemStorage() as unknown as Storage; pendingStore.add(tx, storage); return storage; };
+  it("settles a verified purchase from the replacement receipt and clears the pending hash", async () => {
+    const storage = setup();
+    const remembered: unknown[] = [];
+    const steps: Step[] = [];
+    const s = await awaitBuy({ storage, explain: String, remember: (...a) => remembered.push(a), wait: async () => ({ status: "success", hash: "0xb0", purchase: { purchaser: "0xabc", firstId: 4, quantity: 3 } }) }, tx, (x) => steps.push(x));
+    expect(s).toEqual({ name: "done", hash: "0xb0", firstId: 4 });
+    expect(remembered).toEqual([[4, 3, "0xb0"]]);
+    expect(pendingStore.list(storage)).toEqual([]);
+  });
+  it("a cancelled purchase is a failure that releases the draft for retry", async () => {
+    const storage = setup();
+    const s = await awaitBuy({ storage, explain: String, wait: async () => ({ status: "success", hash: "0xb0", purchase: null }) }, tx, () => {});
+    expect(s).toEqual({ name: "error", message: REPLACED_MESSAGE });
+    expect(pendingStore.list(storage)).toEqual([]);
+  });
+  it("no receipt keeps the hash pending (the form stays locked)", async () => {
+    const storage = setup();
+    const s = await awaitBuy({ storage, explain: () => "no receipt", wait: async () => { throw new Error("timeout"); } }, tx, () => {});
+    expect(s).toEqual({ name: "buy-unknown", hash: "0xa0", message: "no receipt" });
+    expect(pendingStore.list(storage).map((t) => t.hash)).toEqual(["0xa0"]);
   });
   it("a failing simulation never requests the purchase", async () => {
     const d = deps({ allowance: async () => 10n ** 30n, simulate: async () => { throw new Error("PurchasesDisabled"); } });

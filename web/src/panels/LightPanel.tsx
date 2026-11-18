@@ -1,20 +1,46 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useAccount } from "wagmi";
 import { simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
-import { erc20Abi, parseEventLogs, type Hash } from "viem";
+import { erc20Abi, type Hash } from "viem";
 import { useQueryClient } from "@tanstack/react-query";
 import { wishGardenAbi } from "../abi/WishGarden";
 import { ETHERSCAN, GARDEN, IMD, MAX_BATCH, TX_GAS_CAP, config, ethClient } from "../config";
 import { checkWish, gasBound } from "../lib/wish";
 import { STYLE_NAMES, eth, imd } from "../lib/format";
 import { explainError } from "../lib/errors";
-import { runPurchase, type Step } from "../lib/purchase";
+import { awaitBuy, isRunning, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step } from "../lib/purchase";
+import { readReceipt } from "../lib/receipt";
 import { rememberTx } from "../lib/txhash";
 import { parseQuantity } from "../lib/quantity";
 import { ConnectButton } from "../components/ConnectSheet";
 
-const DRAFT_KEY = "everlight:draft";
 import { store, useGasPrice, useStatus, useWallet } from "../hooks";
+
+export const DRAFT_KEY = "everlight:draft";
+/** A confirmed purchase ends the saved draft, even when it confirms while this panel is closed. */
+export function clearDraft() {
+  try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* private mode */ }
+}
+/** One purchase at a time across remounts of this panel: a second click or a reopened form cannot send twice. */
+let inFlight = false;
+
+/** Recover a purchase sent before a reload: the form stays locked on it until its receipt settles. */
+export function recoverBuy(tx: PendingTx): Promise<Step> {
+  const onStep = (s: Step) => {
+    if (s.name === "done") clearDraft();
+    purchaseFlow.set(s);
+  };
+  onStep({ name: "buy-pending", hash: tx.hash });
+  return awaitBuy(
+    {
+      wait: async (hash) => readReceipt(await ethClient.waitForTransactionReceipt({ hash, timeout: 10 * 60_000 })),
+      remember: rememberTx,
+      explain: () => "The receipt of the purchase you sent could not be read yet. It is still saved and this form stays locked so it is not sent twice.",
+    },
+    tx,
+    onStep,
+  );
+}
 
 const ART = (i: number) => `./art/candle-${i}.svg`;
 
@@ -51,7 +77,8 @@ const STEP_TEXT: Record<Step["name"], string> = {
   "approve-pending": "Approval sent. Waiting for its receipt…",
   simulating: "Checking the purchase against the contract…",
   "buy-wallet": "Confirm the purchase in your wallet.",
-  "buy-pending": "Purchase sent. Waiting for its receipt…",
+  "buy-pending": "Purchase sent. Waiting for its receipt; this draft stays locked until it settles…",
+  "buy-unknown": "",
   done: "Your candles are lit.",
   error: "",
 };
@@ -77,8 +104,19 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
   const qtyValid = parsed.ok;
   const qty = parsed.ok ? parsed.n : 0;
   const [ack, setAck] = useState(false);
-  const [step, setStep] = useState<Step | null>(null);
-  const busy = useRef(false);
+  const step = useSyncExternalStore(purchaseFlow.subscribe, purchaseFlow.get);
+  const setStep = purchaseFlow.set;
+  const pendingVersion = useSyncExternalStore(pendingStore.subscribe, pendingStore.version);
+  // a purchase sent earlier (this session or before a reload) that has no settled receipt yet
+  const pendingBuy = useMemo(() => pendingStore.list().filter((t) => t.kind === "buy").at(-1) ?? null, [pendingVersion]);
+  // clear the visible draft when a purchase confirms while this form is open (not for one confirmed before it opened)
+  const seenDone = useRef(step?.name === "done" ? step.hash : null);
+  useEffect(() => {
+    if (step?.name !== "done" || seenDone.current === step.hash) return;
+    seenDone.current = step.hash;
+    setWish(""); setRows([]); setAck(false);
+    clearDraft();
+  }, [step]);
 
   // One effective mode drives both the editor that is shown and the items that are validated and
   // submitted: a single candle always uses the visible single-candle style and wish.
@@ -111,12 +149,12 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
   if (gas.isError) problems.push("The ETH gas estimate could not be read. Retry it before approving.");
   else if (!gasOk) problems.push("Reading the current gas price for the ETH estimate…");
   if (wallet.data && wallet.data.balance < total) problems.push(`You hold ${imd(wallet.data.balance)} IMD; this needs ${qty}.`);
-  const running = step !== null && !["done", "error"].includes(step.name);
+  const running = isRunning(step) || pendingBuy !== null;
   const disabled = problems.length > 0 || running;
 
   async function submit() {
-    if (busy.current) return; // duplicate-click guard
-    busy.current = true;
+    if (inFlight || isRunning(purchaseFlow.get()) || pendingStore.list().some((t) => t.kind === "buy")) return; // duplicate-send guard
+    inFlight = true;
     const account = address!;
     try {
       await runPurchase(
@@ -134,12 +172,9 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
           allowance: () => ethClient.readContract({ address: IMD, abi: erc20Abi, functionName: "allowance", args: [account, GARDEN] }),
           ethBalance: () => ethClient.getBalance({ address: account }),
           approve: (amount) => writeContract(config, { address: IMD, abi: erc20Abi, functionName: "approve", args: [GARDEN, amount], chainId: 1 }),
-          wait: async (hash: Hash) => {
-            const r = await waitForTransactionReceipt(config, { hash, chainId: 1 });
-            const ev = parseEventLogs({ abi: wishGardenAbi, logs: r.logs, eventName: "CandlesPurchased" })[0];
-            if (ev) rememberTx(Number(ev.args.firstCandleId), Number(ev.args.quantity), hash);
-            return { status: r.status, firstId: ev ? Number(ev.args.firstCandleId) : null };
-          },
+          // follows sped-up or cancelled replacements; the purchase is settled from the mined receipt's own logs
+          wait: async (hash: Hash) => readReceipt(await waitForTransactionReceipt(config, { hash, chainId: 1 })),
+          remember: rememberTx,
           simulate: async (styles, wishes) => {
             const { request } = await simulateContract(config, {
               address: GARDEN, abi: wishGardenAbi, functionName: "buyCandles", args: [styles, wishes], account, chainId: 1,
@@ -152,17 +187,16 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
         items.map((i) => i.style),
         items.map((i) => i.wish),
         (s) => {
+          if (s.name === "done") clearDraft(); // a confirmed purchase ends the draft; errors and replacements keep it
           setStep(s);
           if (s.name === "done") {
-            setWish(""); setRows([]); // a confirmed purchase ends the draft; errors keep it
-            try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* private mode */ }
             store.sync().then(() => onLit(s.firstId));
             qc.invalidateQueries();
           }
         },
       );
     } finally {
-      busy.current = false;
+      inFlight = false;
     }
   }
 
@@ -176,6 +210,8 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
         </p>
       )}
 
+      {/* while a sent purchase has no settled receipt, its draft is locked so it cannot be sent a second time */}
+      <fieldset className="draft-lock" disabled={running}>
       <fieldset className="field">
         <legend>How many candles</legend>
         <div className="seg">
@@ -226,6 +262,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
           <span>I understand my wish is public, stored on Ethereum forever and can never be edited or deleted.</span>
         </label>
       )}
+      </fieldset>
 
       <dl className="summary">
         <div><dt>Candles</dt><dd>{qtyValid ? qty : "—"}</dd></div>
@@ -246,16 +283,30 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
         <ul className="problems" aria-live="polite">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
       )}
       <button type="button" className="cta wide" disabled={disabled} aria-disabled={disabled} onClick={submit}>
-        {running ? "Working…" : !qtyValid ? "Enter 1 to 50 candles" : needApproval && address ? `Approve and light ${qty} candle${qty > 1 ? "s" : ""}` : `Light ${qty} candle${qty > 1 ? "s" : ""}`}
+        {pendingBuy && !isRunning(step) ? "Waiting for the earlier purchase" : running ? "Working…" : !qtyValid ? "Enter 1 to 50 candles" : needApproval && address ? `Approve and light ${qty} candle${qty > 1 ? "s" : ""}` : `Light ${qty} candle${qty > 1 ? "s" : ""}`}
       </button>
       <div aria-live="polite" className="steps">
-        {step && step.name !== "error" && (
+        {step && step.name !== "error" && step.name !== "buy-unknown" && (
           <p>
             {STEP_TEXT[step.name]}{" "}
             {"hash" in step && <a href={`${ETHERSCAN}/tx/${step.hash}`} target="_blank" rel="noreferrer">View transaction</a>}
           </p>
         )}
         {step?.name === "error" && <p className="bad" role="alert">{step.message}</p>}
+        {pendingBuy && (step?.name === "buy-unknown" || !isRunning(step)) && (
+          <div className="pending-box" role="status">
+            <p>
+              {step?.name === "buy-unknown" ? step.message : "A purchase you sent earlier has no receipt yet. This draft stays locked so it is not sent twice."}{" "}
+              <a href={`${ETHERSCAN}/tx/${pendingBuy.hash}`} target="_blank" rel="noreferrer">View pending transaction</a>
+            </p>
+            <div className="pending-acts">
+              <button type="button" className="btn" onClick={() => recoverBuy(pendingBuy)}>Check again</button>
+              <button type="button" className="link" onClick={() => { pendingStore.remove(pendingBuy.hash); setStep(null); }}>
+                Forget it: my wallet shows it was dropped
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

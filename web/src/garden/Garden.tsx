@@ -3,6 +3,8 @@ import type { Candle } from "../lib/candles";
 import { GardenRenderer, MAX_ZOOM } from "./renderer";
 import { hitTest, positionOf } from "./layout";
 
+/** The breakpoint below which a selected candle opens as a bottom sheet (App.tsx useNarrow). */
+export const SHEET_QUERY = "(max-width: 900px)";
 const CAM_KEY = "everlight:v4:camera"; // v4: one world camera (garden, wild woodland and skyline)
 
 export interface GardenHandle {
@@ -108,11 +110,40 @@ export function Garden(p: Props) {
     const r = rRef.current;
     if (!r) return;
     const pos = positionOf(id - 1);
-    const z = Math.min(MAX_ZOOM, Math.max(r.cam.z, 1.4));
-    // on a phone the candle sheet covers the lower half of the map: the flame lands at a quarter height, above it
-    const lift = r.w < 640 ? (r.h * 0.25) / z : 0;
-    r.cam = { x: pos.x, y: pos.y - 40 + lift, z };
-    dirty.current = true;
+    let z = Math.min(MAX_ZOOM, Math.max(r.cam.z, 1.4));
+    // desktop: the anchored popup sits beside the flame, so the candle is simply centred
+    if (!matchMedia(SHEET_QUERY).matches) {
+      r.cam = { x: pos.x, y: pos.y - 40, z };
+      dirty.current = true;
+      return;
+    }
+    // phones and tablets (the same breakpoint as the candle sheet in App): centre the candle and its whole
+    // selection ring in the band between the header and the sheet, zooming out if that band is short
+    const cy = pos.y - 44 * pos.scale;
+    const ext = (zz: number) => {
+      const rad = Math.max(30 * Math.max(pos.scale, 0.7), 14 / zz);
+      return { t: cy - rad - 6, b: Math.max(pos.y + 14 * pos.scale, cy + rad) + 6 };
+    };
+    const frame = (top: number, bottom: number) => {
+      const inp = inputRef.current;
+      const floor = r.minZoom(Math.max(inp.total, inp.known));
+      let e = ext(z);
+      if ((e.b - e.t) * z > bottom - top) {
+        z = Math.max(floor, Math.min(z, (bottom - top) / (e.b - e.t)));
+        e = ext(z);
+      }
+      r.cam = { x: pos.x, y: (e.t + e.b) / 2 - ((top + bottom) / 2 - r.h / 2) / z, z };
+      dirty.current = true;
+    };
+    const canvasTop = () => canvasRef.current?.getBoundingClientRect().top ?? 0;
+    const header = () => (document.querySelector(".top")?.getBoundingClientRect().bottom ?? 56) - canvasTop() + 8;
+    frame(header(), r.h * 0.45); // first guess, before the sheet has rendered
+    // once the sheet is on screen, measure it and frame the candle in the visible band above it
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const sheet = document.querySelector(".detail-wrap");
+      if (!sheet) return;
+      frame(header(), sheet.getBoundingClientRect().top - canvasTop() - 8);
+    }));
   }, []);
   const reset = useCallback(() => {
     const r = rRef.current;

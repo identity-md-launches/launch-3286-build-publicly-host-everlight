@@ -1,0 +1,237 @@
+{
+ "run": "2026-11-18, headless Chromium (Playwright 1.x, chrome-headless-shell), dist/ served by route interception; labelled mock JSON-RPC and injected EIP-6963 test wallet; no real chain, no real funds",
+ "ui": {
+  "split": {
+   "toolsBefore": true,
+   "toolsWhileOpen": false,
+   "zoomWhileOpen": false,
+   "rows": [
+    {
+     "text": "30% Burn",
+     "top": 600.5,
+     "bottom": 626,
+     "hits": [
+      "split",
+      "split",
+      "split"
+     ]
+    },
+    {
+     "text": "30% Previous paid candles",
+     "top": 634,
+     "bottom": 659.5,
+     "hits": [
+      "split",
+      "split",
+      "split"
+     ]
+    },
+    {
+     "text": "30% Ecosystem",
+     "top": 667.5,
+     "bottom": 693,
+     "hits": [
+      "split",
+      "split",
+      "split"
+     ]
+    },
+    {
+     "text": "5% Operations",
+     "top": 701,
+     "bottom": 726.5,
+     "hits": [
+      "split",
+      "split",
+      "split"
+     ]
+    },
+    {
+     "text": "5% Founder",
+     "top": 734.5,
+     "bottom": 760,
+     "hits": [
+      "split",
+      "split",
+      "split"
+     ]
+    }
+   ],
+   "toolsAfterClose": true
+  },
+  "find-390x844-37": {
+   "cam": {
+    "x": 500.181717847225,
+    "y": 933.5283301367383,
+    "z": 1.4
+   },
+   "x": 195,
+   "ringTop": 159,
+   "ringBottom": 255,
+   "header": 56,
+   "sheetTop": 376,
+   "sheetVis": "visible",
+   "clear": true
+  },
+  "find-768x844-37": {
+   "cam": {
+    "x": 500.181717847225,
+    "y": 933.5283301367383,
+    "z": 1.4
+   },
+   "x": 384,
+   "ringTop": 159,
+   "ringBottom": 255,
+   "header": 56,
+   "sheetTop": 376,
+   "sheetVis": "visible",
+   "clear": true
+  },
+  "find-390x568-31": {
+   "cam": {
+    "x": 69.77552766668981,
+    "y": 426.2629324290174,
+    "z": 1.4
+   },
+   "x": 195,
+   "ringTop": 113,
+   "ringBottom": 200,
+   "header": 56,
+   "sheetTop": 274,
+   "sheetVis": "visible",
+   "clear": true
+  },
+  "find-1440x900-37": {
+   "cam": {
+    "x": 500.181717847225,
+    "y": 773.9325388460769,
+    "z": 1.4
+   },
+   "x": 720,
+   "ringTop": 410,
+   "ringBottom": 506,
+   "header": 56,
+   "sheetTop": 359,
+   "sheetVis": "visible",
+   "clear": "n/a desktop popup"
+  },
+  "popup": [
+   [
+    "start",
+    {
+     "cls": "detail-wrap anchored below",
+     "vis": "visible",
+     "top": 359,
+     "left": 560
+    }
+   ],
+   [
+    "1000,450->800,350",
+    {
+     "ringY": 346
+    },
+    {
+     "cls": "detail-wrap anchored below",
+     "vis": "visible",
+     "top": 354,
+     "left": 360
+    }
+   ],
+   [
+    "1100,550->1100,340",
+    {
+     "ringY": 136
+    },
+    {
+     "cls": "detail-wrap anchored below",
+     "vis": "visible",
+     "top": 144,
+     "left": 360
+    }
+   ],
+   [
+    "1100,550->1100,430",
+    {
+     "ringY": 16
+    },
+    {
+     "cls": "detail-wrap anchored",
+     "vis": "hidden",
+     "top": 0,
+     "left": 360
+    }
+   ],
+   [
+    "1100,550->1100,450",
+    {
+     "ringY": -84
+    },
+    {
+     "cls": "detail-wrap anchored",
+     "vis": "hidden",
+     "top": 56,
+     "left": -136
+    }
+   ],
+   [
+    "1100,300->1100,700",
+    {
+     "ringY": 316
+    },
+    {
+     "cls": "detail-wrap anchored below",
+     "vis": "visible",
+     "top": 324,
+     "left": 360
+    }
+   ]
+  ],
+  "bridgeCam": {
+   "x": 813.3333333333334,
+   "y": 309.99999999999994,
+   "z": 1.8
+  }
+ },
+ "purchase": {
+  "reloadPending": {
+   "toast": "Checking a purchase sent earlier… ViewDismiss",
+   "wish": "keep the light",
+   "locked": true,
+   "btn": "Working…",
+   "btnDisabled": true,
+   "link": [
+    "https://etherscan.io/tx/0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   ],
+   "pending": [
+    "0xb2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   ],
+   "buyCallsAfterClick": 1
+  },
+  "reloadResolved": {
+   "toast": "Your earlier purchase confirmed. Its candles are lit. ViewDismiss",
+   "toastLinks": [
+    "https://etherscan.io/tx/0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   ],
+   "wish": "",
+   "locked": false,
+   "pending": [],
+   "txTable": "{\"1\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"2\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"3\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\"}",
+   "buyCalls": 1
+  },
+  "cancelled": {
+   "hash": "#/light",
+   "error": "This purchase was cancelled or replaced in your wallet, so no candles were lit and no IMD was taken for them. Your wish is kept; you can light it again.",
+   "wish": "keep the light",
+   "qty": "3",
+   "locked": false,
+   "pending": [],
+   "draft": "{\"preset\":1,\"custom\":\"3\",\"mode\":\"same\",\"style\":0,\"wish\":\"keep the light\",\"rows\":[]}"
+  },
+  "repriced": {
+   "hash": "#/garden",
+   "txTable": "{\"1\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"2\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\",\"3\":\"0xc3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3\"}",
+   "draft": "{\"preset\":1,\"custom\":\"3\",\"mode\":\"same\",\"style\":0,\"wish\":\"\",\"rows\":[]}",
+   "pending": []
+  }
+ }
+}

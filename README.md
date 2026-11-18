@@ -105,4 +105,20 @@ These are worker-side results from 2026-11-18. The full record is in `artifacts/
 
 Evidence: `artifacts/screens/` (revision 2 shots are `rev2-*.jpg`) (screenshots and reference side-by-sides) and `artifacts/recordings/` (desktop and mobile walkthrough WebM).
 
-**Limitations.** The art is procedural, not illustrated: no image-generation tool was available. It is not claimed to match the reference, and no similarity score was measured. No fork test or wallet transaction ran; purchase, approval rejection and recovery are covered only by unit tests on labelled mocks. Hosting is done by the publishing plane from the committed `dist/`.
+### Revision 3 (2026-11-18): review findings
+
+Commands, run in `web/` after the last source change: `npx tsc --noEmit` exit 0; `npx vitest run` 6 files, 63/63 passed (adds replacement, receipt-verification and reload-recovery tests and `tests/receipt.test.ts` with ABI-encoded logs); `npm run build` built into `dist/`; design-critic `taste.mjs` 16/16 passed at 320/390/1440.
+
+Browser reproduction (headless Chromium, `test/scratch`, not shipped; results in `artifacts/revision-findings-results.json`). The export was served by route interception; purchases ran against a **labelled mock JSON-RPC and an injected EIP-6963 test wallet**, not a chain, fork or real funds.
+
+| Finding | Result after the fix |
+| --- | --- |
+| Split sheet vs zoom tools, 390×844 touch, `?fixture=100` | with the sheet open the map tools are hidden; `elementFromPoint` at three points of each of the five rows (Founder at y=734.5–760) returns the split list; tools return when it closes |
+| Replacement without a purchase (B = 0xc3…, zero-value self-transfer, no logs) | stays on Light a candle with "cancelled or replaced" error; wish and quantity kept; no pending hash |
+| Sped-up purchase (B carries the garden `CandlesPurchased` for 1–3) | candles 1–3 link to B, not the sent hash A; draft cleared |
+| Reload while A has no receipt | draft locked (`fieldset disabled`), action disabled, pending link shown; a forced click sends nothing (1 `buyCandles` call in total); when B is mined the toast links B, the draft clears and the form unlocks |
+| Find 37 at 390×844 and 768×844, Find 31 at 390×568 | ring 159–255 px vs sheet top 376 px; at 390×568 ring 113–200 px vs sheet top 274 px; all clear of the header |
+| Desktop popup after Find 9876 and the reviewer's drags | hidden at ring y=16 and y=−84 (no detached box), visible again beside the flame when it returns (y=316) |
+| Bridge at z=1.8 | the flagstone deck now spans the stream along the path and meets both approaches; the sprite's deck line sits on the walk's front edge and the stream shows only through the arches (screenshot checked by eye) |
+
+**Limitations.** The art is procedural, not illustrated: no image-generation tool was available. It is not claimed to match the reference, and no similarity score was measured. No fork test or real wallet transaction ran; purchase, approval rejection, replacement and recovery are covered by unit tests and a browser harness on labelled mocks only, so live purchasing is not claimed. Approval rejection was not re-run in the browser in this revision. Hosting is done by the publishing plane from the committed `dist/`.

@@ -282,10 +282,17 @@ export function drawSectorUpright(g: CanvasRenderingContext2D, index: number, im
     items.push({
       y: b.y + 20,
       draw: () => {
+        // walkable deck: the same flagstone band as the path, carried across the stream so both approaches
+        // meet it and no water shows through the crossing
+        const deck: [number, number][] = [];
+        for (let x = b.x - 88; x <= b.x + 88; x += 8) deck.push([x, pathY(gy, x)]);
+        drawWalk(g, deck, () => 24, normals(deck), stonePat, (a, c, d) => band(g, a, c, d));
         const s = im("bridge");
         if (s) {
-          const w = 150, h = (w * s.height) / s.width;
-          g.save(); g.translate(b.x, b.y + 18); g.rotate(b.angle); g.drawImage(s, -w / 2, -h, w, h); g.restore();
+          // front elevation: its deck line (30% down the sprite) sits on the walk's front edge, so the
+          // parapet edges the deck and the arches hang below it over the stream, which shows through them
+          const w = 176, h = (w * s.height) / s.width;
+          g.save(); g.translate(b.x, b.y + 20); g.rotate(b.angle); g.drawImage(s, -w / 2, -0.3 * h, w, h); g.restore();
         }
         // decorative brass lanterns at the bridge heads: steady and boxed, never mistaken for a candle flame
         if (!wild) for (const side of [-1, 1]) put("lantern", b.x + side * 84, pathY(gy, b.x + side * 84) + 4, 44);

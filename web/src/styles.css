@@ -405,6 +405,8 @@ textarea:focus-visible, .custom input:focus-visible, .find input:focus-visible {
   .fr-left { height: 42vh; opacity: 0.95; }
   .fr-canopy { height: 12vh; }
   .detail-wrap { bottom: calc(var(--strip-h) + var(--space-3)); }
+  /* the sheet scrolls rather than grow over the selected candle: Find frames the candle in the band above it */
+  .detail-wrap .detail { max-height: min(60vh, max(176px, calc(100dvh - var(--header-h) - var(--strip-h) - 230px))); }
   /* the candle sheet shares the bottom edge with zoom and minimap: hide the map tools while a candle is open,
      so nothing paints over the sheet's last line (the explorer link) */
   .map-tools.has-selection, .map-tools.has-selection .zoom { display: none; }
@@ -442,3 +444,9 @@ textarea:focus-visible, .custom input:focus-visible, .find input:focus-visible {
 .full-addr code { font-size: 0.8125rem; word-break: break-all; color: var(--color-headline); }
 .links { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin: var(--space-2) 0 0; }
 .connect-inline { margin: var(--space-2) 0; }
+
+/* a sent purchase locks its draft until the receipt settles */
+.draft-lock { border: 0; padding: 0; margin: 0; min-width: 0; }
+.draft-lock:disabled { opacity: 0.72; }
+.pending-box { margin-top: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+.pending-acts { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }

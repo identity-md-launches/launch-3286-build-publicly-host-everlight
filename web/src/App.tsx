@@ -2,9 +2,9 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { placePopup, type Placement } from "./lib/popup";
 import { useAccount } from "wagmi";
 import { ETHERSCAN, ethClient } from "./config";
-import { Garden, type GardenHandle } from "./garden/Garden";
+import { Garden, SHEET_QUERY, type GardenHandle } from "./garden/Garden";
 import { ConnectSheet } from "./components/ConnectSheet";
-import { LightPanel } from "./panels/LightPanel";
+import { LightPanel, recoverBuy } from "./panels/LightPanel";
 import { CandleDetail, HowPanel, MinePanel, Register, RewardsPanel, TreasuryPanel } from "./panels/Panels";
 import { FIXTURE, store, useCandles, useMyIds, useReducedMotion, useStatus } from "./hooks";
 import { pendingStore, type PendingTx } from "./lib/purchase";
@@ -53,6 +53,18 @@ function usePendingRecovery(push: (t: Toast) => void) {
     const list = pendingStore.list();
     list.forEach((tx: PendingTx) => {
       push({ id: tx.hash, text: `Checking a ${tx.kind === "buy" ? "purchase" : tx.kind} sent earlier…`, href: `${ETHERSCAN}/tx/${tx.hash}` });
+      if (tx.kind === "buy") {
+        // a purchase is settled only by the garden's CandlesPurchased event in the mined (possibly replacement)
+        // receipt; until then the Light a candle form stays locked on the same draft
+        recoverBuy(tx).then((s) => {
+          if (s.name === "done") {
+            push({ id: tx.hash, href: `${ETHERSCAN}/tx/${s.hash}`, text: "Your earlier purchase confirmed. Its candles are lit." });
+            store.sync();
+          } else if (s.name === "error") push({ id: tx.hash, bad: true, href: `${ETHERSCAN}/tx/${tx.hash}`, text: `Your earlier purchase did not light candles. ${s.message}` });
+          else push({ id: tx.hash, bad: true, href: `${ETHERSCAN}/tx/${tx.hash}`, text: "An earlier purchase has no receipt yet. It is still saved; Light a candle stays locked on it." });
+        });
+        return;
+      }
       ethClient
         .waitForTransactionReceipt({ hash: tx.hash, timeout: 10 * 60_000 })
         .then((r) => {
@@ -67,7 +79,7 @@ function usePendingRecovery(push: (t: Toast) => void) {
 }
 
 function useNarrow() {
-  const q = "(max-width: 900px)";
+  const q = SHEET_QUERY;
   const [n, setN] = useState(() => matchMedia(q).matches);
   useEffect(() => {
     const m = matchMedia(q);
@@ -100,10 +112,15 @@ export default function App() {
   const mine = useMemo(() => new Set(myIds.data ?? []), [myIds.data]);
   const total = cs.candles.length;
   const narrow = useNarrow();
+  // the split disclosure is a sheet on phones: while it is open the map tools step aside
+  const [splitOpen, setSplitOpen] = useState(() => !matchMedia(SHEET_QUERY).matches);
+  useEffect(() => setSplitOpen(!narrow), [narrow]);
   // anchored desktop popup: measured, then placed between header and strip, clear of the headline
   const popRef = useRef<HTMLDivElement>(null);
   const [place, setPlace] = useState<(Placement & { base: number }) | null>(null);
-  const anchored = !!anchor && !narrow && selected !== null;
+  // desktop selection always uses the anchored placement: with no visible anchor (candle panned off screen)
+  // the box is hidden, never shown detached, and returns when the candle comes back into view
+  const anchored = !narrow && selected !== null;
   useLayoutEffect(() => {
     const el = popRef.current;
     if (!anchored || !el || !anchor) return setPlace(null);
@@ -213,7 +230,7 @@ export default function App() {
         handleRef={(h) => (garden.current = h)}
         onStats={setStats}
         onAnchor={setAnchor}
-        toolsHidden={route !== "garden" || menu || (narrow && !!sel)}
+        toolsHidden={route !== "garden" || menu || (narrow && (!!sel || splitOpen))}
       />
 
 
@@ -246,7 +263,7 @@ export default function App() {
             <button className="btn" type="submit" disabled={findBusy !== null}>Find<span className="wide-only">{"\u00a0"}my candle</span></button>
           </form>
           <div className="map-slot" aria-hidden="true" />
-          <details className="split" open={!narrow}>
+          <details className="split" open={splitOpen} onToggle={(e) => setSplitOpen((e.currentTarget as HTMLDetailsElement).open)}>
             <summary>Split of 1 IMD</summary>
             <ul>
               {SPLIT.map(([pct, label, ic]) => (

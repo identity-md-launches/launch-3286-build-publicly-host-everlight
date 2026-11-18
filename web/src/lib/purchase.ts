@@ -11,6 +11,9 @@ export interface PendingTx {
 }
 
 const PENDING_KEY = "everlight:v1:pending";
+const pendingSubs = new Set<() => void>();
+let pendingVersion = 0;
+const pendingChanged = () => { pendingVersion++; pendingSubs.forEach((f) => f()); };
 
 /** Pending transaction hashes survive reloads so a closed tab can recover its receipt. */
 export const pendingStore = {
@@ -25,10 +28,18 @@ export const pendingStore = {
   add(tx: PendingTx, storage: Storage | null = safeStorage()) {
     const l = pendingStore.list(storage).filter((t) => t.hash !== tx.hash);
     storage?.setItem(PENDING_KEY, JSON.stringify([...l, tx]));
+    pendingChanged();
   },
   remove(hash: string, storage: Storage | null = safeStorage()) {
     storage?.setItem(PENDING_KEY, JSON.stringify(pendingStore.list(storage).filter((t) => t.hash !== hash)));
+    pendingChanged();
   },
+  /** For useSyncExternalStore: the list changes whenever a hash is added or removed. */
+  subscribe(f: () => void) {
+    pendingSubs.add(f);
+    return () => { pendingSubs.delete(f); };
+  },
+  version: () => pendingVersion,
 };
 
 function safeStorage(): Storage | null {
@@ -46,8 +57,51 @@ export type Step =
   | { name: "simulating" }
   | { name: "buy-wallet" }
   | { name: "buy-pending"; hash: Hash }
+  /** The purchase was sent but its receipt could not be read: it stays pending and the draft stays locked. */
+  | { name: "buy-unknown"; hash: Hash; message: string }
   | { name: "done"; hash: Hash; firstId: number | null }
   | { name: "error"; message: string };
+
+/** The garden CandlesPurchased event found in a receipt, read from the garden contract's own logs only. */
+export interface PurchaseEvent { purchaser: string; firstId: number; quantity: number }
+export interface Receipt {
+  status: "success" | "reverted";
+  /** Hash of the mined transaction: differs from the sent hash when the wallet sped up or replaced it. */
+  hash?: Hash;
+  purchase?: PurchaseEvent | null;
+}
+
+export const REPLACED_MESSAGE =
+  "This purchase was cancelled or replaced in your wallet, so no candles were lit and no IMD was taken for them. Your wish is kept; you can light it again.";
+
+/**
+ * A purchase is complete only when its mined receipt succeeded and carries the garden's CandlesPurchased
+ * event for this buyer and quantity. The mined hash (a sped-up replacement's, if any) is the one linked.
+ */
+export function settleBuy(r: Receipt, sent: Hash, account: string, quantity?: number): Step {
+  if (r.status !== "success") return { name: "error", message: "The purchase reverted onchain. Your IMD was not taken; only gas was spent." };
+  const ev = r.purchase;
+  if (!ev || ev.purchaser.toLowerCase() !== account.toLowerCase() || (quantity !== undefined && ev.quantity !== quantity)) {
+    return { name: "error", message: REPLACED_MESSAGE };
+  }
+  return { name: "done", hash: r.hash ?? sent, firstId: ev.firstId };
+}
+
+/** One shared purchase state, so a remounted form or a reload sees a purchase that is still in flight. */
+let flowStep: Step | null = null;
+const flowSubs = new Set<() => void>();
+export const purchaseFlow = {
+  get: () => flowStep,
+  set(s: Step | null) {
+    flowStep = s;
+    flowSubs.forEach((f) => f());
+  },
+  subscribe(f: () => void) {
+    flowSubs.add(f);
+    return () => { flowSubs.delete(f); };
+  },
+};
+export const isRunning = (s: Step | null) => s !== null && s.name !== "done" && s.name !== "error";
 
 /** Everything the purchase needs from a chain. The UI passes wagmi/viem; tests pass labelled mocks. */
 export interface PurchaseDeps {
@@ -58,8 +112,10 @@ export interface PurchaseDeps {
   allowance: () => Promise<bigint>;
   ethBalance: () => Promise<bigint>;
   approve: (amount: bigint) => Promise<Hash>;
-  /** Resolves with success or reverted; throws only on RPC failure. */
-  wait: (hash: Hash) => Promise<{ status: "success" | "reverted"; firstId?: number | null }>;
+  /** Resolves with the mined receipt (following replacements); throws only on RPC failure. */
+  wait: (hash: Hash) => Promise<Receipt>;
+  /** Records candle id -> mined transaction hash for the explorer links. */
+  remember?: (firstId: number, quantity: number, hash: Hash) => void;
   simulate: (styles: number[], wishes: string[]) => Promise<unknown>;
   buy: (request: unknown) => Promise<Hash>;
   explain: (e: unknown) => string;
@@ -107,13 +163,32 @@ export async function runPurchase(
     const hash = await deps.buy(request);
     pendingStore.add({ hash, kind: "buy", account: deps.account, quantity: styles.length, createdAt: Date.now() }, deps.storage);
     onStep({ name: "buy-pending", hash });
-    const r = await deps.wait(hash);
-    pendingStore.remove(hash, deps.storage);
-    if (r.status !== "success") return fail("The purchase reverted onchain. Your IMD was not taken; only gas was spent.");
-    const done: Step = { name: "done", hash, firstId: r.firstId ?? null };
-    onStep(done);
-    return done;
+    return await awaitBuy(deps, { hash, kind: "buy", account: deps.account, quantity: styles.length, createdAt: 0 }, onStep);
   } catch (e) {
     return fail(deps.explain(e));
   }
+}
+
+/**
+ * Wait for a sent purchase (now or after a reload) and settle it from its mined receipt. If the receipt
+ * cannot be read the hash stays pending and the step is buy-unknown, so the same draft is not sent twice.
+ */
+export async function awaitBuy(
+  deps: Pick<PurchaseDeps, "wait" | "remember" | "explain" | "storage">,
+  tx: PendingTx,
+  onStep: (s: Step) => void,
+): Promise<Step> {
+  let r: Receipt;
+  try {
+    r = await deps.wait(tx.hash);
+  } catch (e) {
+    const s: Step = { name: "buy-unknown", hash: tx.hash, message: deps.explain(e) };
+    onStep(s);
+    return s;
+  }
+  pendingStore.remove(tx.hash, deps.storage);
+  const s = settleBuy(r, tx.hash, tx.account, tx.quantity);
+  if (s.name === "done" && r.purchase) deps.remember?.(r.purchase.firstId, r.purchase.quantity, s.hash);
+  onStep(s);
+  return s;
 }

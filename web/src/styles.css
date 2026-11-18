@@ -359,7 +359,10 @@ textarea:focus-visible, .custom input:focus-visible, .find input:focus-visible {
 .fr-left { left: 0; bottom: calc(var(--strip-h) - 20px); height: min(80vh, 860px); width: auto; }
 .fr-right { right: 0; bottom: calc(var(--strip-h) - 30px); height: min(44vh, 460px); width: auto; }
 
-.detail-wrap.anchored { bottom: auto; width: 320px; transform: translate(-50%, calc(-100% - var(--header-h))); }
+/* anchored popup: App places it (lib/popup.ts) above or below the flame, between header and strip */
+.detail-wrap.anchored { bottom: auto; width: 320px; transform: translateX(-50%); }
+.detail-wrap.anchored.below::after { bottom: auto; top: -9px; transform: translateX(-50%) rotate(225deg); }
+.intro-yield { visibility: hidden; }
 .detail-wrap.anchored::after { content: ""; position: absolute; left: 50%; bottom: -9px; width: 16px; height: 16px; transform: translateX(-50%) rotate(45deg); background: rgb(5 12 9); border-right: 1px solid var(--color-line); border-bottom: 1px solid var(--color-line); }
 .detail { background: linear-gradient(180deg, rgb(8 18 13 / 0.97), rgb(4 9 7 / 0.97)); border-color: var(--color-line); border-radius: 10px; }
 .detail h2 { color: var(--color-headline); font-size: var(--text-lg); }

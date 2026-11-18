@@ -4,14 +4,14 @@
    "name": "render",
    "passed": true,
    "exitCode": 0,
-   "durationMs": 13385,
+   "durationMs": 13566,
    "output": "renders, no script errors or missing local files\nexternal hosts: ethereum-rpc.publicnode.com"
   },
   {
    "name": "layout",
    "passed": true,
    "exitCode": 0,
-   "durationMs": 1,
+   "durationMs": 0,
    "output": "no horizontal scroll at 320, 390 or 1440\nno text box overlaps another\nno floating control covers text\nno text cut off by overflow: hidden"
   },
   {
@@ -60,14 +60,14 @@
    "name": "type-faces",
    "passed": true,
    "exitCode": 0,
-   "durationMs": 1,
+   "durationMs": 0,
    "output": "families (2): iowan old style, system-ui\nweights (2): 400, 600"
   },
   {
    "name": "glyphs",
    "passed": true,
    "exitCode": 0,
-   "durationMs": 0,
+   "durationMs": 1,
    "output": "no em dashes or emoji in text"
   },
   {
@@ -81,14 +81,14 @@
    "name": "repetition",
    "passed": true,
    "exitCode": 0,
-   "durationMs": 2,
+   "durationMs": 4,
    "output": "no repeated lines"
   },
   {
    "name": "copy-budget",
    "passed": true,
    "exitCode": 0,
-   "durationMs": 2,
+   "durationMs": 0,
    "output": "prose on the first screen: 17 words at 390 (bar 60), 17 at 1440 (bar 90)\nall words on the first screen: 36 at 390, 59 at 1440\nwhole page: 59 words, 17 of them prose"
   },
   {
@@ -109,12 +109,12 @@
    "name": "share",
    "passed": true,
    "exitCode": 0,
-   "durationMs": 0,
+   "durationMs": 1,
    "output": "title \"Everlight Garden: light a permanent candle\", favicon, og:title, og:image, description"
   }
  ],
  "target": "dist",
- "at": "2026-11-18T09:14:57.656Z",
+ "at": "2026-11-18T09:54:59.711Z",
  "bar": {
   "sizes": 6,
   "strays": 8,

@@ -9,6 +9,7 @@ import { checkWish, gasBound } from "../lib/wish";
 import { STYLE_NAMES, eth, imd } from "../lib/format";
 import { explainError } from "../lib/errors";
 import { runPurchase, type Step } from "../lib/purchase";
+import { rememberTx } from "../lib/txhash";
 import { parseQuantity } from "../lib/quantity";
 import { ConnectButton } from "../components/ConnectSheet";
 
@@ -136,6 +137,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
           wait: async (hash: Hash) => {
             const r = await waitForTransactionReceipt(config, { hash, chainId: 1 });
             const ev = parseEventLogs({ abi: wishGardenAbi, logs: r.logs, eventName: "CandlesPurchased" })[0];
+            if (ev) rememberTx(Number(ev.args.firstCandleId), Number(ev.args.quantity), hash);
             return { status: r.status, firstId: ev ? Number(ev.args.firstCandleId) : null };
           },
           simulate: async (styles, wishes) => {

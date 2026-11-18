@@ -96,11 +96,13 @@ These are worker-side results from 2026-11-18. The full record is in `artifacts/
 | Check | Result |
 | --- | --- |
 | `npx tsc --noEmit` | exit 0 |
-| `npx vitest run` | 3 files, 46/46 passed |
+| `npx vitest run` | 5 files, 55/55 passed (adds popup placement and candle → transaction tests) |
 | `npm run build` | built into `dist/` |
 | design-critic probe `taste.mjs` | 16/16 checks passed at 320/390/1440 |
 | Playwright walkthrough of the export (live reads plus `?fixture=0/100/3000/10000`, 1440 and 390 wide) | zoom/pan/bounds/reset, Find and the anchored popup, quantity edge cases, draft kept after reload, all routes, map tools hidden behind sheets; frame times measured headless (`artifacts/walkthrough-results.json`) |
 
-Evidence: `artifacts/screens/` (screenshots and reference side-by-sides) and `artifacts/recordings/` (desktop and mobile walkthrough WebM).
+| Revision 2 reproduction script (`test/scratch`, not shipped) on the export | the reviewer's steps, before and after: path/stream joins at overview and after a pan, spring heads, popup after Find 9876 and pans, maximum zoom, mobile Find 37, idle frame rate at 100 and 10,000 (see `artifacts/validation.md`, "Revision 2") |
+
+Evidence: `artifacts/screens/` (revision 2 shots are `rev2-*.jpg`) (screenshots and reference side-by-sides) and `artifacts/recordings/` (desktop and mobile walkthrough WebM).
 
 **Limitations.** The art is procedural, not illustrated: no image-generation tool was available. It is not claimed to match the reference, and no similarity score was measured. No fork test or wallet transaction ran; purchase, approval rejection and recovery are covered only by unit tests on labelled mocks. Hosting is done by the publishing plane from the committed `dist/`.

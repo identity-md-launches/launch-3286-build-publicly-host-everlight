@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { placePopup, type Placement } from "./lib/popup";
 import { useAccount } from "wagmi";
 import { ETHERSCAN, ethClient } from "./config";
 import { Garden, type GardenHandle } from "./garden/Garden";
@@ -99,6 +100,20 @@ export default function App() {
   const mine = useMemo(() => new Set(myIds.data ?? []), [myIds.data]);
   const total = cs.candles.length;
   const narrow = useNarrow();
+  // anchored desktop popup: measured, then placed between header and strip, clear of the headline
+  const popRef = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<(Placement & { base: number }) | null>(null);
+  const anchored = !!anchor && !narrow && selected !== null;
+  useLayoutEffect(() => {
+    const el = popRef.current;
+    if (!anchored || !el || !anchor) return setPlace(null);
+    const header = document.querySelector(".top")?.getBoundingClientRect().bottom ?? 56;
+    const strip = document.querySelector(".strip")?.getBoundingClientRect().top ?? innerHeight;
+    const intro = document.querySelector(".intro")?.getBoundingClientRect() ?? null;
+    const base = (el.offsetParent as HTMLElement | null)?.getBoundingClientRect().top ?? 0;
+    const p = placePopup(anchor, { w: el.offsetWidth, h: el.offsetHeight }, { w: innerWidth, top: header, bottom: strip }, intro && intro.height > 0 ? intro : null);
+    setPlace((old) => (old && old.left === p.left && old.top === p.top && old.hidden === p.hidden && old.below === p.below && old.overlapsAvoid === p.overlapsAvoid && old.base === base ? old : { ...p, base }));
+  });
 
   const push = (t: Toast) => setToasts((l) => [...l.filter((x) => x.id !== t.id), t].slice(-3));
   usePendingRecovery(push);
@@ -204,7 +219,7 @@ export default function App() {
 
       <main id="main" className="overlay">
         {route === "garden" && (
-          <div className="intro">
+          <div className={(anchored && place?.overlapsAvoid && !place.hidden) || (narrow && !!sel) ? "intro intro-yield" : "intro"}>
             <h1>Light a wish in the garden</h1>
             <p className="intro-line">Permanent candles on Ethereum: 1 IMD each, with a public wish.</p>
             <a className="cta intro-cta" href="#/light">{"Light a candle\u00a0· 1\u00a0IMD"}</a>
@@ -259,8 +274,9 @@ export default function App() {
 
         {sel && (
           <div
-            className={anchor && !narrow ? "detail-wrap anchored" : "detail-wrap"}
-            style={anchor && !narrow ? { left: Math.min(Math.max(anchor.x, 190), innerWidth - 190), top: anchor.y - 14 } : undefined}
+            ref={popRef}
+            className={anchored ? `detail-wrap anchored${place?.below ? " below" : ""}` : "detail-wrap"}
+            style={anchored ? (place ? { left: place.left, top: place.top - place.base, visibility: place.hidden ? "hidden" : undefined } : { visibility: "hidden" }) : undefined}
           >
             <CandleDetail c={sel} mine={mine.has(sel.id)} onClose={() => setSelected(null)} />
           </div>

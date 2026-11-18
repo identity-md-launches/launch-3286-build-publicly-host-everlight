@@ -17,7 +17,6 @@ CANVAS_MODULE=/tmp/art/node_modules/@napi-rs/canvas/index.js node web/art-src/ge
 
 | File (`web/public/art/`) | Bytes | Layer / role | Generator | Licence |
 | --- | --- | --- | --- | --- |
-| `backdrop.webp` | 113,184 | Vista (screen space, slight parallax): night sky, stars, fBm clouds, moon with halo at about (0.66 W, 0.10 H) of the layer; mountain ranges; a castle of slender spired towers, stepped halls, lit arched windows and a curtain wall with gatehouse towers on its hill at (0.79 W, 0.24 H); a switchback road with small square window lights (decor, never flames). Middle distance (revision 4): nine interlocking raised terraces that climb the castle hill and the west hills, each with an irregular, block-jointed stone retaining wall, moss and ivy, a hedge line and tree masses lit by the moon; pools with lily pads and moon glints; waterfalls spilling between terraces; seven arched bridges of 2 to 5 spans at different elevations, lengths and angles over streams; six domed pavilions; winding paths; layered mist | `backdrop()`, `vista()`, `crown()`, `cypress()`, `farBridge()`, `pavilion()`, `castle()` in `web/art-src/paint.js` | CC0 1.0 |
 | `bridge.webp` | 22,244 | Sector feature: Three-arched stone bridge; one per sector where the path crosses the stream, rotated to the path slope | `bridge()` in `web/art-src/paint.js` | CC0 1.0 |
 | `bush-plain.webp` | 12,364 | Sector feature: Shrub without flowers | `bush(240, 150, 18, 0)` in `web/art-src/paint.js` | CC0 1.0 |
 | `bush.webp` | 18,494 | Sector feature: Shrub with white flowers | `bush()` in `web/art-src/paint.js` | CC0 1.0 |
@@ -28,9 +27,6 @@ CANVAS_MODULE=/tmp/art/node_modules/@napi-rs/canvas/index.js node web/art-src/ge
 | `candle-4.svg` | 723 | Purchased candle sprite (drawn per frame from contract data only) | hand-written SVG from the previous job | CC0 1.0 |
 | `candle-5.svg` | 812 | Purchased candle sprite (drawn per frame from contract data only) | hand-written SVG from the previous job | CC0 1.0 |
 | `candle-6.svg` | 727 | Purchased candle sprite (drawn per frame from contract data only) | hand-written SVG from the previous job | CC0 1.0 |
-| `canopy.webp` | 76,720 | Foreground frame (HTML, top edge): Overhanging leaves and vines | `canopy()` in `web/art-src/paint.js` | CC0 1.0 |
-| `frame-left.webp` | 120,864 | Foreground frame (HTML, left): Carved columns and arch with gold inlay, ivy-covered emerald banner, armillary sphere, brass frog on a mossy rock, leaves and white flowers | `frameLeft()` in `web/art-src/paint.js` | CC0 1.0 |
-| `frame-right.webp` | 44,670 | Foreground frame (HTML, right): Rock ledge with a brass frog, foliage and white flowers | `frameRight()` in `web/art-src/paint.js` | CC0 1.0 |
 | `frog.webp` | 17,006 | Sector feature (statue): cast-brass frog modelled as rounded volumes (radial-gradient brass lit by candlelight from the left, moonlit rim on the right), haunch and folded hind leg, lidded bulging eyes, webbed toes, cast warts, verdigris in the hollows, on a weathered mossy rock | `frog()` in `web/art-src/paint.js` | CC0 1.0 |
 | `gazebo.webp` | 22,380 | Sector feature: Domed rotunda with a warm interior; seeded position per sector, small ones on the far hill bands | `gazebo()` in `web/art-src/paint.js` | CC0 1.0 |
 | `ground.webp` | 4,954 | Ground (world-aligned pattern, filled by the renderer under every sector): Seamless lawn texture; one pattern in world space, so neighbouring sectors share it without a seam | `groundTile()` in `web/art-src/paint.js` | CC0 1.0 |
@@ -46,7 +42,7 @@ Other shipped assets: `web/public/favicon.svg` (hand-written SVG, CC0 1.0) and `
 
 Runtime layers (see `DESIGN.md`, "Garden scene"):
 
-1. Vista: `backdrop.webp` in screen space with slight parallax.
+1. Vista: `makeVista()` in `web/src/garden/vista.ts`, procedural, drawn at runtime; the only parallax layer, seated on the world skyline.
 2. Ground: `ground.webp` as one world-aligned pattern under every sector (`drawGround()` in `web/src/garden/renderer.ts`); open garden edges fade into the night.
 3. Scenery per sector: `drawSectorArt()` in `web/src/garden/scenery.ts`, drawn in world coordinates onto a canvas with a 180-unit margin, cached. The stream and path are world-space curves (`streamX`, `pathY` in `layout.ts`), so neighbours draw them identically and they join without a seam.
 4. Holders: pedestals at the exact slot positions, inside the same cache.
@@ -55,3 +51,10 @@ Runtime layers (see `DESIGN.md`, "Garden scene"):
 7. HTML foreground frames and UI.
 
 Nothing in any layer is copied from the reference image, and no candle is pre-lit in any asset.
+
+
+## Changes in job 463ed97b follow-up (one-world repair)
+
+- Removed from the site: `backdrop.webp` (a complete painted garden drawn in screen space behind the world, which caused the picture-in-picture effect) and the screen-fixed foreground frames `canopy.webp`, `frame-left.webp`, `frame-right.webp`. Their generators remain in `web/art-src/paint.js` but are no longer exported to `web/public/art/`.
+- Added: the procedural distant vista in `web/src/garden/vista.ts` (sky, moon, clouds, three ridges, castle, far terraces). Original code, CC0 1.0, no third-party or reference pixels.
+- **Art blocker (unresolved):** the brief asks for illustrated landscape layers and transparent assets made with image-generation or illustration tools. None was available to this worker: no image-generation tool or illustration agent was offered in this environment. Every asset here is therefore procedural (canvas-painted). It is **not** claimed to match the approved reference; see `artifacts/screens/side-by-side-*.jpg` for an honest comparison. To close this, the requester must supply illustrated layers or run the job with an image-generation tool; the renderer accepts replacements of the same names (sprites in `web/public/art/`, the vista via `makeVista()`).

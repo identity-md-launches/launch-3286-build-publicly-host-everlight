@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Candle } from "../lib/candles";
-import { GardenRenderer } from "./renderer";
+import { GardenRenderer, MAX_ZOOM } from "./renderer";
 import { hitTest, positionOf } from "./layout";
 
 const CAM_KEY = "everlight:v4:camera"; // v4: one world camera (garden, wild woodland and skyline)
@@ -108,7 +108,10 @@ export function Garden(p: Props) {
     const r = rRef.current;
     if (!r) return;
     const pos = positionOf(id - 1);
-    r.cam = { x: pos.x, y: pos.y - 40, z: Math.max(r.cam.z, 1.4) };
+    const z = Math.min(MAX_ZOOM, Math.max(r.cam.z, 1.4));
+    // on a phone the candle sheet covers the lower half of the map: the flame lands at a quarter height, above it
+    const lift = r.w < 640 ? (r.h * 0.25) / z : 0;
+    r.cam = { x: pos.x, y: pos.y - 40 + lift, z };
     dirty.current = true;
   }, []);
   const reset = useCallback(() => {
@@ -123,7 +126,7 @@ export function Garden(p: Props) {
     const r = rRef.current!;
     const ax = sx ?? r.w / 2, ay = sy ?? r.h / 2;
     const before = r.toWorld(ax, ay);
-    r.cam.z = Math.min(4, Math.max(r.minZoom(Math.max(p.total, p.known)), r.cam.z * f));
+    r.cam.z = Math.min(MAX_ZOOM, Math.max(r.minZoom(Math.max(p.total, p.known)), r.cam.z * f));
     const after = r.toWorld(ax, ay);
     r.cam.x += before.x - after.x;
     r.cam.y += before.y - after.y;

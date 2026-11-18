@@ -8,6 +8,8 @@ export interface Candle {
   createdAt: number;
   position: number;
   wish: string;
+  /** Hash of the transaction that lit it, once known (purchase receipt or a CandlesPurchased log lookup). */
+  txHash?: `0x${string}`;
 }
 
 /** Where candles come from: the live contract, or a clearly labelled local fixture. */

@@ -4,7 +4,8 @@ import { erc20Abi, parseAbiItem, type Address } from "viem";
 import { wishGardenAbi } from "./abi/WishGarden";
 import { burnReceiverAbi } from "./abi/EverlightBurnReceiver";
 import { BASE_RECEIVER, GARDEN, GARDEN_DEPLOY_BLOCK, IMD, baseClient, ethClient } from "./config";
-import { CandleStore, fixtureSource, liveSource } from "./lib/candles";
+import { CandleStore, fixtureSource, liveSource, type Candle } from "./lib/candles";
+import { findCandleTx, knownTx, rememberTx } from "./lib/txhash";
 
 const params = new URLSearchParams(location.search);
 /** ?fixture=0|100|3000|10000 renders a labelled local fixture instead of live candles (testing only). */
@@ -152,7 +153,10 @@ export function useActivity() {
       for (let i = 0; i < 8 && to >= GARDEN_DEPLOY_BLOCK && out.length < 50; i++) {
         const from = to - 4_999n > GARDEN_DEPLOY_BLOCK ? to - 4_999n : GARDEN_DEPLOY_BLOCK;
         const logs = await ethClient.getLogs({ address: GARDEN, events: EVENTS, fromBlock: from, toBlock: to });
-        for (const l of logs.reverse()) out.push({ name: l.eventName, block: l.blockNumber!, tx: l.transactionHash!, args: l.args });
+        for (const l of logs.reverse()) {
+          out.push({ name: l.eventName, block: l.blockNumber!, tx: l.transactionHash!, args: l.args });
+          if (l.eventName === "CandlesPurchased" && l.transactionHash) rememberTx(Number((l.args as any).firstCandleId), Number((l.args as any).quantity), l.transactionHash);
+        }
         if (from === GARDEN_DEPLOY_BLOCK) break;
         to = from - 1n;
       }
@@ -170,4 +174,15 @@ export function useReducedMotion() {
     return () => q.removeEventListener("change", f);
   }, [q]);
   return v;
+}
+
+/** The transaction that lit a live candle: its own txHash, a remembered receipt/log, or a CandlesPurchased lookup. */
+export function useCandleTx(c: Candle) {
+  return useQuery({
+    queryKey: ["candle-tx", c.id, c.purchaser],
+    enabled: FIXTURE === null,
+    staleTime: Infinity,
+    retry: 1,
+    queryFn: async () => c.txHash ?? knownTx(c.id) ?? (await findCandleTx(ethClient as any, c)),
+  });
 }

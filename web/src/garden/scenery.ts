@@ -1,31 +1,22 @@
 import {
-  HOLDER_TOP, HORIZON_CUT, horizonY, SECTOR_H, SECTOR_MARGIN, SECTOR_W, TILT, mulberry, pathY, sectorPlan, streamX, type Terrace,
+  HOLDER_TOP, HORIZON_CUT, horizonY, SECTOR_H, SECTOR_MARGIN, SECTOR_W, TILT, mulberry, pathY, sectorAt, sectorPlan, streamX, type SectorPlan, type Terrace,
 } from "./layout";
 
 type Img = HTMLImageElement | null;
-/** Which neighbours exist: [north, east, south, west]. Features run on into a neighbour; at an open edge they end. */
-export type Neighbours = [boolean, boolean, boolean, boolean];
 
-/**
- * Static scenery for one sector, drawn in world coordinates onto a canvas that covers the sector plus
- * SECTOR_MARGIN on every side. The ground itself is filled by the renderer in world space, so it has no
- * seams; this layer only adds features, and features that cross an edge (the stream, the path) are
- * world-space curves drawn identically by both neighbours. Back to front: tonal patches, the path, the
- * stream with its pools and waterfall, then terraces, trees, gazebo, bridge and statues sorted by depth.
- * Candles and their light are drawn per frame on top; nothing here depends on purchases.
- */
-export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: Record<string, Img>, nb: Neighbours, wild = false) {
-  const plan = sectorPlan(index);
-  const { gx, gy, ox, oy } = plan;
-  const M = SECTOR_MARGIN, W = SECTOR_W, H = SECTOR_H;
-  const r = mulberry(1000 + index * 31);
+/** Overdraw of the flat layer past its own cell, in world units: hides antialiased seams; both sides paint the same curves there. */
+export const BASE_PAD = 4;
+/** Stream head in a home-row column: a spring well below the skyline, never a cut at the cell's top edge. */
+export function springY(gx: number): number {
+  let y = HORIZON_CUT + 60;
+  for (let i = 0; i < 5; i++) y = horizonY(streamX(gx, y)) + 95;
+  return Math.round(y);
+}
+
+type Put = (n: string, x: number, yBase: number, h: number, flip?: boolean, alpha?: number) => void;
+function sprites(g: CanvasRenderingContext2D, imgs: Record<string, Img>) {
   const im = (n: string) => imgs[`${n}.webp`] ?? null;
-  const ground = im("ground"), stone = im("stone"), ped = im("pedestal"), fall = im("waterfall");
-  g.save();
-  g.translate(M - ox, M - oy); // from here on, world coordinates; patterns line up across sectors
-  const groundPat = ground ? g.createPattern(ground, "repeat") : null;
-  const stonePat = stone ? g.createPattern(stone, "repeat") : null;
-  const put = (n: string, x: number, yBase: number, h: number, flip = false, alpha = 1) => {
+  const put: Put = (n, x, yBase, h, flip = false, alpha = 1) => {
     const s = im(n);
     if (!s) return;
     const w = (h * s.width) / s.height;
@@ -35,43 +26,45 @@ export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: 
     } else g.drawImage(s, x - w / 2, yBase - h, w, h);
     g.globalAlpha = 1;
   };
-  const top = oy + (nb[0] ? -M : HORIZON_CUT);
-  /** Anything drawn must stay inside this cell's canvas (cell + margin): a sprite of height h based at y must have y - h above the top margin. */
-  const fits = (y: number, h: number) => y - h > oy - M + 6 && y < oy + H + M - 6;
+  const width = (n: string, h: number) => { const s = im(n); return s ? (h * s.width) / s.height : h; };
+  return { im, put, width };
+}
 
-  // land edge toward the vista: an irregular hillside line with a tree line and haze, never a straight cut
-  if (!nb[0]) {
-    // the band is a function of world x only, and each sector paints it only across its own width where a
-    // neighbour continues it, so translucent haze is never laid twice and no seam forms between sectors
-    const edge = (x: number) => oy + horizonY(x);
-    const bx0 = nb[3] ? ox : ox - M, bx1 = nb[1] ? ox + W : ox + W + M;
-    g.save();
-    g.beginPath(); g.rect(bx0, oy - M, bx1 - bx0, HORIZON_CUT + M + 120); g.clip();
-    // the painted vista (backdrop layer) shows above this edge: terraces, pools and bridges recede up the
-    // hills to the castle, so no flat hill band is drawn here and the join is a soft, irregular tree line
-    g.beginPath();
-    g.moveTo(ox - M, oy + HORIZON_CUT + 80);
-    for (let x = ox - M; x <= ox + W + M; x += 16) g.lineTo(x, edge(x));
-    g.lineTo(ox + W + M, oy + HORIZON_CUT + 80);
-    g.closePath();
-    g.fillStyle = groundPat ?? "#0c2117";
-    g.fill();
-    const fade = g.createLinearGradient(0, oy + HORIZON_CUT - 110, 0, oy + HORIZON_CUT + 80);
-    fade.addColorStop(0, "rgba(16,36,44,0.4)");
-    fade.addColorStop(0.6, "rgba(10,28,26,0.18)");
-    fade.addColorStop(1, "rgba(10,28,26,0)");
-    g.fillStyle = fade;
-    g.fill();
-    for (let x = bx0 + 12 + r() * 20; x < bx1 - 12; x += 14 + r() * 24) {
-      put(r() < 0.35 ? "tree-2" : r() < 0.5 ? "tree-1" : "tree-0", x, edge(x) + 10 + r() * 14, 40 + r() * 60, r() < 0.5, 0.85);
-    }
-    g.restore();
-  }
+const band = (g: CanvasRenderingContext2D, pts: [number, number][], half: (i: number) => number, nx: (i: number) => [number, number]) => {
+  g.beginPath();
+  pts.forEach(([x, y], i) => { const [a, b] = nx(i); const h = half(i); i ? g.lineTo(x + a * h, y + b * h) : g.moveTo(x + a * h, y + b * h); });
+  for (let i = pts.length - 1; i >= 0; i--) { const [x, y] = pts[i]; const [a, b] = nx(i); const h = half(i); g.lineTo(x - a * h, y - b * h); }
+  g.closePath();
+};
+const normals = (pts: [number, number][]) => (i: number): [number, number] => {
+  const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+  const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
+  return [-dy / l, dx / l];
+};
 
-  // tonal patches: shadowed hollows and moonlit rises so the lawn never reads as a flat fill
+/**
+ * Flat layer of one cell, drawn in world coordinates onto a canvas covering exactly the cell plus BASE_PAD.
+ * Everything here either stays wholly inside the cell (tonal patches, ground cover) or is a world-space curve
+ * (path, stream, pools of this and the neighbouring cells, the founding entrance walk) that every cell it
+ * crosses paints identically, clipped to itself. No cell's flat layer ever covers a neighbour's, so paths and
+ * streams run through cell joins without a step, an offset or a straight cut.
+ */
+export function drawSectorBase(g: CanvasRenderingContext2D, index: number, imgs: Record<string, Img>, wild = false) {
+  const plan = sectorPlan(index);
+  const { gx, gy, ox, oy } = plan;
+  const W = SECTOR_W, H = SECTOR_H, P = BASE_PAD;
+  const r = mulberry(1000 + index * 31);
+  const { im, put, width } = sprites(g, imgs);
+  const stone = im("stone"), fall = im("waterfall");
+  g.save();
+  g.translate(P - ox, P - oy);
+  const stonePat = stone ? g.createPattern(stone, "repeat") : null;
+  const top = oy + (gy > 0 ? 0 : HORIZON_CUT);
+
+  // tonal patches: shadowed hollows and moonlit rises, each wholly inside this cell
   for (let i = 0; i < 16; i++) {
-    // radius and centre keep the whole soft patch inside the cell canvas, so it never ends on a straight clip line
-    const rad = 100 + r() * 70, x = ox - M + rad + r() * (W + 2 * M - 2 * rad), y = Math.max(top + 60, oy + r() * H);
+    const rad = 100 + r() * 70, x = ox + rad + r() * (W - 2 * rad);
+    const y = Math.min(oy + H - rad * 0.6, Math.max(top + 60, oy + rad * 0.6, oy + r() * H));
     const dark = r() < 0.6;
     const gr = g.createRadialGradient(x, y, 0, x, y, rad);
     gr.addColorStop(0, dark ? "rgba(0,6,3,0.42)" : "rgba(70,120,120,0.10)");
@@ -82,19 +75,21 @@ export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: 
     g.restore();
   }
 
-  // ground cover: low shrubs, flowering bushes, cypresses and mossy rocks break up the lawn; drawn before
-  // terraces, paths and holders so anything placed later sits on top of it
+  // ground cover under the path and stream: low shrubs, flowering bushes, cypresses and mossy rocks,
+  // only where the whole sprite fits inside this cell
+  const inside = (x: number, y: number, w: number, h: number) => x - w / 2 > ox + 2 && x + w / 2 < ox + W - 2 && y - h > oy + 2 && y + 4 < oy + H;
   for (let i = 0; i < 70; i++) {
     const x = ox - 40 + r() * (W + 80), y = top + 90 + r() * (oy + H - top - 90);
     const kind = r();
     const th = kind < 0.12 ? 70 + r() * 60 : 90 + r() * 70;
-    if (kind < 0.24 && !fits(y, th)) continue;
-    if (kind < 0.12) put("tree-2", x, y, th, r() < 0.5, 0.92);
-    else if (kind < 0.24) put("tree-0", x, y, th, r() < 0.5, 0.9);
-    else if (kind < 0.62) put("bush-plain", x, y, 26 + r() * 30, r() < 0.5, 0.95);
-    else if (kind < 0.8) put("bush", x, y, 24 + r() * 26, r() < 0.5, 0.95);
-    else {
+    const name = kind < 0.12 ? "tree-2" : kind < 0.24 ? "tree-0" : kind < 0.62 ? "bush-plain" : kind < 0.8 ? "bush" : "";
+    const h = kind < 0.24 ? th : kind < 0.62 ? 26 + r() * 30 : 24 + r() * 26;
+    const flip = r() < 0.5;
+    if (name) {
+      if (inside(x, y, width(name, h), h)) put(name, x, y, h, flip, kind < 0.24 ? 0.9 : 0.95);
+    } else {
       const rr = 8 + r() * 16;
+      if (!inside(x, y, rr * 2, rr * 1.4)) continue;
       const gr = g.createRadialGradient(x - rr * 0.3, y - rr * 0.5, 1, x, y - rr * 0.3, rr);
       gr.addColorStop(0, "#5b5747"); gr.addColorStop(0.6, "#2a2a22"); gr.addColorStop(1, "#0e0f0c");
       g.fillStyle = gr; g.beginPath(); g.ellipse(x, y - rr * 0.3, rr, rr * 0.6, 0, 0, Math.PI * 2); g.fill();
@@ -102,77 +97,70 @@ export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: 
     }
   }
 
-  // ---- the path: an east-west flagstone walk, warm-lit, running on into the neighbours ----
-  const px0 = nb[3] ? ox - M : ox + 30 + r() * 60, px1 = nb[1] ? ox + W + M : ox + W - 30 - r() * 60;
-  const band = (pts: [number, number][], half: (i: number) => number, nx: (i: number) => [number, number]) => {
-    g.beginPath();
-    pts.forEach(([x, y], i) => { const [a, b] = nx(i); const h = half(i); i ? g.lineTo(x + a * h, y + b * h) : g.moveTo(x + a * h, y + b * h); });
-    for (let i = pts.length - 1; i >= 0; i--) { const [x, y] = pts[i]; const [a, b] = nx(i); const h = half(i); g.lineTo(x - a * h, y - b * h); }
-    g.closePath();
-  };
+  // ---- the path: one east-west flagstone walk per row, sampled on a world-aligned grid so every cell paints the same polygon ----
   const pathPts: [number, number][] = [];
-  for (let x = px0; x <= px1; x += 12) pathPts.push([x, pathY(gy, x)]);
-  const pathNormal = (i: number): [number, number] => {
-    const a = pathPts[Math.max(0, i - 1)], b = pathPts[Math.min(pathPts.length - 1, i + 1)];
-    const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
-    return [-dy / l, dx / l];
-  };
-  const pathHalf = (i: number) => {
-    const end = Math.min(i, pathPts.length - 1 - i);
-    const taper = (!nb[3] && i < 6) || (!nb[1] && pathPts.length - 1 - i < 6) ? Math.max(0.3, end / 6) : 1;
-    return 22 * taper;
-  };
-  drawWalk(g, pathPts, pathHalf, pathNormal, stonePat, band);
+  for (let x = Math.floor((ox - 48) / 24) * 24; x <= ox + W + 48; x += 12) pathPts.push([x, pathY(gy, x)]);
+  drawWalk(g, pathPts, () => 22, normals(pathPts), stonePat, (a, b, c) => band(g, a, b, c));
 
-  // founding sector: a broad entrance walk from the near left corner up to the hero pedestal and the path
-  if (plan.hero && !wild) {
-    const h = plan.hero;
+  // founding entrance walk and forecourt: a world feature that crosses cells (0,0), (-1,0), (0,1) and (-1,1)
+  const hero = sectorPlan(0).hero;
+  if (hero && gx >= -1 && gx <= 0 && gy <= 1 && !(wild && gx === 0 && gy === 0)) {
+    const x0 = -60, y0 = SECTOR_H + 60;
+    g.fillStyle = "rgba(0,0,0,0.35)";
+    g.beginPath(); g.ellipse(x0, y0, 128, 128 * TILT, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = stonePat ?? "#4a463a";
+    g.beginPath(); g.ellipse(x0, y0, 120, 120 * TILT, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "rgba(150,120,70,0.16)"; g.fill();
+    g.strokeStyle = "rgba(214,186,120,0.3)"; g.lineWidth = 2; g.stroke();
     const ent: [number, number][] = [];
     for (let k = 0; k <= 40; k++) {
       const t = k / 40;
-      const x = (1 - t) ** 3 * (ox - 60) + 3 * (1 - t) ** 2 * t * (ox + 120) + 3 * (1 - t) * t * t * (h.x + 40) + t ** 3 * (h.x + 150);
-      const y = (1 - t) ** 3 * (oy + H + 60) + 3 * (1 - t) ** 2 * t * (oy + H - 120) + 3 * (1 - t) * t * t * (h.y + 120) + t ** 3 * pathY(gy, h.x + 150);
+      const x = (1 - t) ** 3 * x0 + 3 * (1 - t) ** 2 * t * 120 + 3 * (1 - t) * t * t * (hero.x + 40) + t ** 3 * (hero.x + 150);
+      const y = (1 - t) ** 3 * y0 + 3 * (1 - t) ** 2 * t * (SECTOR_H - 120) + 3 * (1 - t) * t * t * (hero.y + 120) + t ** 3 * pathY(0, hero.x + 150);
       ent.push([x, y]);
     }
-    const en = (i: number): [number, number] => {
-      const a = ent[Math.max(0, i - 1)], b = ent[Math.min(ent.length - 1, i + 1)];
-      const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
-      return [-dy / l, dx / l];
-    };
-    drawWalk(g, ent, (i) => 70 - 46 * (i / 40), en, stonePat, band);
+    drawWalk(g, ent, (i) => 70 - 46 * (i / 40), normals(ent), stonePat, (a, b, c) => band(g, a, b, c));
     // round plinth around the hero pedestal
     g.fillStyle = stonePat ?? "#3d3a30";
-    g.beginPath(); g.ellipse(h.x, h.y + 6, 92, 92 * TILT, 0, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.ellipse(hero.x, hero.y + 6, 92, 92 * TILT, 0, 0, Math.PI * 2); g.fill();
     g.fillStyle = "rgba(0,0,0,0.35)"; g.fill();
     g.strokeStyle = "rgba(214,186,120,0.45)"; g.lineWidth = 2.5; g.stroke();
   }
 
-  // ---- the stream: a moonlit band winding north-south, with pools and a waterfall ----
-  const sy0 = nb[0] ? oy - M : oy + HORIZON_CUT - 30, sy1 = nb[2] ? oy + H + M : oy + H - 70;
+  // ---- the stream: one moonlit band per column, from a spring below the skyline down through every row ----
+  const head = gy === 0 ? springY(gx) : -Infinity;
+  const sy0 = Math.max(head, Math.floor((oy - 20) / 10) * 10), sy1 = oy + H + 20;
   const sp: [number, number][] = [];
   for (let y = sy0; y <= sy1; y += 10) sp.push([streamX(gx, y), y]);
-  const sn = (i: number): [number, number] => {
-    const a = sp[Math.max(0, i - 1)], b = sp[Math.min(sp.length - 1, i + 1)];
-    const dx = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dx, dy) || 1;
-    return [-dy / l, dx / l];
-  };
-  const wHalf = (i: number) => 24 + 7 * Math.sin(sp[i][1] / 83) + 5 * Math.sin(sp[i][1] / 37);
+  const sn = normals(sp);
+  const ramp = (y: number) => (gy === 0 ? Math.min(1, 0.3 + (0.7 * (y - head)) / 140) : 1);
+  const wHalf = (i: number) => (24 + 7 * Math.sin(sp[i][1] / 83) + 5 * Math.sin(sp[i][1] / 37)) * ramp(sp[i][1]);
   g.fillStyle = stonePat ?? "#3d3a30";
-  band(sp, (i) => wHalf(i) + 11, sn);
+  band(g, sp, (i) => wHalf(i) + 11, sn);
   g.fill();
   g.fillStyle = "rgba(0,0,0,0.45)";
   g.fill();
-  const water = g.createLinearGradient(0, sy0, 0, sy1);
-  water.addColorStop(0, "#1f4a62");
+  // water shade is a function of world y, so it matches across rows
+  const water = g.createLinearGradient(0, oy - 20, 0, oy + H + 20);
+  water.addColorStop(0, "#173f55");
   water.addColorStop(0.5, "#123a4e");
-  water.addColorStop(1, "#0b2a38");
+  water.addColorStop(1, "#173f55");
   g.fillStyle = water;
-  band(sp, wHalf, sn);
+  band(g, sp, wHalf, sn);
   g.fill();
-  // pools: where the stream slows and widens; the end pool catches it at an open southern edge
-  const pools = [...plan.pools];
-  if (!nb[2]) pools.push({ x: streamX(gx, sy1), y: sy1, rx: 80 });
+  // pools of this cell and of the cells above and below that reach into it, each seeded by its own position
+  const pools: SectorPlan["pools"] = [];
+  for (const dy of [-1, 0, 1]) {
+    const s = sectorAt(gx, gy + dy);
+    if (s >= 0) pools.push(...sectorPlan(s).pools);
+  }
+  if (gy === 0) {
+    const x = streamX(gx, head);
+    pools.push({ x, y: head, rx: 46 });
+  }
   for (const p of pools) {
+    if (p.y + (p.rx + 12) * TILT < oy - P || p.y - (p.rx + 12) * TILT > oy + H + P) continue;
+    const pr = mulberry(Math.round(p.x * 7 + p.y * 13));
     g.fillStyle = stonePat ?? "#3d3a30";
     g.beginPath(); g.ellipse(p.x, p.y, p.rx + 12, (p.rx + 12) * TILT, 0, 0, Math.PI * 2); g.fill();
     g.fillStyle = "rgba(0,0,0,0.4)"; g.fill();
@@ -181,14 +169,29 @@ export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: 
     g.fillStyle = pg;
     g.beginPath(); g.ellipse(p.x, p.y, p.rx, p.rx * TILT, 0, 0, Math.PI * 2); g.fill();
     for (let k = 0; k < 7; k++) {
-      const a = r() * Math.PI * 2, d = p.rx * (0.4 + r() * 0.5);
-      g.fillStyle = r() < 0.5 ? "#1f4a2c" : "#2a5a34";
+      const a = pr() * Math.PI * 2, d = p.rx * (0.4 + pr() * 0.5);
+      g.fillStyle = pr() < 0.5 ? "#1f4a2c" : "#2a5a34";
       g.beginPath(); g.ellipse(p.x + Math.cos(a) * d, p.y + Math.sin(a) * d * TILT, 9, 4, 0, 0.3, Math.PI * 2 - 0.3); g.fill();
     }
   }
+  // the spring: a mossy rock outcrop at the head pool with a short cascade spilling into it
+  if (gy === 0) {
+    const x = streamX(gx, head);
+    // a cluster of dark, moss-capped boulders, back to front, with the cascade spilling from between them
+    for (const [dx, dy, rx, ry] of [[-30, -30, 30, 20], [28, -32, 26, 18], [0, -40, 22, 15], [-46, -14, 20, 12], [44, -16, 18, 11]]) {
+      const bx = x + dx, by = head + dy;
+      const rock = g.createRadialGradient(bx - rx * 0.3, by - ry * 0.5, 2, bx, by, rx);
+      rock.addColorStop(0, "#4a473b"); rock.addColorStop(0.55, "#24241d"); rock.addColorStop(1, "#0b0c09");
+      g.fillStyle = rock;
+      g.beginPath(); g.ellipse(bx, by, rx, ry, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = "rgba(34,86,50,0.6)";
+      g.beginPath(); g.ellipse(bx - rx * 0.15, by - ry * 0.6, rx * 0.6, ry * 0.3, 0, 0, Math.PI * 2); g.fill();
+    }
+    if (fall) { g.globalAlpha = 0.85; g.drawImage(fall, x - 13, head - 34, 26, 36); g.globalAlpha = 1; }
+  }
   // moonlight on the water: broken silver strokes along the current
   g.save();
-  band(sp, wHalf, sn);
+  band(g, sp, wHalf, sn);
   g.clip();
   g.strokeStyle = "rgba(190,225,245,0.24)";
   g.lineWidth = 1.4;
@@ -200,23 +203,58 @@ export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: 
   g.restore();
   // waterfall: a rock sill across the stream with the fall and foam below it
   {
-    const { x, y } = plan.fall;
+    // in the home row the spring is the stream's head, so the sector's fall sits well downstream of it
+    const y = gy === 0 ? Math.max(plan.fall.y, head + 150) : plan.fall.y, x = streamX(gx, y);
+    // never on the bridge: where the shifted fall would meet it, the spring's cascade is this column's waterfall
+    const onBridge = y !== plan.fall.y && Math.abs(y - plan.bridge.y) < 140;
+    if (!onBridge) {
     g.fillStyle = stonePat ?? "#3d3a30";
     g.beginPath(); g.ellipse(x, y - 4, 52, 16, 0, 0, Math.PI * 2); g.fill();
     g.fillStyle = "rgba(0,0,0,0.3)"; g.fill();
     if (fall) { g.globalAlpha = 0.9; g.drawImage(fall, x - 30, y - 10, 60, 64); g.globalAlpha = 1; }
     const foam = g.createRadialGradient(x, y + 52, 2, x, y + 52, 46);
-    foam.addColorStop(0, "rgba(200,230,245,0.35)"); foam.addColorStop(1, "rgba(200,230,245,0)");
-    g.fillStyle = foam; g.fillRect(x - 50, y + 20, 100, 70);
+    foam.addColorStop(0, "rgba(200,230,245,0.22)"); foam.addColorStop(1, "rgba(200,230,245,0)");
+    g.fillStyle = foam; g.beginPath(); g.ellipse(x, y + 52, 46, 30, 0, 0, Math.PI * 2); g.fill();
+    }
+  }
+  g.restore();
+}
+
+/**
+ * Upright layer of one cell on a canvas covering the cell plus SECTOR_MARGIN: terraces, holders, trees,
+ * bushes, gazebo, bridge and statues, depth-sorted. Every sprite is drawn whole (never clipped), so where
+ * it overhangs a neighbour it reads as a tree in front, not as a patch.
+ */
+export function drawSectorUpright(g: CanvasRenderingContext2D, index: number, imgs: Record<string, Img>, wild = false) {
+  const plan = sectorPlan(index);
+  const { gx, gy, ox, oy } = plan;
+  const M = SECTOR_MARGIN, W = SECTOR_W, H = SECTOR_H;
+  const r = mulberry(5000 + index * 31);
+  const { im, put } = sprites(g, imgs);
+  const ground = im("ground"), stone = im("stone"), ped = im("pedestal");
+  g.save();
+  g.translate(M - ox, M - oy);
+  const groundPat = ground ? g.createPattern(ground, "repeat") : null;
+  const stonePat = stone ? g.createPattern(stone, "repeat") : null;
+  const top = oy + (gy > 0 ? 0 : HORIZON_CUT);
+  /** Anything drawn must stay inside this cell's canvas (cell + margin). */
+  const fits = (y: number, h: number) => y - h > oy - M + 6 && y < oy + H + M - 6;
+
+  // home row: a tree line along the skyline, each tree whole, only across this cell's own width
+  if (gy === 0) {
+    for (let x = ox + 6 + r() * 20; x < ox + W - 6; x += 14 + r() * 24) {
+      put(r() < 0.35 ? "tree-2" : r() < 0.5 ? "tree-1" : "tree-0", x, oy + horizonY(x) + 10 + r() * 14, 40 + r() * 60, r() < 0.5, 0.85);
+    }
   }
 
-  // ---- depth-sorted features: terraces, trees, gazebo, bridge, statues ----
   type Item = { y: number; draw: () => void };
   const items: Item[] = [];
   if (!wild) for (const t of plan.terraces) items.push({ y: t.cy + t.rx * TILT, draw: () => drawTerrace(g, t, plan.slots, ped, groundPat, stonePat, put, r) });
+  const spring = gy === 0 ? springY(gx) : -Infinity;
   const clear = (x: number, y: number, rad: number) => {
     if (Math.abs(x - streamX(gx, y)) < 60 + rad * 0.4 || Math.abs(y - pathY(gy, x)) < 40) return false;
     if (y < top + 30 || x < ox - 40 || x > ox + W + 40 || y > oy + H + 40) return false;
+    if (gy === 0 && Math.abs(x - streamX(gx, spring)) < 90 && y < spring + 30 && y > spring - 60) return false;
     if (!wild) for (const s of plan.slots) if (Math.abs(s[0] - x) < rad && s[1] - y < rad * 0.9 && s[1] - y > -rad * 0.25) return false;
     if (!wild && plan.gazebo && Math.hypot(plan.gazebo.x - x, plan.gazebo.y - y) < 90) return false;
     return true;
@@ -273,16 +311,6 @@ export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: 
     }));
   }
   items.sort((a, b) => a.y - b.y).forEach((it) => it.draw());
-
-  if (!nb[0]) {
-    const mist = g.createLinearGradient(0, oy + HORIZON_CUT - 80, 0, oy + HORIZON_CUT + 160);
-    mist.addColorStop(0, "rgba(120,160,185,0)");
-    mist.addColorStop(0.35, "rgba(120,160,185,0.18)");
-    mist.addColorStop(1, "rgba(120,160,185,0)");
-    g.fillStyle = mist;
-    const mx0 = nb[3] ? ox : ox - M, mx1 = nb[1] ? ox + W : ox + W + M; // laid once per column, no double haze
-    g.fillRect(mx0, oy + HORIZON_CUT - 80, mx1 - mx0, 240);
-  }
   g.restore();
 }
 

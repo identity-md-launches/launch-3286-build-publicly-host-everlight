@@ -1,9 +1,18 @@
 import type { Candle } from "../lib/candles";
-import { HOLDER_TOP, HORIZON_CUT, SECTOR_H, SECTOR_MARGIN, SECTOR_W, SLOTS_PER_SECTOR, cameraBounds, horizonY, positionOf, sectorAt, sectorCount, sectorOrigin, spiral, streamX } from "./layout";
-import { drawSectorArt } from "./scenery";
+import { HOLDER_TOP, HORIZON_CUT, SECTOR_H, SECTOR_MARGIN, SECTOR_W, SLOTS_PER_SECTOR, cameraBounds, horizonY, positionOf, sectorAt, sectorCount, sectorOrigin, streamX } from "./layout";
+import { BASE_PAD, drawSectorBase, drawSectorUpright } from "./scenery";
 import { VISTA_CASTLE_X, VISTA_FOOT, VISTA_H, VISTA_TOP, VISTA_W, makeVista } from "./vista";
 
 export interface Camera { x: number; y: number; z: number }
+
+/** Closest zoom: the near cache tier paints at 1.0, so scenery is never stretched more than 1.8x (CSS pixels). */
+export const MAX_ZOOM = 1.8;
+/** Cache tiers by zoom: scale of the cached cell bitmaps and LRU size. */
+const TIER_SCALE = [0.125, 0.35, 0.7, 1.0];
+const TIER_KEEP = [600, 60, 20, 8];
+const TIER_COST = [1, 2, 4, 6];
+const tierOf = (z: number) => (z < 0.3 ? 0 : z < 0.75 ? 1 : z < 1.15 ? 2 : 3);
+interface CellArt { base: HTMLCanvasElement; up: HTMLCanvasElement }
 
 /** Asset paths are relative to the page so the export works under any gateway subpath. */
 export const ART_BASE = new URLSearchParams(location.search).has("noassets") ? "./missing-art/" : "./art/";
@@ -44,8 +53,9 @@ export class GardenRenderer {
   private ctx: CanvasRenderingContext2D;
   private candleImgs: Img[] = [];
   private layerImgs: Record<string, Img> = {};
-  /** Cell caches by detail tier (0 overview, 1 mid, 2 near), LRU-bounded. */
-  private caches: Map<string, HTMLCanvasElement>[] = [new Map(), new Map(), new Map()];
+  /** Cell caches by detail tier (0 overview, 1 mid, 2 near, 3 close), LRU-bounded. */
+  private caches: Map<string, CellArt>[] = [new Map(), new Map(), new Map(), new Map()];
+  private flames: HTMLCanvasElement[];
   /** Cells built per frame are limited; when the budget runs out the frame is redrawn next tick. */
   private budget = 6;
   pending = false;
@@ -62,6 +72,7 @@ export class GardenRenderer {
   constructor(private canvas: HTMLCanvasElement, onReady: () => void) {
     this.ctx = canvas.getContext("2d")!;
     this.glow = makeGlow();
+    this.flames = TINT.map(makeFlame);
     this.vista = makeVista();
     Promise.all([...CANDLE_ART.map(loadImage), ...LAYERS.map(loadImage)]).then((imgs) => {
       this.candleImgs = imgs.slice(0, 7);
@@ -109,7 +120,7 @@ export class GardenRenderer {
   /** Camera bounds: the view centre stays over land, and the skyline never drops below 45% of the screen. */
   clamp(total: number) {
     const b = cameraBounds(total);
-    this.cam.z = Math.min(4, Math.max(this.minZoom(total), this.cam.z));
+    this.cam.z = Math.min(MAX_ZOOM, Math.max(this.minZoom(total), this.cam.z));
     const z = this.cam.z;
     const hw = this.w / 2 / z, hh = this.h / 2 / z;
     const cx0 = b.minX + hw, cx1 = b.maxX - hw;
@@ -120,28 +131,36 @@ export class GardenRenderer {
   }
 
   /**
-   * Pre-render one grid cell's static scenery once. A cell inside the garden (index < count) is cultivated:
-   * terraces, holders, gazebo, lanterns. A cell outside it is the same ground, stream and path as wild woodland,
-   * so the garden grows into scenery that already joins it, and no edge of the world is a void.
+   * Pre-render one grid cell's static scenery once, as two bitmaps: the flat layer (ground cover, path, stream,
+   * pools) covering exactly the cell, and the upright layer (terraces, holders, trees, bridge) with a margin
+   * for overhanging sprites. A cell inside the garden (index < count) is cultivated; one outside it is the
+   * same ground, stream and path as wild woodland, so the garden grows into scenery that already joins it.
    */
-  private cell(index: number, wild: boolean, tier: 0 | 1 | 2): HTMLCanvasElement | null {
+  private cell(index: number, wild: boolean, tier: number): CellArt | null {
     const cache = this.caches[tier];
     const key = `${index}:${wild ? 1 : 0}`;
     const hit = cache.get(key);
     if (hit) { cache.delete(key); cache.set(key, hit); return hit; } // LRU order
     if (this.budget <= 0) { this.pending = true; return null; }
-    this.budget -= tier === 0 ? 1 : tier === 1 ? 2 : 4;
-    const scale = [0.125, 0.35, 0.7][tier];
-    const c = document.createElement("canvas");
-    c.width = Math.round((SECTOR_W + 2 * SECTOR_MARGIN) * scale);
-    c.height = Math.round((SECTOR_H + 2 * SECTOR_MARGIN) * scale);
-    const g = c.getContext("2d")!;
-    g.scale(scale, scale);
-    const [, gy] = spiral(index);
-    drawSectorArt(g, index, this.layerImgs, [gy > 0, true, true, true], wild);
-    if (cache.size >= [600, 70, 24][tier]) cache.delete(cache.keys().next().value!);
-    cache.set(key, c);
-    return c;
+    this.budget -= TIER_COST[tier];
+    const scale = TIER_SCALE[tier];
+    const P = BASE_PAD, M = SECTOR_MARGIN;
+    const base = document.createElement("canvas");
+    base.width = Math.round((SECTOR_W + 2 * P) * scale);
+    base.height = Math.round((SECTOR_H + 2 * P) * scale);
+    const bg = base.getContext("2d")!;
+    bg.scale(base.width / (SECTOR_W + 2 * P), base.height / (SECTOR_H + 2 * P));
+    drawSectorBase(bg, index, this.layerImgs, wild);
+    const up = document.createElement("canvas");
+    up.width = Math.round((SECTOR_W + 2 * M) * scale);
+    up.height = Math.round((SECTOR_H + 2 * M) * scale);
+    const ug = up.getContext("2d")!;
+    ug.scale(up.width / (SECTOR_W + 2 * M), up.height / (SECTOR_H + 2 * M));
+    drawSectorUpright(ug, index, this.layerImgs, wild);
+    if (cache.size >= TIER_KEEP[tier]) cache.delete(cache.keys().next().value!);
+    const art = { base, up };
+    cache.set(key, art);
+    return art;
   }
 
   /** Land: one world-aligned ground texture from the skyline down, under every cell, so nothing shows through. */
@@ -162,10 +181,19 @@ export class GardenRenderer {
     ctx.beginPath();
     const x0 = tl.x - step, x1 = br.x + step;
     ctx.moveTo(x0, br.y + 50);
-    for (let x = x0; x <= x1 + step; x += step) ctx.lineTo(x, horizonY(x) + 30);
+    for (let x = x0; x <= x1 + step; x += step) ctx.lineTo(x, horizonY(x));
     ctx.lineTo(x1 + step, br.y + 50);
     ctx.closePath();
     ctx.fill();
+    // moonlit haze over the far edge of the land, laid once in world space: no band, no seam
+    if (tl.y < HORIZON_CUT + 160) {
+      const haze = ctx.createLinearGradient(0, HORIZON_CUT - 140, 0, HORIZON_CUT + 150);
+      haze.addColorStop(0, "rgba(16,36,44,0.5)");
+      haze.addColorStop(0.55, "rgba(10,28,26,0.2)");
+      haze.addColorStop(1, "rgba(10,28,26,0)");
+      ctx.fillStyle = haze;
+      ctx.fill();
+    }
   }
 
   /** Distant vista in screen space: the only parallax layer. Its foot sits on the world skyline. */
@@ -249,26 +277,47 @@ export class GardenRenderer {
     this.drawLand(tl, br);
     // LOD: 0 = cached light layers per sector, 1 = sprites, 2 = sprites with animated flames
     const lod = cam.z < 0.3 ? 0 : cam.z < 0.7 ? 1 : 2;
-    const tier: 0 | 1 | 2 = cam.z < 0.3 ? 0 : cam.z < 0.75 ? 1 : 2;
+    const tier = tierOf(cam.z);
     let drawn = 0, cells = 0;
+    const P = BASE_PAD;
+    const rows: { gx: number; s: number; art: CellArt | null }[][] = [];
     for (let gy = gy0; gy <= gy1; gy++) {
-      const row: number[] = [];
+      const row: { gx: number; s: number; art: CellArt | null }[] = [];
       for (let gx = gx0; gx <= gx1; gx++) {
         const s = sectorAt(gx, gy);
         if (s < 0) continue;
         cells++;
-        const c = this.cell(s, s >= n, tier);
-        if (c) ctx.drawImage(c, gx * SECTOR_W - M, gy * SECTOR_H - M, SECTOR_W + 2 * M, SECTOR_H + 2 * M);
-        if (s < n) row.push(s);
+        const art = this.cell(s, s >= n, tier);
+        // flat layers first, everywhere: each covers only its own cell, so paths and streams join exactly
+        if (art) ctx.drawImage(art.base, gx * SECTOR_W - P, gy * SECTOR_H - P, SECTOR_W + 2 * P, SECTOR_H + 2 * P);
+        row.push({ gx, s, art });
       }
-      // candles of this row draw before the next row's cells, so nearer trees and walls occlude them correctly
-      drawn += lod === 0 ? this.drawRowLights(row, input) : this.drawRowCandles(row, input, tl, br, lod, time);
+      rows.push(row);
     }
+    rows.forEach((row, i) => {
+      const gy = gy0 + i;
+      for (const { gx, art } of row) if (art) ctx.drawImage(art.up, gx * SECTOR_W - M, gy * SECTOR_H - M, SECTOR_W + 2 * M, SECTOR_H + 2 * M);
+      if (gy === 0) this.drawMist(tl, br);
+      // candles of this row draw before the next row's upright layer, so nearer trees and walls occlude them
+      const lit = row.filter((c) => c.s < n).map((c) => c.s);
+      drawn += lod === 0 ? this.drawRowLights(lit, input) : this.drawRowCandles(lit, input, tl, br, lod, time);
+    });
     if (input.highlightMine || input.selected) this.drawRings(input);
     ctx.restore();
     (window as any).__gardenFrames = ((window as any).__gardenFrames ?? 0) + 1;
     this.stats = { visibleSectors: cells, drawnCandles: drawn, lod, ms: performance.now() - t0 };
     (window as any).__lastFrame = this.stats;
+  }
+
+  /** Night mist along the skyline, in world space across the whole view. */
+  private drawMist(tl: { x: number; y: number }, br: { x: number; y: number }) {
+    const { ctx } = this;
+    const mist = ctx.createLinearGradient(0, HORIZON_CUT - 80, 0, HORIZON_CUT + 160);
+    mist.addColorStop(0, "rgba(120,160,185,0)");
+    mist.addColorStop(0.35, "rgba(120,160,185,0.16)");
+    mist.addColorStop(1, "rgba(120,160,185,0)");
+    ctx.fillStyle = mist;
+    ctx.fillRect(tl.x - 10, HORIZON_CUT - 80, br.x - tl.x + 20, 240);
   }
 
   private drawRowLights(row: number[], input: RenderInput) {
@@ -343,19 +392,12 @@ export class GardenRenderer {
     const tipY = top + (WICK[c.style] ?? 12) * f;
     const sway = time ? Math.sin(time / 180 + c.id) * 1.6 : 0;
     const stretch = time ? 1 + 0.12 * Math.sin(time / 120 + c.id * 2.3) : 1;
+    // pre-rendered flame per style (no per-frame gradients); sway is a skew about the wick, stretch a vertical scale
     ctx.save();
     ctx.translate(x, tipY);
     ctx.scale(k * 1.5, k * 1.5 * stretch);
-    const fg = ctx.createRadialGradient(0, -3, 0.5, 0, -4, 9);
-    fg.addColorStop(0, "#fffbe8");
-    fg.addColorStop(0.35, `rgb(${TINT[c.style] ?? TINT[0]})`);
-    fg.addColorStop(1, "rgba(255,140,40,0)");
-    ctx.fillStyle = fg;
-    ctx.beginPath();
-    ctx.moveTo(0, 2);
-    ctx.quadraticCurveTo(6, -2, sway, -14);
-    ctx.quadraticCurveTo(-6, -2, 0, 2);
-    ctx.fill();
+    if (sway) ctx.transform(1, 0, -sway / 14, 1, 0, 0);
+    ctx.drawImage(this.flames[c.style] ?? this.flames[0], -8, -17, 16, 20);
     ctx.restore();
   }
 
@@ -418,3 +460,22 @@ function makeGlow() {
   return c;
 }
 
+/** One flame sprite per style: local units x -8..8, y -17..3 (wick at 0,0), painted at 4x. */
+function makeFlame(tint: string) {
+  const c = document.createElement("canvas");
+  c.width = 64; c.height = 80;
+  const g = c.getContext("2d")!;
+  g.scale(4, 4);
+  g.translate(8, 17);
+  const fg = g.createRadialGradient(0, -3, 0.5, 0, -4, 9);
+  fg.addColorStop(0, "#fffbe8");
+  fg.addColorStop(0.35, `rgb(${tint})`);
+  fg.addColorStop(1, "rgba(255,140,40,0)");
+  g.fillStyle = fg;
+  g.beginPath();
+  g.moveTo(0, 2);
+  g.quadraticCurveTo(6, -2, 0, -14);
+  g.quadraticCurveTo(-6, -2, 0, 2);
+  g.fill();
+  return c;
+}

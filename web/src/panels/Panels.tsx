@@ -9,7 +9,7 @@ import { explainError } from "../lib/errors";
 import { pendingStore } from "../lib/purchase";
 import type { Candle } from "../lib/candles";
 import { ConnectButton } from "../components/ConnectSheet";
-import { FIXTURE, useActivity, useMyIds, useRewards, useTreasury } from "../hooks";
+import { FIXTURE, useActivity, useCandleTx, useMyIds, useRewards, useTreasury } from "../hooks";
 
 const addrLink = (a: string, base = ETHERSCAN) => (
   <a href={`${base}/address/${a}`} target="_blank" rel="noreferrer">{short(a)}</a>
@@ -23,6 +23,14 @@ function CopyAddress({ value }: { value: string }) {
       {done ? "Copied" : "Copy address"}
     </button>
   );
+}
+
+function TxCell({ c }: { c: Candle }) {
+  const tx = useCandleTx(c);
+  if (FIXTURE !== null) return <>None: simulated candle</>;
+  if (tx.isLoading) return <>Looking up…</>;
+  if (!tx.data) return <>Transaction unavailable</>;
+  return <a href={`${ETHERSCAN}/tx/${tx.data}`} target="_blank" rel="noreferrer">{short(tx.data)} ↗</a>;
 }
 
 export function CandleDetail({ c, onClose, mine }: { c: Candle; onClose: () => void; mine: boolean }) {
@@ -39,6 +47,7 @@ export function CandleDetail({ c, onClose, mine }: { c: Candle; onClose: () => v
           <div><dt>Style</dt><dd>{STYLE_NAMES[c.style] ?? `Style ${c.style}`}</dd></div>
           <div><dt>Lit</dt><dd>{date(c.createdAt)}</dd></div>
           <div><dt>Position</dt><dd>{c.position}</dd></div>
+          <div><dt>Transaction</dt><dd><TxCell c={c} /></dd></div>
         </dl>
       </div>
       {c.wish ? <blockquote className="wish">{c.wish}</blockquote> : <p className="muted">No wish was written for this candle.</p>}

@@ -63,3 +63,8 @@ Nothing in any layer is copied from the reference image, and no candle is pre-li
 - `web/src/garden/vista.ts`: repainted procedural vista (original, CC0 like the rest of the art): tiled sky/far/mid/near ridge layers plus one castle image (moon, castle hill with empty terraces and falls, castle). No image-generation or 3D tool was available; no third-party art was added.
 - `web/public/og.png`: screenshot of this export at 1200×630 with fixture 0 (empty garden), fixture label removed.
 - Candle preview flame: CSS only (`web/src/everlight.css`).
+
+## Revision 6
+- `web/src/panels/PreviewScene.tsx`: the purchase preview set, original inline SVG written in code for this project (CC0 1.0). It has a moonlit back layer with foliage, jasmine, pavilion arches, a carved stone ledge and a moon, plus an engraved brass bowl split into a far rim (behind the candle) and a near lip and body (in front). No third-party or reference pixels.
+- `web/src/garden/scenery.ts`: the stream's water is repainted in code (CC0 1.0) with depth bands, bank reflections, glints, ripples and lily pads.
+- Still not available: an image-generation, illustration or 3D tool. The painted perspective environment of the approved design was not produced; see the README's revision 6 limitations.

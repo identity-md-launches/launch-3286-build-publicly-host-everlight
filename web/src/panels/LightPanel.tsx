@@ -8,9 +8,10 @@ import { ETHERSCAN, GARDEN, IMD, MAX_BATCH, TX_GAS_CAP, config, ethClient } from
 import { checkWish, gasBound } from "../lib/wish";
 import { STYLE_NAMES, eth, imd } from "../lib/format";
 import { explainError } from "../lib/errors";
+import { BowlBack, BowlFront, PreviewBack } from "./PreviewScene";
 import { FIXTURE_MESSAGE, awaitBuy, isRunning, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step } from "../lib/purchase";
 import { readReceipt } from "../lib/receipt";
-import { minedTx, sentTx, settleBuyReceipt, submissionMeta } from "../lib/chain";
+import { minedTx, NONCE_UNVERIFIED, sentTx, settleBuyReceipt, submissionMeta } from "../lib/chain";
 import { rememberTx } from "../lib/txhash";
 import { parseQuantity } from "../lib/quantity";
 import { ConnectButton } from "../components/ConnectSheet";
@@ -38,7 +39,9 @@ export function recoverBuy(tx: PendingTx): Promise<Step> {
       // locates a replacement from the saved sender, nonce and submission block, then verifies its calldata and events
       wait: (hash, saved) => settleBuyReceipt(hash, saved),
       remember: rememberTx,
-      explain: () => "The receipt of the purchase you sent could not be read yet. It is still saved and this form stays locked so it is not sent twice.",
+      explain: (e) => e instanceof Error && e.message === NONCE_UNVERIFIED
+        ? NONCE_UNVERIFIED
+        : "The receipt of the purchase you sent could not be read yet. It is still saved and this form stays locked so it is not sent twice.",
     },
     tx,
     onStep,
@@ -364,7 +367,10 @@ const WICK = [10, 10, 0, 30, 10, 22, 36];
 export function CandlePreview({ style }: { style: number }) {
   return (
     <div className="preview" aria-hidden="true">
+      <PreviewBack />
+      <BowlBack />
       <img className="preview-candle" src={ART(style)} alt="" width={80} height={160} />
+      <BowlFront />
       <span className="preview-flame" style={{ "--wick": WICK[style] ?? 10 } as React.CSSProperties} />
     </div>
   );

@@ -26,24 +26,35 @@ export async function minedTx(hash: Hash): Promise<MinedTx | null> {
 }
 
 /**
- * The mined receipt for a saved transaction, following replacements. With the saved sender, nonce and
- * submission block it first locates the transaction that consumed that nonce (bounded window), so a purchase
- * sped up or cancelled while the tab was closed is still found after a reload. Throws when nothing is mined yet
- * within `timeout` or the replacement cannot be located, so the caller keeps the transaction pending.
+ * The mined receipt for a saved transaction, following replacements. The saved sender and nonce are used for the
+ * bounded replacement search only once they were verified against the submitted transaction itself (nonceChecked):
+ * a preflight nonce read before signing may not be the one the wallet used, so a transaction found at that nonce
+ * could be unrelated. Until the metadata is verified, only the sent hash's own receipt counts (viem follows a
+ * replacement only after reading the sent transaction by its hash). Throws when nothing verifiable is mined within
+ * `timeout`, so the caller keeps the hash, its exact draft and its submission block saved and retryable.
  */
 export async function settleReceipt(hash: Hash, tx?: PendingTx, timeout = 10 * 60_000): Promise<{ receipt: TransactionReceipt; mined: MinedTx | null }> {
   let target = hash;
   if (tx) tx = await completeMeta(tx);
-  if (tx?.from && tx.nonce !== undefined && tx.block !== undefined) {
+  if (tx && verifiedMeta(tx)) {
     const at = await locateMined(recoveryClient, tx);
     if (at.kind === "unknown") throw new Error(at.reason);
     if (at.kind === "mined") target = at.hash;
   }
   const receipt = target !== hash
     ? await ethClient.getTransactionReceipt({ hash: target })
-    : await ethClient.waitForTransactionReceipt({ hash, timeout });
+    : await ethClient.waitForTransactionReceipt({ hash, timeout }).catch((e) => {
+      if (tx && !verifiedMeta(tx)) throw new Error(NONCE_UNVERIFIED);
+      throw e;
+    });
   return { receipt, mined: await minedTx(receipt.transactionHash) };
 }
+
+/** Sender, nonce and submission block are all present and the nonce was read from the sent transaction itself. */
+export const verifiedMeta = (tx: PendingTx) => tx.nonceChecked === true && !!tx.from && tx.nonce !== undefined && tx.block !== undefined;
+
+export const NONCE_UNVERIFIED =
+  "Your wallet's transaction could not be read yet, so the nonce it used is not verified and a replacement cannot be searched for safely. It stays saved with its exact draft and submission block; check again in a moment.";
 
 /** settleReceipt, read into the purchase flow's Receipt (events plus decoded calldata). */
 export async function settleBuyReceipt(hash: Hash, tx?: PendingTx): Promise<Receipt> {

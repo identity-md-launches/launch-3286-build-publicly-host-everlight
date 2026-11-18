@@ -209,3 +209,29 @@ Environment: Ubuntu 24.04 worker, Node 24.21, Playwright 1 with Chromium headles
 ### Limitations (revision 5)
 - The approved painted perspective artwork and licensed illustrated environment assets were still not produced; no image, illustration or 3D tool was available to this worker. Apart from the larger cultivated area, the garden art and the purchase preview are unchanged.
 - Performance was measured headless only. With 105 cultivated sectors, the fully zoomed-out overview frame took 48–58 ms in software rendering (`rev5-browser-checks.json`); this was not measured on real devices.
+
+## Revision 6 (2026-11-18): reopened findings
+
+### Commands and results
+- `cd web && npx tsc --noEmit`: exit 0.
+- `cd web && npx vitest run`: 8 files, 90/90 passed. The new file `tests/nonce.test.ts` has 4 tests.
+- Reproduction: the same test file run against `git show HEAD:web/src/lib/chain.ts` failed 2 of 4. The purchase settled as `{name:"error", message: REPLACED_MESSAGE}` and the claim resolved on C's receipt, matching the reviewer's measurement. With the fix, all 4 pass.
+- `cd web && npm run build`: built `dist/` with relative `./assets/` URLs.
+- `node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste` (Playwright 1.x, Chromium headless shell 159, system libraries supplied from Ubuntu noble packages in a temp directory): 16/16 passed.
+- Playwright pass over `dist/` at 1440×900 and 390×844, fixtures 0 and 100: no page or console errors, `scrollWidth - innerWidth` = 0 on both. Screenshots: `artifacts/screens/rev6-d1440-fixture0-wide.jpg`, `rev6-d1440-fixture100-close.jpg`, `rev6-m390-fixture0-wide.jpg`, `rev6-m390-fixture100-close.jpg`, `rev6-m390-page-light.jpg`, and the preview at both widths (`rev6-*-preview.png`). Measured preview geometry: 1440 stage 330×200, bowl 92×37, candle 80×160; 390 stage 358×168, bowl 74×29, candle 64×128.
+
+### Findings
+- 139cd715 (fixed): `web/src/lib/chain.ts:30-57`, `verifiedMeta` and `NONCE_UNVERIFIED`. `web/src/panels/LightPanel.tsx:42` now passes the message through to the form. Test: `web/tests/nonce.test.ts`.
+- dcae6c2e (partly addressed, disputed as a whole): `web/src/panels/PreviewScene.tsx` (new), `web/src/everlight.css:47-53` (bowl layers), `web/src/garden/scenery.ts` (stream depth, reflections, lily pads). The painted perspective environment still needs art tools this worker did not have.
+
+### Better Interface review of the changed surfaces
+- Accessibility: the preview stage and both bowl layers are `aria-hidden` and `focusable="false"`. The new recovery message is plain text in the existing `role="status"` pending box, next to "Check again".
+- Layout: the bowl is sized and placed from the same `--k`/`--ctop` variables as the candle, so it scales at the 900 px breakpoint. There is no overflow at 320, 390 or 1440 (probe).
+- Writing: `NONCE_UNVERIFIED` says what happened, what is kept, and what to do next.
+- Typography and colours: no new type sizes. The preview uses the existing emerald, brass and ivory family; the gradient ids are unique per layer.
+- UI: no new controls.
+- Not done: no screen-reader session and no real-device test.
+
+### Limitations (revision 6)
+- The approved cinematic perspective artwork was not produced, because no image, illustration or 3D tool was available. The tree sprites (three variants) and the top-down terraced map are unchanged.
+- Performance was not re-measured; the scenery change adds per-cell drawing only when a cell is cached.

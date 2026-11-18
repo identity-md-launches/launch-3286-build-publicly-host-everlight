@@ -140,14 +140,35 @@ export function drawSectorBase(g: CanvasRenderingContext2D, index: number, imgs:
   g.fill();
   g.fillStyle = "rgba(0,0,0,0.45)";
   g.fill();
-  // water shade is a function of world y, so it matches across rows
+  // water depth: lit shallows at the banks over a darker channel, every layer a function of world y and of the
+  // stream curve only, so it matches across rows. Shallows, mid water and the deep channel are nested bands.
   const water = g.createLinearGradient(0, oy - 20, 0, oy + H + 20);
-  water.addColorStop(0, "#173f55");
-  water.addColorStop(0.5, "#123a4e");
-  water.addColorStop(1, "#173f55");
+  water.addColorStop(0, "#1b4a5f");
+  water.addColorStop(0.5, "#174458");
+  water.addColorStop(1, "#1b4a5f");
   g.fillStyle = water;
   band(g, sp, wHalf, sn);
   g.fill();
+  g.fillStyle = "rgba(12,46,62,0.55)";
+  band(g, sp, (i) => wHalf(i) * 0.7, sn);
+  g.fill();
+  g.fillStyle = "rgba(8,32,46,0.55)";
+  band(g, sp, (i) => wHalf(i) * 0.36, sn);
+  g.fill();
+  // the banks and their foliage reflected along both edges, and a thin wet-stone highlight at the waterline
+  g.save();
+  band(g, sp, wHalf, sn);
+  g.clip();
+  for (const side of [1, -1]) {
+    const edge = () => {
+      g.beginPath();
+      sp.forEach(([x, y], i) => { const [a, b] = sn(i); const h = wHalf(i) * side; i ? g.lineTo(x + a * h, y + b * h) : g.moveTo(x + a * h, y + b * h); });
+    };
+    edge(); g.strokeStyle = "rgba(6,22,14,0.6)"; g.lineWidth = 16; g.stroke();
+    edge(); g.strokeStyle = "rgba(14,44,28,0.5)"; g.lineWidth = 7; g.stroke();
+    edge(); g.strokeStyle = "rgba(196,222,230,0.22)"; g.lineWidth = 1.6; g.stroke();
+  }
+  g.restore();
   // pools of this cell and of the cells above and below that reach into it, each seeded by its own position
   const pools: SectorPlan["pools"] = [];
   for (const dy of [-1, 0, 1]) {
@@ -189,7 +210,8 @@ export function drawSectorBase(g: CanvasRenderingContext2D, index: number, imgs:
     }
     if (fall) { g.globalAlpha = 0.85; g.drawImage(fall, x - 13, head - 34, 26, 36); g.globalAlpha = 1; }
   }
-  // moonlight on the water: broken silver strokes along the current
+  // moonlight on the water: broken silver strokes along the current, a few longer glints in the channel and
+  // faint ripple rings; then lily pads (some flowering) in the shallows, kept inside this cell so none is cut
   g.save();
   band(g, sp, wHalf, sn);
   g.clip();
@@ -199,6 +221,38 @@ export function drawSectorBase(g: CanvasRenderingContext2D, index: number, imgs:
     const i = (r() * sp.length) | 0, [x, y] = sp[i], half = wHalf(i) * (0.2 + r() * 0.5);
     const off = (r() - 0.5) * wHalf(i);
     g.beginPath(); g.moveTo(x + off - half / 2, y); g.lineTo(x + off + half / 2, y + 1); g.stroke();
+  }
+  g.lineCap = "round";
+  for (let k = 0; k < 16; k++) {
+    const i = (r() * sp.length) | 0, [x, y] = sp[i], half = wHalf(i) * (0.35 + r() * 0.4), off = (r() - 0.5) * wHalf(i) * 0.5;
+    const gl = g.createLinearGradient(x + off - half, 0, x + off + half, 0);
+    gl.addColorStop(0, "rgba(225,240,250,0)"); gl.addColorStop(0.5, "rgba(225,240,250,0.5)"); gl.addColorStop(1, "rgba(225,240,250,0)");
+    g.strokeStyle = gl; g.lineWidth = 1.2;
+    g.beginPath(); g.moveTo(x + off - half, y); g.lineTo(x + off + half, y + 0.5); g.stroke();
+  }
+  g.strokeStyle = "rgba(170,210,230,0.16)"; g.lineWidth = 1;
+  for (let k = 0; k < 10; k++) {
+    const i = (r() * sp.length) | 0, [x, y] = sp[i], rr = 4 + r() * 9, off = (r() - 0.5) * wHalf(i);
+    g.beginPath(); g.ellipse(x + off, y, rr, rr * TILT, 0, 0, Math.PI * 2); g.stroke();
+  }
+  for (let k = 0; k < 9; k++) {
+    const i = (r() * sp.length) | 0, [x, y] = sp[i];
+    if (y < oy + 24 || y > oy + H - 24) continue;
+    const side = r() < 0.5 ? -1 : 1, off = side * wHalf(i) * (0.55 + r() * 0.3), rr = 4 + r() * 3.5, rot = r() * Math.PI * 2;
+    const px = x + off, py = y + (r() - 0.5) * 6;
+    g.fillStyle = "rgba(0,0,0,0.35)";
+    g.beginPath(); g.ellipse(px + 1, py + 1.5, rr, rr * 0.62, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = r() < 0.5 ? "#2f5e36" : "#3a6b3c";
+    g.beginPath(); g.moveTo(px, py); g.ellipse(px, py, rr, rr * 0.62, 0, rot + 0.35, rot + Math.PI * 2 - 0.05); g.closePath(); g.fill();
+    g.strokeStyle = "rgba(150,190,140,0.35)"; g.lineWidth = 0.6; g.stroke();
+    if (r() < 0.4) {
+      g.fillStyle = "#efe9da";
+      for (let q = 0; q < 6; q++) {
+        const a = (q / 6) * Math.PI * 2;
+        g.beginPath(); g.ellipse(px + Math.cos(a) * 2, py - 1.5 + Math.sin(a) * 1.2, 1.8, 0.9, a, 0, Math.PI * 2); g.fill();
+      }
+      g.fillStyle = "#e0bf62"; g.beginPath(); g.arc(px, py - 1.5, 0.9, 0, Math.PI * 2); g.fill();
+    }
   }
   g.restore();
   // waterfall: a rock sill across the stream with the fall and foam below it

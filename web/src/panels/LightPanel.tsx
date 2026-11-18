@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAccount } from "wagmi";
 import { simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
 import { erc20Abi, parseEventLogs, type Hash } from "viem";
@@ -9,6 +9,10 @@ import { checkWish, gasBound } from "../lib/wish";
 import { STYLE_NAMES, eth, imd } from "../lib/format";
 import { explainError } from "../lib/errors";
 import { runPurchase, type Step } from "../lib/purchase";
+import { parseQuantity } from "../lib/quantity";
+import { ConnectButton } from "../components/ConnectSheet";
+
+const DRAFT_KEY = "everlight:draft";
 import { store, useGasPrice, useStatus, useWallet } from "../hooks";
 
 const ART = (i: number) => `./art/candle-${i}.svg`;
@@ -57,12 +61,20 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
   const wallet = useWallet(address);
   const gas = useGasPrice();
   const qc = useQueryClient();
-  const [qty, setQty] = useState(1);
-  const [custom, setCustom] = useState("");
-  const [mode, setMode] = useState<"same" | "each">("same");
-  const [style, setStyle] = useState(0);
-  const [wish, setWish] = useState("");
-  const [rows, setRows] = useState<{ style: number; wish: string }[]>([]);
+  // the draft survives wallet and network errors, reloads and route changes (session only)
+  const draft = useMemo(() => { try { return JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? "{}"); } catch { return {}; } }, []);
+  const [preset, setPreset] = useState<number>(typeof draft.preset === "number" ? draft.preset : 1);
+  const [custom, setCustom] = useState<string>(typeof draft.custom === "string" ? draft.custom : "");
+  const [mode, setMode] = useState<"same" | "each">(draft.mode === "each" ? "each" : "same");
+  const [style, setStyle] = useState<number>(typeof draft.style === "number" ? draft.style : 0);
+  const [wish, setWish] = useState<string>(typeof draft.wish === "string" ? draft.wish : "");
+  const [rows, setRows] = useState<{ style: number; wish: string }[]>(Array.isArray(draft.rows) ? draft.rows : []);
+  useEffect(() => {
+    try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify({ preset, custom, mode, style, wish, rows })); } catch { /* private mode */ }
+  }, [preset, custom, mode, style, wish, rows]);
+  const parsed = custom === "" ? ({ ok: true, n: preset } as const) : parseQuantity(custom);
+  const qtyValid = parsed.ok;
+  const qty = parsed.ok ? parsed.n : 0;
   const [ack, setAck] = useState(false);
   const [step, setStep] = useState<Step | null>(null);
   const busy = useRef(false);
@@ -89,6 +101,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
   if (status.isError) problems.push("The sales status could not be read. Purchasing stays off until it loads.");
   else if (status.data && !open)
     problems.push(!status.data.activated ? "Sales are closed: the owner has not activated the garden yet." : "Sales are paused by the owner.");
+  if (!qtyValid) problems.push("Fix the number of candles.");
   if (!isConnected) problems.push("Connect a wallet to light candles.");
   else if (chainId !== 1) problems.push("Switch your wallet to Ethereum.");
   if (checks.some((c) => !c.ok)) problems.push("Fix the wish marked above.");
@@ -99,11 +112,6 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
   if (wallet.data && wallet.data.balance < total) problems.push(`You hold ${imd(wallet.data.balance)} IMD; this needs ${qty}.`);
   const running = step !== null && !["done", "error"].includes(step.name);
   const disabled = problems.length > 0 || running;
-
-  const setQuantity = (n: number) => {
-    const q = Math.max(1, Math.min(MAX_BATCH, Math.floor(n)));
-    setQty(q);
-  };
 
   async function submit() {
     if (busy.current) return; // duplicate-click guard
@@ -144,6 +152,8 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
         (s) => {
           setStep(s);
           if (s.name === "done") {
+            setWish(""); setRows([]); // a confirmed purchase ends the draft; errors keep it
+            try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* private mode */ }
             store.sync().then(() => onLit(s.firstId));
             qc.invalidateQueries();
           }
@@ -168,14 +178,17 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
         <legend>How many candles</legend>
         <div className="seg">
           {[1, 5, 10].map((n) => (
-            <button key={n} type="button" className={qty === n && custom === "" ? "on" : ""} aria-pressed={qty === n && custom === ""} onClick={() => { setCustom(""); setQuantity(n); }}>{n}</button>
+            <button key={n} type="button" className={preset === n && custom === "" ? "on" : ""} aria-pressed={preset === n && custom === ""} onClick={() => { setCustom(""); setPreset(n); }}>{n}</button>
           ))}
           <label className="custom">
             <span>Custom</span>
-            <input type="number" inputMode="numeric" min={1} max={50} value={custom} placeholder="1–50"
-              onChange={(e) => { setCustom(e.target.value); if (e.target.value) setQuantity(Number(e.target.value)); }} />
+            <input id="qty-custom" type="text" inputMode="numeric" autoComplete="off" value={custom} placeholder={`1–${MAX_BATCH}`}
+              aria-invalid={!qtyValid} aria-describedby="qty-help" onChange={(e) => setCustom(e.target.value)} />
           </label>
         </div>
+        <p id="qty-help" className={qtyValid ? "fine" : "count bad"} role={qtyValid ? undefined : "alert"}>
+          {parsed.ok ? `${qty} candle${qty > 1 ? "s" : ""} · whole numbers from 1 to ${MAX_BATCH}` : parsed.error}
+        </p>
       </fieldset>
 
       {qty > 1 && (
@@ -213,9 +226,10 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
       )}
 
       <dl className="summary">
-        <div><dt>Total</dt><dd>{qty} IMD</dd></div>
+        <div><dt>Candles</dt><dd>{qtyValid ? qty : "—"}</dd></div>
+        <div><dt>Total</dt><dd>{qtyValid ? `${qty} IMD` : "—"}</dd></div>
         <div><dt>Your balance</dt><dd>{address ? (wallet.data ? `${imd(wallet.data.balance)} IMD` : "…") : "Not connected"}</dd></div>
-        <div><dt>Approval</dt><dd>{address && wallet.data ? (needApproval ? `Needed: exactly ${qty} IMD` : "Already covered") : "Checked when you connect"}</dd></div>
+        <div><dt>Approval</dt><dd>{!qtyValid ? "—" : address && wallet.data ? (needApproval ? `Needed: exactly ${qty} IMD` : "Already covered") : "Checked when you connect"}</dd></div>
         <div><dt>Estimated gas</dt><dd>{gasEth !== undefined ? `≤ ${eth(gasEth)} ETH` : gas.isError ? "Unavailable" : "Reading…"}</dd></div>
       </dl>
       <p className="fine">Gas is an upper bound from the contract docs ({bound.toLocaleString("en-US")} gas for this batch{needApproval ? " plus about 60,000 for the approval" : ""}) at the current gas price. Candles appear in the garden only after the purchase receipt confirms.</p>
@@ -225,11 +239,12 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
           {gas.isFetching ? "Retrying gas estimate…" : "Retry gas estimate"}
         </button>
       )}
+      {!isConnected && <ConnectButton label="Connect wallet to light" />}
       {problems.length > 0 && !running && (
         <ul className="problems" aria-live="polite">{problems.map((p) => <li key={p}>{p}</li>)}</ul>
       )}
       <button type="button" className="cta wide" disabled={disabled} aria-disabled={disabled} onClick={submit}>
-        {running ? "Working…" : needApproval && address ? `Approve and light ${qty} candle${qty > 1 ? "s" : ""}` : `Light ${qty} candle${qty > 1 ? "s" : ""}`}
+        {running ? "Working…" : !qtyValid ? "Enter 1 to 50 candles" : needApproval && address ? `Approve and light ${qty} candle${qty > 1 ? "s" : ""}` : `Light ${qty} candle${qty > 1 ? "s" : ""}`}
       </button>
       <div aria-live="polite" className="steps">
         {step && step.name !== "error" && (

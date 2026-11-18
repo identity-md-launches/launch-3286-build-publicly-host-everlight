@@ -198,13 +198,9 @@ export default function App() {
         handleRef={(h) => (garden.current = h)}
         onStats={setStats}
         onAnchor={setAnchor}
+        toolsHidden={route !== "garden" || menu || (narrow && !!sel)}
       />
 
-      <div className="frames" aria-hidden="true">
-        <img className="fr-canopy" src="./art/canopy.webp" alt="" />
-        <img className="fr-left" src="./art/frame-left.webp" alt="" />
-        <img className="fr-right" src="./art/frame-right.webp" alt="" />
-      </div>
 
       <main id="main" className="overlay">
         {route === "garden" && (

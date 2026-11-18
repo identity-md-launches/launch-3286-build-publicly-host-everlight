@@ -1,13 +1,14 @@
 import type { Candle } from "../lib/candles";
-import { HOLDER_TOP, HORIZON_CUT, SECTOR_H, SECTOR_MARGIN, SECTOR_W, SLOTS_PER_SECTOR, neighbours, positionOf, sectorCount, sectorOrigin, worldBounds } from "./layout";
+import { HOLDER_TOP, HORIZON_CUT, SECTOR_H, SECTOR_MARGIN, SECTOR_W, SLOTS_PER_SECTOR, cameraBounds, horizonY, positionOf, sectorAt, sectorCount, sectorOrigin, spiral, streamX } from "./layout";
 import { drawSectorArt } from "./scenery";
+import { VISTA_CASTLE_X, VISTA_FOOT, VISTA_H, VISTA_TOP, VISTA_W, makeVista } from "./vista";
 
 export interface Camera { x: number; y: number; z: number }
 
 /** Asset paths are relative to the page so the export works under any gateway subpath. */
 export const ART_BASE = new URLSearchParams(location.search).has("noassets") ? "./missing-art/" : "./art/";
 const CANDLE_ART = Array.from({ length: 7 }, (_, i) => `candle-${i}.svg`);
-const LAYERS = ["backdrop", "pedestal", "tree-0", "tree-1", "tree-2", "bridge", "gazebo", "waterfall", "bush", "bush-plain", "lantern", "ground", "stone", "frog"].map((n) => `${n}.webp`);
+const LAYERS = ["pedestal", "tree-0", "tree-1", "tree-2", "bridge", "gazebo", "waterfall", "bush", "bush-plain", "lantern", "ground", "stone", "frog"].map((n) => `${n}.webp`);
 
 /** Flame tip offsets per style (fraction of 80-unit sprite height) and glow tint. */
 const WICK = [12, 12, 22, 30, 12, 22, 36];
@@ -43,8 +44,12 @@ export class GardenRenderer {
   private ctx: CanvasRenderingContext2D;
   private candleImgs: Img[] = [];
   private layerImgs: Record<string, Img> = {};
-  private sectorCache = new Map<string, HTMLCanvasElement>();
-  private sectorLowCache = new Map<string, HTMLCanvasElement>();
+  /** Cell caches by detail tier (0 overview, 1 mid, 2 near), LRU-bounded. */
+  private caches: Map<string, HTMLCanvasElement>[] = [new Map(), new Map(), new Map()];
+  /** Cells built per frame are limited; when the budget runs out the frame is redrawn next tick. */
+  private budget = 6;
+  pending = false;
+  private vista: HTMLCanvasElement;
   private groundPat: CanvasPattern | null = null;
   private litCache = new Map<number, { count: number; canvas: HTMLCanvasElement }>();
   private glow: HTMLCanvasElement;
@@ -57,12 +62,12 @@ export class GardenRenderer {
   constructor(private canvas: HTMLCanvasElement, onReady: () => void) {
     this.ctx = canvas.getContext("2d")!;
     this.glow = makeGlow();
+    this.vista = makeVista();
     Promise.all([...CANDLE_ART.map(loadImage), ...LAYERS.map(loadImage)]).then((imgs) => {
       this.candleImgs = imgs.slice(0, 7);
       LAYERS.forEach((n, i) => (this.layerImgs[n] = imgs[7 + i]));
       this.missingAssets = imgs.filter((i) => !i).length;
-      this.sectorCache.clear();
-      this.sectorLowCache.clear();
+      this.caches.forEach((c) => c.clear());
       onReady();
     });
   }
@@ -84,9 +89,8 @@ export class GardenRenderer {
     const mobile = this.w < 640;
     const z = mobile ? 0.62 : Math.min(1.1, Math.max(0.5, this.w / 2000));
     const hero = positionOf(0);
-    this.cam = mobile
-      ? { x: hero.x + 0.2 * (this.w / z), y: 400, z }
-      : { x: hero.x + 0.2 * (this.w / z), y: hero.y - 0.27 * (this.h / z), z }; // land edge near mid-screen, vista above
+    // skyline about a quarter of the way down, the founding pedestal in the near left third
+    this.cam = { x: hero.x + (mobile ? 0.12 : 0.2) * (this.w / z), y: HORIZON_CUT + (mobile ? 0.16 : 0.18) * (this.h / z), z };
   }
 
   toWorld(sx: number, sy: number) {
@@ -96,72 +100,93 @@ export class GardenRenderer {
     return { x: (wx - this.cam.x) * this.cam.z + this.w / 2, y: (wy - this.cam.y) * this.cam.z + this.h / 2 };
   }
 
-  clamp(total: number) {
-    const b = worldBounds(total);
-    this.cam.z = Math.min(4, Math.max(0.06, this.cam.z));
-    this.cam.x = Math.min(b.maxX, Math.max(b.minX, this.cam.x));
-    this.cam.y = Math.min(b.maxY, Math.max(b.minY - 200, this.cam.y));
+  /** Smallest zoom: the whole garden plus its ring of wild forest fits the screen. */
+  minZoom(total: number) {
+    const b = cameraBounds(total);
+    return Math.max(0.04, Math.min(0.6, Math.min(this.w / (b.maxX - b.minX), this.h / (b.maxY - b.minY + 900))));
   }
 
-  /** Pre-render one sector's static layers once (terraces, stream, arches, frogs, flowers, holders). */
-  private sector(index: number, count: number, low = false): HTMLCanvasElement {
-    const cache = low ? this.sectorLowCache : this.sectorCache;
-    const nb = neighbours(index, count);
-    const key = `${index}:${nb.map(Number).join("")}`; // rebuilt when a neighbour appears and features run on into it
+  /** Camera bounds: the view centre stays over land, and the skyline never drops below 45% of the screen. */
+  clamp(total: number) {
+    const b = cameraBounds(total);
+    this.cam.z = Math.min(4, Math.max(this.minZoom(total), this.cam.z));
+    const z = this.cam.z;
+    const hw = this.w / 2 / z, hh = this.h / 2 / z;
+    const cx0 = b.minX + hw, cx1 = b.maxX - hw;
+    this.cam.x = cx0 > cx1 ? (b.minX + b.maxX) / 2 : Math.min(cx1, Math.max(cx0, this.cam.x));
+    const cyMin = HORIZON_CUT + (0.05 * this.h) / z;
+    const cyMax = Math.max(cyMin, b.maxY - hh);
+    this.cam.y = Math.min(cyMax, Math.max(cyMin, this.cam.y));
+  }
+
+  /**
+   * Pre-render one grid cell's static scenery once. A cell inside the garden (index < count) is cultivated:
+   * terraces, holders, gazebo, lanterns. A cell outside it is the same ground, stream and path as wild woodland,
+   * so the garden grows into scenery that already joins it, and no edge of the world is a void.
+   */
+  private cell(index: number, wild: boolean, tier: 0 | 1 | 2): HTMLCanvasElement | null {
+    const cache = this.caches[tier];
+    const key = `${index}:${wild ? 1 : 0}`;
     const hit = cache.get(key);
-    if (hit) return hit;
-    const scale = low ? 0.125 : 0.7;
+    if (hit) { cache.delete(key); cache.set(key, hit); return hit; } // LRU order
+    if (this.budget <= 0) { this.pending = true; return null; }
+    this.budget -= tier === 0 ? 1 : tier === 1 ? 2 : 4;
+    const scale = [0.125, 0.35, 0.7][tier];
     const c = document.createElement("canvas");
     c.width = Math.round((SECTOR_W + 2 * SECTOR_MARGIN) * scale);
     c.height = Math.round((SECTOR_H + 2 * SECTOR_MARGIN) * scale);
     const g = c.getContext("2d")!;
     g.scale(scale, scale);
-    drawSectorArt(g, index, this.layerImgs, nb);
-    if (cache.size > (low ? 400 : 20)) cache.delete(cache.keys().next().value!);
+    const [, gy] = spiral(index);
+    drawSectorArt(g, index, this.layerImgs, [gy > 0, true, true, true], wild);
+    if (cache.size >= [600, 70, 24][tier]) cache.delete(cache.keys().next().value!);
     cache.set(key, c);
     return c;
   }
 
-  /** Ground: one world-aligned texture under every sector, so neighbouring sectors share it without a seam. */
-  private drawGround(visible: number[], count: number, lod: number) {
+  /** Land: one world-aligned ground texture from the skyline down, under every cell, so nothing shows through. */
+  private drawLand(tl: { x: number; y: number }, br: { x: number; y: number }) {
     const { ctx } = this;
     const ground = this.layerImgs["ground.webp"];
     if (ground && !this.groundPat) {
-      // night: the lawn sits in near-black shadow so candlelight and moonlit water carry the scene;
-      // the shade is baked into the tile once instead of a second full-screen pass per frame
       const tile = document.createElement("canvas");
       tile.width = ground.width; tile.height = ground.height;
       const tg = tile.getContext("2d")!;
       tg.drawImage(ground, 0, 0);
-      tg.fillStyle = "rgba(2,8,5,0.5)";
+      tg.fillStyle = "rgba(2,8,5,0.5)"; // night shade baked into the tile once
       tg.fillRect(0, 0, tile.width, tile.height);
       this.groundPat = ctx.createPattern(tile, "repeat");
     }
-    ctx.fillStyle = lod === 0 || !this.groundPat ? "#0c2016" : this.groundPat;
-    for (const s of visible) {
-      const [ox, oy] = sectorOrigin(s);
-      const nb = neighbours(s, count);
-      const y0 = nb[0] ? oy : oy + HORIZON_CUT + 40;
-      ctx.fillRect(ox - 1, y0 - 1, SECTOR_W + 2, oy + SECTOR_H - y0 + 2);
-    }
+    ctx.fillStyle = this.groundPat ?? "#0c2016";
+    const step = Math.max(12, 6 / this.cam.z);
+    ctx.beginPath();
+    const x0 = tl.x - step, x1 = br.x + step;
+    ctx.moveTo(x0, br.y + 50);
+    for (let x = x0; x <= x1 + step; x += step) ctx.lineTo(x, horizonY(x) + 30);
+    ctx.lineTo(x1 + step, br.y + 50);
+    ctx.closePath();
+    ctx.fill();
+  }
 
-    // open edges of the garden fade into the night instead of ending on a drawn line
-    const F = 220;
-    for (const s of visible) {
-      const [ox, oy] = sectorOrigin(s);
-      const nb = neighbours(s, count);
-      const y0 = nb[0] ? oy : oy + HORIZON_CUT + 40;
-      const edge = (x0: number, y0e: number, x1: number, y1: number, rx: number, ry: number, rw: number, rh: number) => {
-        const gr = ctx.createLinearGradient(x0, y0e, x1, y1);
-        gr.addColorStop(0, "rgba(6,19,12,0)");
-        gr.addColorStop(1, "rgba(6,19,12,0.96)");
-        ctx.fillStyle = gr;
-        ctx.fillRect(rx, ry, rw, rh);
-      };
-      if (!nb[2]) edge(0, oy + SECTOR_H - F, 0, oy + SECTOR_H, ox - 1, oy + SECTOR_H - F, SECTOR_W + 2, F + 1);
-      if (!nb[1]) edge(ox + SECTOR_W - F, 0, ox + SECTOR_W, 0, ox + SECTOR_W - F, y0, F + 1, oy + SECTOR_H - y0);
-      if (!nb[3]) edge(ox + F, 0, ox, 0, ox - 1, y0, F + 1, oy + SECTOR_H - y0);
-    }
+  /** Distant vista in screen space: the only parallax layer. Its foot sits on the world skyline. */
+  private drawVista() {
+    const { ctx, cam } = this;
+    const hy = (HORIZON_CUT - cam.y) * cam.z + this.h / 2; // skyline on screen
+    ctx.fillStyle = VISTA_TOP;
+    ctx.fillRect(0, 0, this.w, this.h);
+    if (hy < -40) return;
+    const v = this.vista;
+    // scale with zoom like a far layer, but never taller than the visible sky band, so moon and castle stay in view
+    const vsMax = (Math.min(Math.max(this.h * 0.7, 320), 760) / VISTA_H) * Math.min(1.25, Math.max(0.62, 0.85 + 0.3 * Math.log2(cam.z + 0.35)));
+    const vs = Math.min(vsMax, Math.max(0.3, (hy - 30) / (VISTA_H * 0.78))); // 70px of the band sits under the header
+    const tw = VISTA_W * vs, th = VISTA_H * vs;
+    const top = hy + 40 * vs - th;
+    // parallax: the castle sits right of centre at the opening view and drifts slowly as the camera pans
+    let x = (900 - cam.x) * cam.z * 0.12 + this.w * 0.68 - VISTA_CASTLE_X * tw;
+    x = (((x % tw) + tw) % tw) - tw;
+    for (; x < this.w; x += tw) ctx.drawImage(v, x, top, tw + 1, th);
+    ctx.fillStyle = VISTA_FOOT;
+    ctx.fillRect(0, top + th - 1, this.w, this.h);
   }
 
   /** Overview LOD: one pre-rendered light layer per sector, rebuilt only when that sector gains candles. */
@@ -183,10 +208,9 @@ export class GardenRenderer {
     g.globalCompositeOperation = "lighter";
     for (let p = first; p < first + count; p++) {
       const pos = positionOf(p);
-      const x = pos.x - ox, y = pos.y - oy;
       const k = pos.scale;
       g.globalAlpha = 0.3;
-      g.drawImage(this.glow, x - 60 * k, y - 104 * k, 120 * k, 120 * k);
+      g.drawImage(this.glow, pos.x - ox - 60 * k, pos.y - oy - 104 * k, 120 * k, 120 * k);
     }
     g.globalCompositeOperation = "source-over";
     g.globalAlpha = 1;
@@ -204,112 +228,104 @@ export class GardenRenderer {
   draw(input: RenderInput, time: number) {
     const t0 = performance.now();
     const { ctx, cam } = this;
+    this.budget = 6;
+    this.pending = false;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    // Distant vista (sky, moon, hills, castle) in screen space with slight parallax; sectors draw over it.
-    ctx.fillStyle = "#06130c";
-    ctx.fillRect(0, 0, this.w, this.h);
-    const bd = this.layerImgs["backdrop.webp"];
-    if (bd) {
-      const bh = Math.max(this.h * 0.82, (this.w * 1.08 * bd.height) / bd.width);
-      const bw = (bh * bd.width) / bd.height;
-      const px = Math.max(0, Math.min(bw - this.w, (bw - this.w) * 0.62 - (cam.x - SECTOR_W / 2) * 0.02 * cam.z));
-      const py = Math.min(0, -((cam.y - 300) * 0.04 * cam.z));
-      ctx.drawImage(bd, -px, py, bw, bh);
-      const fade = ctx.createLinearGradient(0, py + bh * 0.8, 0, py + bh);
-      fade.addColorStop(0, "rgba(6,19,12,0)");
-      fade.addColorStop(1, "#06130c");
-      ctx.fillStyle = fade;
-      ctx.fillRect(0, py + bh * 0.8, this.w, bh * 0.2 + 1);
-    }
+    this.drawVista();
 
     const tl = this.toWorld(0, 0);
     const br = this.toWorld(this.w, this.h);
     const extent = Math.max(input.total, input.known);
     const n = sectorCount(extent);
-    const visible: number[] = [];
-    for (let s = 0; s < n; s++) {
-      const [ox, oy] = sectorOrigin(s);
-      const M = SECTOR_MARGIN;
-      if (ox + SECTOR_W + M < tl.x || ox - M > br.x || oy + SECTOR_H + M < tl.y || oy - M > br.y) continue; // viewport culling
-      visible.push(s);
-    }
+    const M = SECTOR_MARGIN;
+    // every grid cell that can paint into the view, garden or wild, in back-to-front rows
+    const gx0 = Math.floor((tl.x - M) / SECTOR_W), gx1 = Math.floor((br.x + M) / SECTOR_W);
+    const gy0 = Math.max(0, Math.floor((tl.y - M) / SECTOR_H)), gy1 = Math.floor((br.y + M) / SECTOR_H);
     ctx.save();
     ctx.translate(this.w / 2, this.h / 2);
     ctx.scale(cam.z, cam.z);
     ctx.translate(-cam.x, -cam.y);
     ctx.imageSmoothingEnabled = true;
+    this.drawLand(tl, br);
     // LOD: 0 = cached light layers per sector, 1 = sprites, 2 = sprites with animated flames
     const lod = cam.z < 0.3 ? 0 : cam.z < 0.7 ? 1 : 2;
-    this.drawGround(visible, n, lod);
-    const M = SECTOR_MARGIN;
-    for (const s of visible) {
-      const [ox, oy] = sectorOrigin(s);
-      ctx.drawImage(this.sector(s, n, lod === 0), ox - M, oy - M, SECTOR_W + 2 * M, SECTOR_H + 2 * M);
-    }
-    (window as any).__gardenFrames = ((window as any).__gardenFrames ?? 0) + 1;
-    if (lod === 0) {
-      let drawn = 0;
-      for (const s of visible) {
-        const layer = this.litLayer(s, input.candles);
-        if (!layer) continue;
-        const [ox, oy] = sectorOrigin(s);
-        ctx.drawImage(layer, ox - M, oy - M, SECTOR_W + 2 * M, SECTOR_H + 2 * M);
-        drawn += Math.max(0, Math.min(SLOTS_PER_SECTOR, input.candles.length - s * SLOTS_PER_SECTOR));
+    const tier: 0 | 1 | 2 = cam.z < 0.3 ? 0 : cam.z < 0.75 ? 1 : 2;
+    let drawn = 0, cells = 0;
+    for (let gy = gy0; gy <= gy1; gy++) {
+      const row: number[] = [];
+      for (let gx = gx0; gx <= gx1; gx++) {
+        const s = sectorAt(gx, gy);
+        if (s < 0) continue;
+        cells++;
+        const c = this.cell(s, s >= n, tier);
+        if (c) ctx.drawImage(c, gx * SECTOR_W - M, gy * SECTOR_H - M, SECTOR_W + 2 * M, SECTOR_H + 2 * M);
+        if (s < n) row.push(s);
       }
-      const ring = (id: number, color: string) => {
-        const p = positionOf(id - 1);
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2 / cam.z;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y - 44 * p.scale, 40 * Math.max(p.scale, 0.8), 0, Math.PI * 2);
-        ctx.stroke();
-      };
-      if (input.highlightMine) input.mine.forEach((id) => ring(id, "rgba(232,190,90,0.9)"));
-      if (input.selected) ring(input.selected, "#fff3c4");
-      ctx.restore();
-      this.stats = { visibleSectors: visible.length, drawnCandles: drawn, lod, ms: performance.now() - t0 };
-    (window as any).__lastFrame = this.stats;
-      return;
+      // candles of this row draw before the next row's cells, so nearer trees and walls occlude them correctly
+      drawn += lod === 0 ? this.drawRowLights(row, input) : this.drawRowCandles(row, input, tl, br, lod, time);
     }
+    if (input.highlightMine || input.selected) this.drawRings(input);
+    ctx.restore();
+    (window as any).__gardenFrames = ((window as any).__gardenFrames ?? 0) + 1;
+    this.stats = { visibleSectors: cells, drawnCandles: drawn, lod, ms: performance.now() - t0 };
+    (window as any).__lastFrame = this.stats;
+  }
+
+  private drawRowLights(row: number[], input: RenderInput) {
     let drawn = 0;
+    const M = SECTOR_MARGIN;
+    for (const s of row) {
+      const layer = this.litLayer(s, input.candles);
+      if (!layer) continue;
+      const [ox, oy] = sectorOrigin(s);
+      this.ctx.drawImage(layer, ox - M, oy - M, SECTOR_W + 2 * M, SECTOR_H + 2 * M);
+      drawn += Math.max(0, Math.min(SLOTS_PER_SECTOR, input.candles.length - s * SLOTS_PER_SECTOR));
+    }
+    return drawn;
+  }
+
+  private drawRowCandles(row: number[], input: RenderInput, tl: { x: number; y: number }, br: { x: number; y: number }, lod: number, time: number) {
+    const { ctx } = this;
     const lit: { x: number; y: number; k: number; c: Candle }[] = [];
-    for (const s of visible) {
+    for (const s of row) {
       const first = s * SLOTS_PER_SECTOR;
       for (let p = first; p < first + SLOTS_PER_SECTOR; p++) {
-        const pos = positionOf(p);
         const c = input.candles[p] ?? (input.extra && input.extra.id === p + 1 ? input.extra : undefined);
-        if (pos.x < tl.x - 60 || pos.x > br.x + 60 || pos.y < tl.y - 100 || pos.y > br.y + 60) continue;
-        if (c) lit.push({ x: pos.x, y: pos.y, k: pos.scale, c });
+        if (!c) continue;
+        const pos = positionOf(p);
+        if (pos.x < tl.x - 60 || pos.x > br.x + 60 || pos.y < tl.y - 100 || pos.y > br.y + 60) continue; // culling
+        lit.push({ x: pos.x, y: pos.y, k: pos.scale, c });
       }
     }
-    // Warm light first, additive and local; strength per candle is fixed so many candles brighten
-    // their own neighbourhood without washing out the screen.
+    lit.sort((a, b) => a.y - b.y);
+    // warm local light, additive: fixed strength per candle so many candles brighten their own neighbourhood
     ctx.globalCompositeOperation = "lighter";
     for (const { x, y, k, c } of lit) {
       const flick = input.reducedMotion ? 1 : 0.88 + 0.12 * Math.sin(time / 260 + c.id * 1.7);
-      ctx.globalAlpha = 0.34 * flick;
+      ctx.globalAlpha = 0.3 * flick;
       const r = 80 * k;
       ctx.drawImage(this.glow, x - r, y - 48 * k - r, r * 2, r * 2);
-      // warm pool on the terrace stone and pedestal faces around the holder
-      ctx.globalAlpha = 0.3 * flick;
+      ctx.globalAlpha = 0.28 * flick; // warm pool on the stone at the foot of the holder
       ctx.drawImage(this.glow, x - 46 * k, y - 18 * k, 92 * k, 34 * k);
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
-    for (const { x, y, k, c } of lit) {
-      drawn++;
-      this.drawCandle(x, y, k, c, lod === 2 && !input.reducedMotion ? time : 0);
-      if (input.selected === c.id || (input.highlightMine && input.mine.has(c.id))) {
-        ctx.strokeStyle = input.selected === c.id ? "#fff3c4" : "rgba(232,190,90,0.9)";
-        ctx.lineWidth = Math.max(2, 2 / cam.z);
-        ctx.beginPath();
-        ctx.arc(x, y - 44 * k, 30 * Math.max(k, 0.7), 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    }
-    ctx.restore();
-    this.stats = { visibleSectors: visible.length, drawnCandles: drawn, lod, ms: performance.now() - t0 };
-    (window as any).__lastFrame = this.stats;
+    for (const { x, y, k, c } of lit) this.drawCandle(x, y, k, c, lod === 2 && !input.reducedMotion ? time : 0);
+    return lit.length;
+  }
+
+  private drawRings(input: RenderInput) {
+    const { ctx, cam } = this;
+    const ring = (id: number, color: string) => {
+      const p = positionOf(id - 1);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(2, 2 / cam.z);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - 44 * p.scale, Math.max(30 * Math.max(p.scale, 0.7), 14 / cam.z), 0, Math.PI * 2);
+      ctx.stroke();
+    };
+    if (input.highlightMine) input.mine.forEach((id) => ring(id, "rgba(232,190,90,0.9)"));
+    if (input.selected) ring(input.selected, "#fff3c4");
   }
 
   /** k is the depth scale of the slot: far terraces hold smaller candles than near ones. */
@@ -343,21 +359,32 @@ export class GardenRenderer {
     ctx.restore();
   }
 
-  /** Draw the overview used by the minimap: sectors as tiles, lit candles as points, viewport frame. */
+  /** Minimap of the actual world: skyline, wild woodland, garden cells, streams, lit candles and the camera. */
   drawMinimap(m: HTMLCanvasElement, input: RenderInput) {
     const g = m.getContext("2d")!;
     const extent = Math.max(input.total, input.known);
-    const b = worldBounds(extent);
+    const b = cameraBounds(extent);
+    const top = -200;
     const W = m.width, H = m.height;
-    const s = Math.min(W / (b.maxX - b.minX), H / (b.maxY - b.minY));
+    const s = Math.min(W / (b.maxX - b.minX), H / (b.maxY - top));
     const ox = (W - (b.maxX - b.minX) * s) / 2 - b.minX * s;
-    const oy = (H - (b.maxY - b.minY) * s) / 2 - b.minY * s;
-    g.fillStyle = "#06110c";
+    const oy = (H - (b.maxY - top) * s) / 2 - top * s;
+    g.fillStyle = VISTA_TOP;
     g.fillRect(0, 0, W, H);
-    for (let i = 0; i < sectorCount(extent); i++) {
+    g.fillStyle = "#0b1a12"; // wild woodland
+    g.fillRect(b.minX * s + ox, HORIZON_CUT * s + oy, (b.maxX - b.minX) * s, (b.maxY - HORIZON_CUT) * s);
+    const n = sectorCount(extent);
+    g.fillStyle = "#1a4630"; // the garden: one continuous landmass
+    for (let i = 0; i < n; i++) {
       const [x, y] = sectorOrigin(i);
-      g.fillStyle = "#123323";
-      g.fillRect(x * s + ox, y * s + oy, SECTOR_W * s + 0.5, SECTOR_H * s + 0.5); // one continuous landmass
+      const y0 = y === 0 ? HORIZON_CUT : y;
+      g.fillRect(x * s + ox, y0 * s + oy, SECTOR_W * s + 0.6, (y + SECTOR_H - y0) * s + 0.6);
+    }
+    g.strokeStyle = "#4f93a6"; g.lineWidth = 1;
+    for (let gx = Math.floor(b.minX / SECTOR_W); gx * SECTOR_W < b.maxX; gx++) {
+      g.beginPath();
+      for (let y = HORIZON_CUT; y <= b.maxY; y += 60) { const x = streamX(gx, y); if (y === HORIZON_CUT) g.moveTo(x * s + ox, y * s + oy); else g.lineTo(x * s + ox, y * s + oy); }
+      g.stroke();
     }
     g.fillStyle = "#f2c35f";
     const step = input.candles.length > 4000 ? 2 : 1;
@@ -367,11 +394,9 @@ export class GardenRenderer {
     }
     if (input.highlightMine) {
       g.fillStyle = "#ffffff";
-      input.mine.forEach((id) => {
-        const p = positionOf(id - 1);
-        g.fillRect(p.x * s + ox - 1.5, p.y * s + oy - 1.5, 3, 3);
-      });
+      input.mine.forEach((id) => { const p = positionOf(id - 1); g.fillRect(p.x * s + ox - 1.5, p.y * s + oy - 1.5, 3, 3); });
     }
+    if (input.selected) { const p = positionOf(input.selected - 1); g.fillStyle = "#fff3c4"; g.beginPath(); g.arc(p.x * s + ox, p.y * s + oy, 3, 0, Math.PI * 2); g.fill(); }
     const tl = this.toWorld(0, 0), br = this.toWorld(this.w, this.h);
     g.strokeStyle = "#fff3c4";
     g.lineWidth = 1.5;

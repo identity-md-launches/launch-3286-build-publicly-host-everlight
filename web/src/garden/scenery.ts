@@ -1,5 +1,5 @@
 import {
-  HOLDER_TOP, HORIZON_CUT, SECTOR_H, SECTOR_MARGIN, SECTOR_W, TILT, mulberry, pathY, sectorPlan, streamX, type Terrace,
+  HOLDER_TOP, HORIZON_CUT, horizonY, SECTOR_H, SECTOR_MARGIN, SECTOR_W, TILT, mulberry, pathY, sectorPlan, streamX, type Terrace,
 } from "./layout";
 
 type Img = HTMLImageElement | null;
@@ -14,7 +14,7 @@ export type Neighbours = [boolean, boolean, boolean, boolean];
  * stream with its pools and waterfall, then terraces, trees, gazebo, bridge and statues sorted by depth.
  * Candles and their light are drawn per frame on top; nothing here depends on purchases.
  */
-export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: Record<string, Img>, nb: Neighbours) {
+export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: Record<string, Img>, nb: Neighbours, wild = false) {
   const plan = sectorPlan(index);
   const { gx, gy, ox, oy } = plan;
   const M = SECTOR_MARGIN, W = SECTOR_W, H = SECTOR_H;
@@ -36,12 +36,14 @@ export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: 
     g.globalAlpha = 1;
   };
   const top = oy + (nb[0] ? -M : HORIZON_CUT);
+  /** Anything drawn must stay inside this cell's canvas (cell + margin): a sprite of height h based at y must have y - h above the top margin. */
+  const fits = (y: number, h: number) => y - h > oy - M + 6 && y < oy + H + M - 6;
 
   // land edge toward the vista: an irregular hillside line with a tree line and haze, never a straight cut
   if (!nb[0]) {
     // the band is a function of world x only, and each sector paints it only across its own width where a
     // neighbour continues it, so translucent haze is never laid twice and no seam forms between sectors
-    const edge = (x: number) => oy + HORIZON_CUT - 30 - 34 * Math.sin(x / 150) - 22 * Math.sin(x / 61) - 40 * Math.sin(x / 430);
+    const edge = (x: number) => oy + horizonY(x);
     const bx0 = nb[3] ? ox : ox - M, bx1 = nb[1] ? ox + W : ox + W + M;
     g.save();
     g.beginPath(); g.rect(bx0, oy - M, bx1 - bx0, HORIZON_CUT + M + 120); g.clip();
@@ -68,7 +70,8 @@ export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: 
 
   // tonal patches: shadowed hollows and moonlit rises so the lawn never reads as a flat fill
   for (let i = 0; i < 16; i++) {
-    const x = ox + r() * W, y = Math.max(top + 60, oy + r() * H), rad = 120 + r() * 220;
+    // radius and centre keep the whole soft patch inside the cell canvas, so it never ends on a straight clip line
+    const rad = 100 + r() * 70, x = ox - M + rad + r() * (W + 2 * M - 2 * rad), y = Math.max(top + 60, oy + r() * H);
     const dark = r() < 0.6;
     const gr = g.createRadialGradient(x, y, 0, x, y, rad);
     gr.addColorStop(0, dark ? "rgba(0,6,3,0.42)" : "rgba(70,120,120,0.10)");
@@ -84,8 +87,10 @@ export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: 
   for (let i = 0; i < 70; i++) {
     const x = ox - 40 + r() * (W + 80), y = top + 90 + r() * (oy + H - top - 90);
     const kind = r();
-    if (kind < 0.12) put("tree-2", x, y, 70 + r() * 60, r() < 0.5, 0.92);
-    else if (kind < 0.24) put("tree-0", x, y, 90 + r() * 70, r() < 0.5, 0.9);
+    const th = kind < 0.12 ? 70 + r() * 60 : 90 + r() * 70;
+    if (kind < 0.24 && !fits(y, th)) continue;
+    if (kind < 0.12) put("tree-2", x, y, th, r() < 0.5, 0.92);
+    else if (kind < 0.24) put("tree-0", x, y, th, r() < 0.5, 0.9);
     else if (kind < 0.62) put("bush-plain", x, y, 26 + r() * 30, r() < 0.5, 0.95);
     else if (kind < 0.8) put("bush", x, y, 24 + r() * 26, r() < 0.5, 0.95);
     else {
@@ -120,7 +125,7 @@ export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: 
   drawWalk(g, pathPts, pathHalf, pathNormal, stonePat, band);
 
   // founding sector: a broad entrance walk from the near left corner up to the hero pedestal and the path
-  if (plan.hero) {
+  if (plan.hero && !wild) {
     const h = plan.hero;
     const ent: [number, number][] = [];
     for (let k = 0; k <= 40; k++) {
@@ -208,29 +213,32 @@ export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: 
   // ---- depth-sorted features: terraces, trees, gazebo, bridge, statues ----
   type Item = { y: number; draw: () => void };
   const items: Item[] = [];
-  for (const t of plan.terraces) items.push({ y: t.cy + t.rx * TILT, draw: () => drawTerrace(g, t, plan.slots, ped, groundPat, stonePat, put, r) });
+  if (!wild) for (const t of plan.terraces) items.push({ y: t.cy + t.rx * TILT, draw: () => drawTerrace(g, t, plan.slots, ped, groundPat, stonePat, put, r) });
   const clear = (x: number, y: number, rad: number) => {
     if (Math.abs(x - streamX(gx, y)) < 60 + rad * 0.4 || Math.abs(y - pathY(gy, x)) < 40) return false;
     if (y < top + 30 || x < ox - 40 || x > ox + W + 40 || y > oy + H + 40) return false;
-    for (const s of plan.slots) if (Math.abs(s[0] - x) < rad && s[1] - y < rad * 0.9 && s[1] - y > -rad * 0.25) return false;
-    if (plan.gazebo && Math.hypot(plan.gazebo.x - x, plan.gazebo.y - y) < 90) return false;
+    if (!wild) for (const s of plan.slots) if (Math.abs(s[0] - x) < rad && s[1] - y < rad * 0.9 && s[1] - y > -rad * 0.25) return false;
+    if (!wild && plan.gazebo && Math.hypot(plan.gazebo.x - x, plan.gazebo.y - y) < 90) return false;
     return true;
   };
-  for (let i = 0, placed = 0; i < 260 && placed < 30; i++) {
-    const x = ox - 30 + r() * (W + 60), y = oy + r() * H, h = 90 + r() * 110;
-    if (!clear(x, y, h * 0.45)) continue;
+  // wild cells (beyond the lit garden) are dense old woodland; near their northern edge trees stay low so
+  // they never hide the candles of the garden row behind them
+  const wildH = (y: number, h: number) => (wild ? Math.min(h, 40 + Math.max(0, y - oy) * 0.75) : h);
+  for (let i = 0, placed = 0; i < (wild ? 700 : 260) && placed < (wild ? 90 : 30); i++) {
+    const x = ox - 30 + r() * (W + 60), y = oy + r() * H, h = wildH(y, 90 + r() * 110);
+    if (!fits(y + 6, h) || !clear(x, y, h * 0.45)) continue;
     placed++;
     const kind = r() < 0.3 ? "tree-2" : r() < 0.5 ? "tree-1" : "tree-0", flip = r() < 0.5;
     items.push({ y, draw: () => put(kind, x, y + 6, h, flip) });
   }
-  for (let i = 0, placed = 0; i < 400 && placed < 95; i++) {
+  for (let i = 0, placed = 0; i < (wild ? 900 : 400) && placed < (wild ? 220 : 95); i++) {
     const x = ox - 20 + r() * (W + 40), y = oy + r() * H, h = 26 + r() * 34;
-    if (!clear(x, y, 30)) continue;
+    if (!fits(y + 4, h) || !clear(x, y, 30)) continue;
     placed++;
     const kind = r() < 0.55 ? "bush" : "bush-plain", flip = r() < 0.5;
     items.push({ y, draw: () => put(kind, x, y + 4, h, flip) });
   }
-  if (plan.gazebo) { const { x, y } = plan.gazebo; items.push({ y, draw: () => { put("gazebo", x, y + 8, 128); } }); }
+  if (plan.gazebo && !wild) { const { x, y } = plan.gazebo; items.push({ y, draw: () => { put("gazebo", x, y + 8, 128); } }); }
   {
     const b = plan.bridge;
     items.push({
@@ -242,15 +250,15 @@ export function drawSectorArt(g: CanvasRenderingContext2D, index: number, imgs: 
           g.save(); g.translate(b.x, b.y + 18); g.rotate(b.angle); g.drawImage(s, -w / 2, -h, w, h); g.restore();
         }
         // decorative brass lanterns at the bridge heads: steady and boxed, never mistaken for a candle flame
-        for (const side of [-1, 1]) put("lantern", b.x + side * 84, pathY(gy, b.x + side * 84) + 4, 44);
+        if (!wild) for (const side of [-1, 1]) put("lantern", b.x + side * 84, pathY(gy, b.x + side * 84) + 4, 44);
       },
     });
   }
   const frog = im("frog");
   if (frog) {
     const spots: [number, number, number][] = [];
-    if (plan.hero) spots.push([plan.hero.x - 150, plan.hero.y + 40, 2.2]);
-    for (let i = 0; i < 40 && spots.length < (plan.hero ? 2 : 1); i++) {
+    if (plan.hero && !wild) spots.push([plan.hero.x - 150, plan.hero.y + 40, 2.2]);
+    for (let i = 0; i < 40 && spots.length < (plan.hero && !wild ? 2 : 1); i++) {
       const x = ox + 80 + r() * (W - 160);
       const y = pathY(gy, x) + (r() < 0.5 ? -52 : 58);
       if (clear(x, y, 30)) spots.push([x, y, 1]);

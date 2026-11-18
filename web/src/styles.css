@@ -432,3 +432,10 @@ textarea:focus-visible, .custom input:focus-visible, .find input:focus-visible {
   .split li { padding: 0 var(--space-2); }
   .split strong { font-size: var(--text-md); }
 }
+
+/* map tools never sit over a sheet, panel or form */
+.map-tools[hidden], .map-tools[hidden] .zoom { display: none !important; }
+.full-addr { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); margin: var(--space-2) 0 0; }
+.full-addr code { font-size: 0.8125rem; word-break: break-all; color: var(--color-headline); }
+.links { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); margin: var(--space-2) 0 0; }
+.connect-inline { margin: var(--space-2) 0; }

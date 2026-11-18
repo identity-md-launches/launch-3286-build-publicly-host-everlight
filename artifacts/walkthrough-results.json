@@ -1,0 +1,482 @@
+[
+ [
+  "d1440 zoomin",
+  {
+   "frame": {
+    "visibleSectors": 1,
+    "drawnCandles": 12,
+    "lod": 2,
+    "ms": 0.7999997138977051
+   },
+   "fps": "17"
+  }
+ ],
+ [
+  "d1440 zoomout",
+  {
+   "frame": {
+    "visibleSectors": 12,
+    "drawnCandles": 100,
+    "lod": 1,
+    "ms": 3.0999999046325684
+   },
+   "fps": "11"
+  }
+ ],
+ [
+  "d1440 pan-to-bounds",
+  {
+   "frame": {
+    "visibleSectors": 12,
+    "drawnCandles": 100,
+    "lod": 1,
+    "ms": 7.099999904632568
+   },
+   "fps": "11"
+  }
+ ],
+ [
+  "d1440 popup before/after pan",
+  {
+   "a1": {
+    "cls": "detail-wrap anchored",
+    "left": "720px",
+    "top": "420px",
+    "title": "Candle #37",
+    "addr": "0x1111111111111111111111111111111111111111"
+   },
+   "a2": {
+    "left": "600px",
+    "top": "480px"
+   }
+  }
+ ],
+ [
+  "d1440 map tools hidden with popup",
+  false
+ ],
+ [
+  "d1440 map tools hidden on light sheet",
+  true
+ ],
+ [
+  "d1440 qty \"51\"",
+  {
+   "help": "At most 50 candles per purchase. Split larger batches.",
+   "total": "Candles— | Total— | Your balanceNot connected | Approval— | Estimated gas≤ 0.00004 ETH",
+   "btn": "Enter 1 to 50 candles",
+   "invalid": "true"
+  }
+ ],
+ [
+  "d1440 qty \"0\"",
+  {
+   "help": "At least 1 candle.",
+   "total": "Candles— | Total— | Your balanceNot connected | Approval— | Estimated gas≤ 0.00004 ETH",
+   "btn": "Enter 1 to 50 candles",
+   "invalid": "true"
+  }
+ ],
+ [
+  "d1440 qty \"2.5\"",
+  {
+   "help": "Use a whole number from 1 to 50: no decimals, signs or letters.",
+   "total": "Candles— | Total— | Your balanceNot connected | Approval— | Estimated gas≤ 0.00004 ETH",
+   "btn": "Enter 1 to 50 candles",
+   "invalid": "true"
+  }
+ ],
+ [
+  "d1440 qty \"-3\"",
+  {
+   "help": "Use a whole number from 1 to 50: no decimals, signs or letters.",
+   "total": "Candles— | Total— | Your balanceNot connected | Approval— | Estimated gas≤ 0.00004 ETH",
+   "btn": "Enter 1 to 50 candles",
+   "invalid": "true"
+  }
+ ],
+ [
+  "d1440 qty \"abc\"",
+  {
+   "help": "Use a whole number from 1 to 50: no decimals, signs or letters.",
+   "total": "Candles— | Total— | Your balanceNot connected | Approval— | Estimated gas≤ 0.00004 ETH",
+   "btn": "Enter 1 to 50 candles",
+   "invalid": "true"
+  }
+ ],
+ [
+  "d1440 qty \"\"",
+  {
+   "help": "1 candle · whole numbers from 1 to 50",
+   "total": "Candles1 | Total1 IMD | Your balanceNot connected | ApprovalChecked when you connect | Estimated gas≤ 0.00006 ETH",
+   "btn": "Light 1 candle",
+   "invalid": "false"
+  }
+ ],
+ [
+  "d1440 qty \"50\"",
+  {
+   "help": "50 candles · whole numbers from 1 to 50",
+   "total": "Candles50 | Total50 IMD | Your balanceNot connected | ApprovalChecked when you connect | Estimated gas≤ 0.00093 ETH",
+   "btn": "Light 50 candles",
+   "invalid": "false"
+  }
+ ],
+ [
+  "d1440 qty \"7\"",
+  {
+   "help": "7 candles · whole numbers from 1 to 50",
+   "total": "Candles7 | Total7 IMD | Your balanceNot connected | ApprovalChecked when you connect | Estimated gas≤ 0.00016 ETH",
+   "btn": "Light 7 candles",
+   "invalid": "false"
+  }
+ ],
+ [
+  "d1440 draft after reload",
+  {
+   "custom": "7",
+   "wish": "Keep this wish across reloads"
+  }
+ ],
+ [
+  "d1440 overlap check",
+  [
+   "wish-all covered by strip strip-under"
+  ]
+ ],
+ [
+  "d1440 route mine h2",
+  "My candles"
+ ],
+ [
+  "d1440 route rewards h2",
+  "Rewards"
+ ],
+ [
+  "d1440 route treasury h2",
+  "Treasury"
+ ],
+ [
+  "d1440 route how h2",
+  "How it works"
+ ],
+ [
+  "d1440 f0 overview",
+  {
+   "frame": {
+    "visibleSectors": 10,
+    "drawnCandles": 0,
+    "lod": 1,
+    "ms": 2.8000001907348633
+   },
+   "fps": "7"
+  }
+ ],
+ [
+  "d1440 f0 pan fps",
+  {
+   "frame": {
+    "visibleSectors": 6,
+    "drawnCandles": 0,
+    "lod": 2,
+    "ms": 0.20000028610229492
+   },
+   "fps": "16"
+  }
+ ],
+ [
+  "d1440 f3000 overview",
+  {
+   "frame": {
+    "visibleSectors": 50,
+    "drawnCandles": 3000,
+    "lod": 0,
+    "ms": 1.0999999046325684
+   },
+   "fps": "8"
+  }
+ ],
+ [
+  "d1440 f3000 pan fps",
+  {
+   "frame": {
+    "visibleSectors": 6,
+    "drawnCandles": 168,
+    "lod": 2,
+    "ms": 9
+   },
+   "fps": "13"
+  }
+ ],
+ [
+  "d1440 f10000 overview",
+  {
+   "frame": {
+    "visibleSectors": 128,
+    "drawnCandles": 10000,
+    "lod": 0,
+    "ms": 39.90000009536743
+   },
+   "fps": "8"
+  }
+ ],
+ [
+  "d1440 f10000 pan fps",
+  {
+   "frame": {
+    "visibleSectors": 6,
+    "drawnCandles": 168,
+    "lod": 2,
+    "ms": 21.09999990463257
+   },
+   "fps": "13"
+  }
+ ],
+ [
+  "d1440 live status",
+  " Sales closed until activation · 0 lit"
+ ],
+ [
+  "d1440 errors",
+  []
+ ],
+ [
+  "m390 zoomin",
+  {
+   "frame": {
+    "visibleSectors": 1,
+    "drawnCandles": 2,
+    "lod": 2,
+    "ms": 0.3000001907348633
+   },
+   "fps": "31"
+  }
+ ],
+ [
+  "m390 zoomout",
+  {
+   "frame": {
+    "visibleSectors": 24,
+    "drawnCandles": 100,
+    "lod": 0,
+    "ms": 0.40000009536743164
+   },
+   "fps": "34"
+  }
+ ],
+ [
+  "m390 pan-to-bounds",
+  {
+   "frame": {
+    "visibleSectors": 24,
+    "drawnCandles": 100,
+    "lod": 0,
+    "ms": 0.3000001907348633
+   },
+   "fps": "4"
+  }
+ ],
+ [
+  "m390 popup before/after pan",
+  {
+   "a1": {
+    "cls": "detail-wrap",
+    "left": "",
+    "top": "",
+    "title": "Candle #37",
+    "addr": "0x1111111111111111111111111111111111111111"
+   },
+   "a2": {
+    "left": "",
+    "top": ""
+   }
+  }
+ ],
+ [
+  "m390 map tools hidden with popup",
+  true
+ ],
+ [
+  "m390 map tools hidden on light sheet",
+  true
+ ],
+ [
+  "m390 qty \"51\"",
+  {
+   "help": "At most 50 candles per purchase. Split larger batches.",
+   "total": "Candles— | Total— | Your balanceNot connected | Approval— | Estimated gas≤ 0.00004 ETH",
+   "btn": "Enter 1 to 50 candles",
+   "invalid": "true"
+  }
+ ],
+ [
+  "m390 qty \"0\"",
+  {
+   "help": "At least 1 candle.",
+   "total": "Candles— | Total— | Your balanceNot connected | Approval— | Estimated gas≤ 0.00004 ETH",
+   "btn": "Enter 1 to 50 candles",
+   "invalid": "true"
+  }
+ ],
+ [
+  "m390 qty \"2.5\"",
+  {
+   "help": "Use a whole number from 1 to 50: no decimals, signs or letters.",
+   "total": "Candles— | Total— | Your balanceNot connected | Approval— | Estimated gas≤ 0.00004 ETH",
+   "btn": "Enter 1 to 50 candles",
+   "invalid": "true"
+  }
+ ],
+ [
+  "m390 qty \"-3\"",
+  {
+   "help": "Use a whole number from 1 to 50: no decimals, signs or letters.",
+   "total": "Candles— | Total— | Your balanceNot connected | Approval— | Estimated gas≤ 0.00004 ETH",
+   "btn": "Enter 1 to 50 candles",
+   "invalid": "true"
+  }
+ ],
+ [
+  "m390 qty \"abc\"",
+  {
+   "help": "Use a whole number from 1 to 50: no decimals, signs or letters.",
+   "total": "Candles— | Total— | Your balanceNot connected | Approval— | Estimated gas≤ 0.00004 ETH",
+   "btn": "Enter 1 to 50 candles",
+   "invalid": "true"
+  }
+ ],
+ [
+  "m390 qty \"\"",
+  {
+   "help": "1 candle · whole numbers from 1 to 50",
+   "total": "Candles1 | Total1 IMD | Your balanceNot connected | ApprovalChecked when you connect | Estimated gas≤ 0.00006 ETH",
+   "btn": "Light 1 candle",
+   "invalid": "false"
+  }
+ ],
+ [
+  "m390 qty \"50\"",
+  {
+   "help": "50 candles · whole numbers from 1 to 50",
+   "total": "Candles50 | Total50 IMD | Your balanceNot connected | ApprovalChecked when you connect | Estimated gas≤ 0.00098 ETH",
+   "btn": "Light 50 candles",
+   "invalid": "false"
+  }
+ ],
+ [
+  "m390 qty \"7\"",
+  {
+   "help": "7 candles · whole numbers from 1 to 50",
+   "total": "Candles7 | Total7 IMD | Your balanceNot connected | ApprovalChecked when you connect | Estimated gas≤ 0.00017 ETH",
+   "btn": "Light 7 candles",
+   "invalid": "false"
+  }
+ ],
+ [
+  "m390 draft after reload",
+  {
+   "custom": "7",
+   "wish": "Keep this wish across reloads"
+  }
+ ],
+ [
+  "m390 overlap check",
+  []
+ ],
+ [
+  "m390 route mine h2",
+  "My candles"
+ ],
+ [
+  "m390 route rewards h2",
+  "Rewards"
+ ],
+ [
+  "m390 route treasury h2",
+  "Treasury"
+ ],
+ [
+  "m390 route how h2",
+  "How it works"
+ ],
+ [
+  "m390 f0 overview",
+  {
+   "frame": {
+    "visibleSectors": 15,
+    "drawnCandles": 0,
+    "lod": 0,
+    "ms": 0.40000009536743164
+   },
+   "fps": "10"
+  }
+ ],
+ [
+  "m390 f0 pan fps",
+  {
+   "frame": {
+    "visibleSectors": 4,
+    "drawnCandles": 0,
+    "lod": 1,
+    "ms": 0.20000028610229492
+   },
+   "fps": "32"
+  }
+ ],
+ [
+  "m390 f3000 overview",
+  {
+   "frame": {
+    "visibleSectors": 126,
+    "drawnCandles": 3000,
+    "lod": 0,
+    "ms": 17.09999990463257
+   },
+   "fps": "10"
+  }
+ ],
+ [
+  "m390 f3000 pan fps",
+  {
+   "frame": {
+    "visibleSectors": 4,
+    "drawnCandles": 74,
+    "lod": 1,
+    "ms": 3.1999998092651367
+   },
+   "fps": "23"
+  }
+ ],
+ [
+  "m390 f10000 overview",
+  {
+   "frame": {
+    "visibleSectors": 126,
+    "drawnCandles": 6352,
+    "lod": 0,
+    "ms": 10.400000095367432
+   },
+   "fps": "11"
+  }
+ ],
+ [
+  "m390 f10000 pan fps",
+  {
+   "frame": {
+    "visibleSectors": 4,
+    "drawnCandles": 74,
+    "lod": 1,
+    "ms": 3.200000286102295
+   },
+   "fps": "21"
+  }
+ ],
+ [
+  "m390 live status",
+  " Sales closed until activation · 0 lit"
+ ],
+ [
+  "m390 errors",
+  []
+ ]
+]

@@ -24,6 +24,18 @@ export const TILT = 0.42;
 /** In a sector with no neighbour to the north, the land begins this far down; the vista shows above. */
 export const HORIZON_CUT = 210;
 
+/** World y of the land's northern skyline (the garden's horizon) at world x; shared by the land fill and row-0 scenery. */
+export function horizonY(x: number): number {
+  return HORIZON_CUT - 30 - 34 * Math.sin(x / 150) - 22 * Math.sin(x / 61) - 40 * Math.sin(x / 430);
+}
+
+/** Camera limits: the garden's extent plus a ring of wild forest, never north of the skyline. */
+export const WILD_PAD = 900;
+export function cameraBounds(total: number) {
+  const b = worldBounds(total);
+  return { minX: b.minX - WILD_PAD, maxX: b.maxX + WILD_PAD, minY: 0, maxY: b.maxY + WILD_PAD * 0.7 };
+}
+
 export function mulberry(seed: number) {
   let a = seed >>> 0;
   return () => {

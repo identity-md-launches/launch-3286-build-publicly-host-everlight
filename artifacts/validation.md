@@ -1,294 +1,123 @@
-# Everlight Garden: validation record
+# Validation: one-world repair (follow-up to job 463ed97b-9667-4474-8e34-bab88796fae9)
 
-## Revision 4: reviewer findings on revision 3 (2026-11-17)
+All results below are worker-side, from 2026-11-18 on this machine, against the final production export in `dist/`. The verifier for this job checks paths and bytes only; nothing here is independently certified.
 
-Worker-side checks in Playwright's headless Chromium shell (software rendering, Liberation fonts), against the committed `dist/` served at a `/preview/` subpath. **Live** means read-only calls to mainnet RPCs. **Simulated** means `?fixture=N`, labelled on screen "Test fixture … not onchain". No transaction was sent. No address, ABI or economic rule changed.
+## Commands and results
 
-### Findings
-
-| Finding | Reproduced on revision 3 | Fix | Recheck |
-| --- | --- | --- | --- |
-| `04172db3…` Screenshots and `artifacts/asset-manifest.md` cited but missing | yes: `git ls-files artifacts` listed only `validation.md`. The revision 3 captures were written but never staged | regenerated all captures from the new export and committed them. `artifacts/screens/` holds **28 WebP files**: 26 browser captures and 2 side-by-sides. `artifacts/asset-manifest.md` is committed with the same text as `web/public/art/LICENSE.md` | `git ls-files artifacts` in the submitted commit lists 30 files |
-| `e75b5598…` Garden simplifies the reference into flat sprite scenery: one frontal bridge, empty lawn, gradient frogs, rectangular castle, straight hill/ground join at y≈508 | yes, at 1600×1000 with `?fixture=0` (`artifacts/screens/side-by-side-1600.webp` before this change showed the same) | **Vista** (`paint.js` `vista()`): nine interlocking raised terraces climb the castle hill and the west hills. They have block-jointed stone retaining walls with moss and ivy, hedge lines and moonlit tree masses, pools with lily pads and moon glints, and waterfalls between terraces. There are **seven arched bridges** (`farBridge()`, 2–5 spans at different elevations, lengths and angles), six domed pavilions, winding paths and layered mist. **Castle** (`castle()`): slender spired towers, stepped halls, arched lit windows, a rose window and a curtain wall with gatehouse towers. **Frog** (`frog()`): rounded cast-brass volumes lit by candlelight with a moonlit rim, lidded eyes, webbed toes, cast warts and verdigris, on a mossy rock. **Join** (`scenery.ts`): the three opaque hill bands drawn by the world above the land edge were removed. The edge is now a dense, irregular tree line under a lighter haze, so the vista's terraces carry on down to it. **Lawn**: 70 ground-cover pieces per sector (shrubs, flowering bushes, cypresses, mossy rocks), and the ground tile is darkened from 32% to 50%. **Camera** (`renderer.ts` `home()`): desktop zoom is `w/2000` (0.8 at 1600), with the founding pedestal at about (0.30 W, 0.77 H), so the land edge sits near mid-screen and the terraced vista fills the upper half, as in the reference | `side-by-side-1600.webp` (fixture 0) and `side-by-side-1600-f100.webp`. The middle distance now shows receding terraces, pools, waterfalls and several bridges up to the castle, and the straight hill band is gone. **The result is still clearly below the reference** in density, illustration quality and lighting. See limitations |
-
-### Commands and results (final source)
-
-| Command | Result |
-| --- | --- |
-| `CANVAS_MODULE=… node web/art-src/generate.mjs backdrop frog frame-left frame-right` | regenerated 4 assets (backdrop 2400×1000, 111 KB) |
-| `cd web && npx tsc --noEmit` | exit 0 |
-| `cd web && npx vitest run` | 2 files, **32/32 passed** |
-| `cd web && npx vite build` | built into `dist/` (after the last source change) |
-| `taste.mjs --out test/scratch/taste` (Playwright outside the repo via `IMD_PLAYWRIGHT`) | **16/16 passed**: render, layout, targets, contrast, casing, tracking, eyebrows, type-sizes, type-faces, glyphs, slogans, repetition, copy-budget, chrome, motion, share |
-| capture script (outside the repo, not delivered) | 26 scenarios: **0 page errors, 0 failed local requests, 0 action errors, no horizontal overflow** |
-
-### Screenshots (`artifacts/screens/`, actual browser captures at deviceScaleFactor 1)
-
-- **Side-by-sides** (left: approved reference scaled to 1600×1000; right: actual capture; each labelled): `side-by-side-1600.webp` (fixture 0, simulated zero-purchase state, every holder unlit) and `side-by-side-1600-f100.webp` (fixture 100).
-- **Desktop 1600×1000.** `d1600-live` is **live** (`#/garden`, 9 s for the reads: sales closed until activation, 0 lit). The **simulated** captures are `d1600-f0`, `d1600-f100`, `d1600-f3000`, `d1600-f10000`, the six-step zoom-outs `d1600-f3000-overview` and `d1600-f10000-overview`, the drag `d1600-f100-pan`, and the Find captures `d1600-popup` (Find 40, anchored popup) and `d1600-f10000-find9876`. Panels: `d1600-light`, `d1600-treasury` (live), `d1600-rewards`, `d1600-mine`, `d1600-how` and `d1600-connect`.
-- **Mobile 390×844**, touch: `m390-live` (live), `m390-f0`, `m390-f100`, `m390-f3000`, `m390-f10000`, `m390-candle` (Find 40, sheet), `m390-menu`, `m390-light`, `m390-treasury` (live) and `m390-connect`.
-
-### Rendering and interaction performance (headless, software rendering, 1600×1000)
-
-`__lastFrame.ms` is the draw time of the last frame. It was read after each of 8 drags, then again after zooming out 6 steps.
-
-| Fixture | Detail median / p95 | Sectors / candles drawn | Overview median / p95 | Sectors / candles drawn |
-| --- | --- | --- | --- | --- |
-| 0 | 0.5 / 1.2 ms | 1 / 0 | 0.2 / 1.9 ms | 1 / 0 |
-| 100 | 1.8 / 3.4 ms | 2 / 100 | 0.3 / 0.5 ms | 2 / 100 |
-| 3,000 | 2.9 / 48.9 ms | 6 / 164 | 0.6 / 0.7 ms | 32 / 3,000 |
-| 10,000 | 4.1 / 7.1 ms | 6 / 164 | 55.9 / 74.0 ms | 67 / 6,352 |
-
-The p95 spikes are frames that build a sector's cached art for the first time. Each sector now carries more ground cover, and the lower opening zoom shows more sectors, so the 10,000 overview reaches 67 sectors. Every drag there brings new sectors into view, and their 0.125× caches are built during those frames. Once built, the same frames cost under 1 ms (fixture 3,000 overview).
-
-### Better Interface review, revision 4
-
-The changes are scenery and camera only; no HTML, CSS, copy or control changed. Accessibility: unchanged. The canvas keeps its `aria-label`, and Find and the register still open any candle without pointing. Layout: no overflow at 320, 390 or 1440 (probe) or in the 26 captures. Writing and typography: unchanged, still six sizes (probe: type-sizes pass). Colors: the scene is darker, and contrast on the HTML text passes in the probe. Text over the canvas sits on its own scrims. UI: the side actions and header are unchanged. Contrast inside the popup and panels was viewed in screenshots, not measured.
-
-### Remaining limitations (revision 4)
-
-- **Visual fidelity: not met.** No image-generation tool was available on this machine, and no licensed illustration was used. All scenery is original procedural painting (Skia via `@napi-rs/canvas`). This revision replaces the flat middle distance with terraces, pools, waterfalls, seven bridges, pavilions, a detailed castle and a modelled frog. It is still visibly simpler than the illustrated reference: flatter shading, less dense foliage, the cutout tree sprites in the near world, and far less architectural detail. It does **not** meet the owner's 99% target. **No similarity score was measured or is claimed.** Reaching it needs an illustrator or an image-generation tool producing layered scenery and transparent sprites.
-- The 390 view keeps its own camera (zoom 0.62), so on phones the vista occupies only a small band above the garden.
-- The vista is one screen-space layer. Panning far east or west shows the same vista with parallax, not new distant scenery.
-- No wallet transaction ran in a browser. Write flows remain covered by the labelled vitest mocks. No physical phone, Safari, Firefox or screen reader was used.
-- Hosting is done by the publishing plane from the committed `dist/`. No publish command was run, and the public URL is not verified here.
-
----
-
-
-## Revision 3: reviewer findings on revision 2 (2026-11-17)
-
-These are worker-side checks in headless Chromium (Playwright's Chromium headless shell, software rendering), run against the committed `dist/` served at a `/preview/` subpath. They are recorded here, not independently certified. **Live** means reads from mainnet RPCs. **Simulated** means `?fixture=N`, labelled on screen "Test fixture … not onchain". No transaction was sent, and no address, ABI or economic rule changed.
-
-### Findings
-
-| Finding | Reproduced on the revision 2 export | Fix | Recheck on the new export |
-| --- | --- | --- | --- |
-| Grid of identical sector tiles, flat rows, straight canal (`layout.ts:65`) | yes: the code put every 96 slots on the same six straight ledges (`ROW_COUNTS`) either side of one canal, on a square spiral of rectangles | `web/src/garden/layout.ts` rewritten: world-space `streamX`/`pathY` curves with seeded crossing points shared by both sectors on each edge; terraces are seeded elliptical arcs fitted around stream, path, pools and gazebo (`sectorPlan`); sectors grow in half-rings south of the home row. `scenery.ts` draws in world coordinates on a canvas with a 180-unit margin; `renderer.ts` fills the ground as one world-aligned pattern, and open garden edges fade into the night | `d1600-f3000-overview.webp`, `d1600-f10000-overview.webp`: one landscape with winding streams and paths, no tile seams or dark bands. `d1600-f100-pan.webp` (drag 800,500 → 200,300): terraces continue into the next sector. Unit tests: streams/paths continuous across edges, two sectors share fewer than 3 slot positions, more than 40 distinct slot heights per sector |
-| Zoom and minimap cover the candle sheet at 390 (`styles.css:402`) | yes, by code: `.zoom` and `.detail-wrap` shared `bottom: calc(var(--strip-h) + var(--space-3))` under 900px | `Garden.tsx` adds `has-selection` to `.map-tools` while a candle is selected; under 900px `.map-tools.has-selection` (and its `.zoom`) is `display: none` | 390×844, touch, `?fixture=100`, Find 40: last sheet line at [29,720,361,739]; `elementFromPoint` there returns the sheet's own `.fine` line; zoom not displayed (`m390-candle.webp`) |
-| Screenshots and asset manifest cited but missing | yes: `artifacts/` held only `validation.md` | committed `artifacts/screens/` (28 WebP files) and `artifacts/asset-manifest.md` (every file in `web/public/art`, its layer, generator function and licence; same text as `web/public/art/LICENSE.md`) | listed below |
-| Frontal symmetric diagram, castle behind the side actions (`paint.js:351`) | yes: straight horizon, mirror-symmetric ledges, castle block at x≈1130–1330 | castle on its hill at (0.79 W, 0.22 H) of the backdrop, scale 0.42, landing near (0.78 W, 0.12 H) of a 1600 screen, clear of the side column, with a switchback road and square window lights down the slope; moon moved left; haze band. The home row now ends in an irregular land edge with three receding hill bands, tree lines, far pavilions and mist. Candle #1 is a 2.1× founding pedestal on a plinth at the head of a broad stone walk from the near left; the opening view puts it at about (0.30 W, 0.70 H). The stream bends and widens into pools with lily pads, has one seeded waterfall per sector, and the bridge is rotated to the path slope | `side-by-side-1600.webp` and `side-by-side-1600-f100.webp`. Still far from the illustrated reference in density and detail; see limitations |
-| Header says "Connect" (advisory) | yes | "Connect wallet" from 600px; "Connect" below, with `aria-label="Connect wallet"` | `d1600-live.webp`; the shot script clicks `getByRole("button", { name: "Connect wallet" })` at 1600 and 390 (`d1600-connect`, `m390-connect`) |
-| Brand hidden at 390 (advisory) | yes: `.brand span { display: none }` under 480px | only `.brand-on` hidden; the name is set at 17px on two lines | 390 body text starts "Skip to the garden tools \| EVERLIGHT GARDEN \| Connect"; no horizontal overflow at 320/390 (taste layout check) |
-| Price split from its unit (advisory) | yes: "candle · 1" / "IMD" | `Light a candle\u00a0· 1\u00a0IMD` in the side action and intro CTA | side action reads "Light a / candle · / 1 IMD" (`d1600-live.webp`) |
-| Hit test stops after 4,096 sectors (advisory) | yes: `sectorAt` filled a 4,096-entry map | closed-form `sectorAt` (inverse of the half-ring order) and a 3×3 neighbourhood hit test | vitest: `sectorAt(spiral(n)) === n` for n < 20,000 and n = 99,999, 393,216, 1,234,567; hit test at position 4096×96+7 with total 400,000 returns that position |
-
-### Commands and results (final source)
-
-| Command | Result |
-| --- | --- |
-| `cd web && npx tsc --noEmit` | exit 0 |
-| `cd web && npx vitest run` | 2 files, **32/32 passed** (6 new layout tests) |
-| `cd web && npx vite build` | built into `dist/` |
-| `node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste` (Playwright from outside the repo) | **16/16 passed** on the final export (render, layout, targets, contrast, casing, tracking, eyebrows, type-sizes, type-faces, glyphs, slogans, repetition, copy-budget, chrome, motion, share) |
-| `test/scratch/shoot.mjs` (not delivered) | 28 scenarios, **0 page errors, 0 action errors, 0 failed requests**, no horizontal overflow in any |
-
-### Screenshots (`artifacts/screens/`, actual browser captures)
-
-- Side-by-side reference vs actual: `side-by-side-1600.webp` (live, 0 candles) and `side-by-side-1600-f100.webp` (fixture 100, candle #40 open).
-- Desktop 1600×1000: `d1600-live` (**live**: activated=false, 0 candles, every holder empty), `d1600-f0`, `d1600-f100`, `d1600-f3000`, `d1600-f10000` (**simulated fixtures**), `d1600-f3000-overview`, `d1600-f10000-overview`, `d1600-f100-pan`, `d1600-popup` (Find 40), `d1600-f10000-find9876`, and panels `d1600-light`, `d1600-treasury`, `d1600-rewards`, `d1600-mine`, `d1600-how`, `d1600-connect`.
-- Mobile 390×844 (touch): `m390-live`, `m390-f0`, `m390-f100`, `m390-f3000`, `m390-f10000`, `m390-candle`, `m390-menu`, `m390-light`, `m390-treasury`, `m390-connect`.
-
-### Rendering and interaction performance (headless, software rendering, 1600×1000)
-
-`__lastFrame.ms` (draw time of the last frame) after each of 8 drags, then again after zooming out 6 steps.
-
-| Fixture | Detail view median / p95 | Sectors / candles drawn | Overview median / p95 | Sectors / candles drawn | Find → popup |
-| --- | --- | --- | --- | --- | --- |
-| 0 (live layout) | 0.2 / 0.3 ms | 1 / 0 | 0.1 / 0.2 ms | 1 / 0 | n/a |
-| 100 | 2.1 / 3.0 ms | 2 / 96 | 0.2 / 0.2 ms | 2 / 100 | 300 ms |
-| 3,000 | 1.9 / 4.5 ms | 6 / 123 | 0.4 / 0.7 ms | 28 / 2,688 | 395 ms |
-| 10,000 | 2.9 / 3.7 ms | 6 / 123 | 0.4 / 0.5 ms | 28 / 2,688 | 437 ms |
-
-Building one sector's cached art costs about 50–80 ms (the first-frame values in the shot log), paid once per sector and neighbour set. Headless rAF caps FPS, so draw time is the meaningful measure.
-
-### Better Interface review, revision 3
-
-All six domains were rechecked on the changed surfaces. Accessibility: the wallet button has the accessible name "Connect wallet" at every width, and with map tools hidden the sheet's link is reachable by tap and Tab. Layout: no control covers the sheet at 390 or 320, and no overflow. Writing: the amount stays with its unit. Typography: the brand uses the existing 17px step, so the scale still has six sizes (probe: type-sizes pass). Colors: unchanged tokens. UI: the header now names the site on phones. Contrast inside the popup and panels was viewed in screenshots, not measured.
-
-### Remaining limitations (revision 3)
-
-- **Visual fidelity.** No image-generation tool was available, so the scene is procedural (Skia via `@napi-rs/canvas`). It now follows the reference's structure: vista with moon and castle on a hill, layered horizon, winding streams and paths, curved terraces, bridges, pools, a waterfall, a gazebo, a foreground founding pedestal, frogs and arches. It is still much less dense and detailed than the illustrated reference, and it does **not** meet the owner's 99% target. No similarity score was measured.
-- At very wide overviews, streams appear in every sector column and paths in every row. They wind and are seeded, but the spacing is regular.
-- The candle layout changed from revision 2. Positions are deterministic per candle id, and the contract has 0 candles, so no live candle moved.
-- No wallet transaction ran in a browser; write flows remain covered by the labelled vitest mocks. No physical phone, Safari, Firefox or screen reader was used.
-- Hosting is done by the publishing plane from the committed `dist/`. No publish command was run, and the public URL is not verified here.
-
----
-
-## Revision 2: reference redesign (2026-11-17)
-
-These are worker-side checks. They are recorded here, not independently certified.
-
-- **Live** means a read from Ethereum/Base mainnet through public RPCs, reached through this machine's proxy.
-- **Simulated** means a labelled fixture (`?fixture=N`, with a "Test fixture … not onchain" banner) or a labelled mock in vitest.
-
-No transaction was sent and no contract, address, ABI or economic rule changed.
-
-### Tooling and its limits
-
-- **No image-generation tool was available.** All scenery is original procedural artwork from `web/art-src/paint.js`, rendered with Skia (`@napi-rs/canvas`, installed outside the repo) to WebP. See `artifacts/asset-manifest.md`.
-- It replaces the primitive SVG scenery, which was deleted.
-- It follows the reference's composition: framed foreground, terraced middle distance with stream, waterfalls, bridges and a gazebo, and a vista with moon, mountains and castle. It follows the palette and the UI placement too.
-- **It does not reach the owner's 99% visual-similarity target.** The painting is much simpler than the illustrated reference. (The repeating sector grid noted here in revision 2 was replaced in revision 3, below.) **No similarity score was measured or is claimed.** Compare `artifacts/screens/side-by-side-*.webp`.
-- Browser: Playwright's headless Chromium shell. It ran on Ubuntu runtime libraries and DejaVu/Liberation fonts extracted into a temp dir, because the machine has neither installed. Screenshots therefore use Liberation Serif in place of Iowan/Palatino. Rendering is software (SwiftShader), with no GPU.
-
-### Commands and results
-
-| Command | Result |
-| --- | --- |
-| `cd web && npx tsc --noEmit` | exit 0 (final source) |
-| `cd web && npx vitest run` | 2 files, **26/26 passed** |
-| `cd web && npx vite build` | built into `dist/` (JS ≈1.4 MB, of which 0.64 MB is the main chunk; art 0.5 MB; og.png 0.84 MB) |
-| `node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste` | first run: 14/16 (eyebrows: "Connect" sat 18px above the h1 at 390; type-faces: 4 weights). After the fixes: **16/16 passed** on the final export |
-| `test/scratch/shoot.mjs` and `perf.mjs` (headless Chromium, export served from disk at a `/preview/` subpath) | see below. Not delivered (scratch) |
-
-### Browser checks on the export
-
-| Scenario | Data | Result |
+| Check | Command | Result |
 | --- | --- | --- |
-| Garden, 1600×1000 | **live** (activated=false, 0 candles) | moonlit garden, every pedestal empty and unlit, "Sales closed until activation · 0 lit"; no horizontal overflow (`d1600-live.webp`) |
-| Garden, 390×844 | **live** | headline, "Light a candle · 1 IMD", status and garden all on the first screen (`m390-live.webp`) |
-| 100 / 3,000 / 10,000 candles | **simulated fixtures** | `d1600-f100`, `d1600-f3000`, `d1600-f10000`, `*-overview.webp`, `m390-f100.webp` |
-| Find #40 → anchored popup with wish, owner, style, date | simulated | class `detail-wrap anchored`, popup notch over the flame (`d1600-popup.webp`) |
-| Click directly on candle #40 (spatial hit test) | simulated | popup "Candle #40" |
-| Find #9876 at 10,000 | simulated | camera jumped, popup "Candle #9876" (`d1600-f10000-find9876.webp`) |
-| Escape | simulated | closes the popup; closes a panel back to `#/garden` |
-| Mobile menu (390) | simulated | lists Garden, My Candles, Rewards, Treasury, Light a candle, How it works (`m390-menu.webp`) |
-| Mobile economics sheet and candle sheet | simulated | `m390-split.webp`, `m390-candle.webp` |
-| Light a candle and Treasury panels | live reads | `d1600-light.webp`, `d1600-treasury.webp`, `m390-light.webp` |
-| Page errors | — | one uncaught `undefined` promise rejection and "Failed to execute inlined telemetry script", both from the bundled Coinbase wallet SDK chunk (`dist-*.js`) when its telemetry is blocked. No app errors and no failed site requests |
+| Typecheck | `cd web && npx tsc --noEmit` (also inside `npm run build`) | exit 0 |
+| Unit tests | `cd web && npx vitest run` | 3 files, 46/46 passed (adds `tests/quantity.test.ts`: 1/7/50/" 12 " accepted; 51, 0, 2.5, -3, abc, empty, 1e1, +5, 100, 0x10 rejected) |
+| Production build | `cd web && npm run build` | built into `dist/` (vite 5.4, relative `./` asset URLs) |
+| Design probe | `node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste` | 16/16 checks passed at 320/390/1440 (render, layout, targets, contrast, casing, tracking, eyebrows, type-sizes, type-faces, glyphs, slogans, repetition, copy-budget, chrome, motion, share). Raw output: `artifacts/taste-probe.json` |
+| Browser walkthrough | Playwright 1.49 + headless Chromium 131 (software GL) on the static export, 1440×900 and 390×844 (touch) | table below; raw: `artifacts/walkthrough-results.json`; screenshots: `artifacts/screens/`; recordings: `artifacts/recordings/` |
 
-### Rendering and interaction performance (headless, software rendering, 1600×1000)
+Chromium needed system libraries this machine lacks; they were unpacked from Ubuntu packages into a temporary folder outside the repository (`LD_LIBRARY_PATH`), nothing was installed system-wide.
 
-Values are `__lastFrame.ms` (draw time per frame) after drags. Medians are over 8 drags.
+## Walkthrough results (final export)
 
-| Fixture | Detail view (LOD 2) median / p95 | Overview (LOD 0) median | Visible sectors / candles drawn |
-| --- | --- | --- | --- |
-| 0 (live) | 0.6 / 0.7 ms | 0.4 ms | 1 / 0 |
-| 100 | 11.4 / 33.6 ms | 0.6 ms | 2 / 100 |
-| 3,000 | 28.2 / 29.9 ms | 1.5 ms | 31 / 2,976 |
-| 10,000 | 25.6 / 224 ms | 2.6 ms | 63 / 6,048 |
+Fixtures are labelled in the page ("Test fixture: N simulated candles, not onchain."). The live run reads mainnet through the site's public RPC fallbacks.
 
-The first paint of a sector costs about 350–500 ms (one-off sector cache build), and the p95 of 224 ms at 10,000 is panning into uncached sectors. The cache is capped at 24 hi-res sectors. Find + camera jump + popup took about 3.3 s wall-clock, mostly the fixture lookup and the 800 ms settle waits in the script. Headless rAF limits FPS, so draw time is the meaningful measure.
-
-### Better Interface review (six domains)
-
-| Domain | Coverage | Findings → fixes |
-| --- | --- | --- |
-| Accessibility | checked | frames are `aria-hidden` with `pointer-events: none`; the popup closes on Escape (new global handler in `web/src/App.tsx`, which defers to the connect sheet's own Escape and focus trap); 44px targets (probe: targets pass); focus ring kept; reduced motion kept |
-| Layout | checked | **F1** `web/src/garden/Garden.tsx`: the minimap was hidden under the strip (fixed `.garden` stacking context) → moved outside the canvas wrapper. **F2** `web/src/styles.css`: at 1440 the economics wrapped to two rows → tighter items under 1500px. **F3**: at 390 the frames covered too much garden → left frame 30vh, right frame hidden |
-| Writing | checked | headline of six words or fewer plus one plain line; verb-first actions ("Light a candle · 1 IMD", "Find my candle"); economics use the contract's split, not the reference footer's obsolete numbers |
-| Typography | checked | **F4** `web/src/styles.css` `.cta` 650 → 600 and h1 500 → 400 (probe: type-faces); six sizes; **F5** `web/src/App.tsx`: "Findmy candle" because flex collapsed the space → non-breaking space |
-| Colors | checked | gold/emerald/near-black tokens, no purple; contrast passed by the probe on the first screen. Contrast inside panels was viewed in screenshots, not measured |
-| UI | checked | **F6** `web/src/styles.css` (mobile `.intro`): "Connect" read as an eyebrow above the h1 at 390 → intro starts 40px below the header (probe: eyebrows pass); consistent gold hairline across header, strip, side actions, popup, panels and sheets |
-
-### Remaining limitations
-
-- The visual result is procedural and simpler than the reference (see above). Revision 3 replaced the repeated perspective sector with a continuous landscape.
-- Foreground frames sit over the garden edges; candles behind them stay reachable through Find, the register and panning.
-- No wallet transaction was exercised in a browser. Purchase, approval and claim logic is covered only by the vitest mocks from the previous job, unchanged. The contract is not activated, so live purchases are disabled.
-- The mobile routing check of `#/mine` crashed the headless browser once in this environment, so that screenshot is missing; `m390-light.webp` shows the mobile bottom-sheet panel.
-- `og:image` is relative (`./og.png`).
-- Hosting: the committed `dist/` is the delivery, and the plane publishes it. No publish command was run.
-
----
-
-## Revision 1 record (previous job, kept for history)
-
-
-Worker-side checks on 2026-11-17. They are recorded, not independently certified. **Live** means a read from Ethereum/Base mainnet through public RPCs. **Simulated** means a labelled mock or fixture. No real-fund transaction was sent.
-
-## 1. Scope and assumptions
-
-- Pages reviewed: Garden (first screen), Light a candle, My candles, Rewards, Treasury, How it works, candle details, connect sheet, transaction-recovery toasts. All are in one hash-routed page. The export is `dist/`, built from `web/`.
-- Live state at review time (via `cast` and in the browser): `activated=false`, `purchasesPaused=true`, `totalCandles=0`, `baseReady=true`, owner `0x48E4…6ec9`, Base receiver `totalBurned=0`, `pendingBurn=0`. The live garden therefore shows only empty holders and disables purchasing. That is correct, not a fixture.
-- Inferred choices: style names (Moon taper, Ember pillar, Lantern bloom, Lily float, Gilded spiral, Frog lamp, Star votive) are cosmetic labels for onchain styles 0–6. There are 96 holders per sector. System fonts, no web fonts. WalletConnect is not wired because no project ID was supplied, as the wallet-connectors guide prescribes.
-- Hosting: per the assignment's reference, the committed `dist/` is the delivery and the plane pins and names it. I ran no publish command, so the public HTTPS URL and GitHub publication are outside this run.
-
-## 2. Commands and results
-
-| Command (in `web/`) | Result |
+| Step | Recorded result |
 | --- | --- |
-| `npx tsc --noEmit` | exit 0, no errors (final source) |
-| `npx vitest run` | 2 files, **26/26 tests passed** (revision added 2 Find/`getCandle` tests) |
-| `npx vite build` | built; `dist/` 1.8 MB (JS 1.4 MB, gzip about 410 KB; og.png 332 KB; art 60 KB) |
-| `node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste` (repo root, Playwright 1.x from outside the repo) | **16/16 passed** on the final build (render, layout, targets, contrast, casing, tracking, eyebrows, type-sizes, type-faces, glyphs, slogans, repetition, copy-budget, chrome, motion, share) |
-| `node test/scratch/e2e.mjs` (Playwright headless Chromium on a local static server at a `/preview/` subpath) | all scenarios below ran with 0 page errors and 0 failed requests |
+| d1440 zoomin | `{"frame": {"visibleSectors": 1, "drawnCandles": 12, "lod": 2, "ms": 0.7999997138977051}, "fps": "17"}` |
+| d1440 zoomout | `{"frame": {"visibleSectors": 12, "drawnCandles": 100, "lod": 1, "ms": 3.0999999046325684}, "fps": "11"}` |
+| d1440 pan-to-bounds | `{"frame": {"visibleSectors": 12, "drawnCandles": 100, "lod": 1, "ms": 7.099999904632568}, "fps": "11"}` |
+| d1440 popup before/after pan | `{"a1": {"cls": "detail-wrap anchored", "left": "720px", "top": "420px", "title": "Candle #37", "addr": "0x1111111111111111111111111111111111111111"}, "a2": {"left": "600px", "top": "480px"}}` |
+| d1440 map tools hidden with popup | `false` |
+| d1440 map tools hidden on light sheet | `true` |
+| d1440 qty "51" | `{"help": "At most 50 candles per purchase. Split larger batches.", "total": "Candles\u2014 | Total\u2014 | Your balanceNot connected | Approval\u2014 | Estimated gas\u2264 0.00004 ETH", "btn": "Enter 1 to 50 candles", "invalid": "` |
+| d1440 qty "0" | `{"help": "At least 1 candle.", "total": "Candles\u2014 | Total\u2014 | Your balanceNot connected | Approval\u2014 | Estimated gas\u2264 0.00004 ETH", "btn": "Enter 1 to 50 candles", "invalid": "true"}` |
+| d1440 qty "2.5" | `{"help": "Use a whole number from 1 to 50: no decimals, signs or letters.", "total": "Candles\u2014 | Total\u2014 | Your balanceNot connected | Approval\u2014 | Estimated gas\u2264 0.00004 ETH", "btn": "Enter 1 to 50 candles", "in` |
+| d1440 qty "-3" | `{"help": "Use a whole number from 1 to 50: no decimals, signs or letters.", "total": "Candles\u2014 | Total\u2014 | Your balanceNot connected | Approval\u2014 | Estimated gas\u2264 0.00004 ETH", "btn": "Enter 1 to 50 candles", "in` |
+| d1440 qty "abc" | `{"help": "Use a whole number from 1 to 50: no decimals, signs or letters.", "total": "Candles\u2014 | Total\u2014 | Your balanceNot connected | Approval\u2014 | Estimated gas\u2264 0.00004 ETH", "btn": "Enter 1 to 50 candles", "in` |
+| d1440 qty "" | `{"help": "1 candle \u00b7 whole numbers from 1 to 50", "total": "Candles1 | Total1 IMD | Your balanceNot connected | ApprovalChecked when you connect | Estimated gas\u2264 0.00006 ETH", "btn": "Light 1 candle", "invalid": "false"}` |
+| d1440 qty "50" | `{"help": "50 candles \u00b7 whole numbers from 1 to 50", "total": "Candles50 | Total50 IMD | Your balanceNot connected | ApprovalChecked when you connect | Estimated gas\u2264 0.00093 ETH", "btn": "Light 50 candles", "invalid": "f` |
+| d1440 qty "7" | `{"help": "7 candles \u00b7 whole numbers from 1 to 50", "total": "Candles7 | Total7 IMD | Your balanceNot connected | ApprovalChecked when you connect | Estimated gas\u2264 0.00016 ETH", "btn": "Light 7 candles", "invalid": "false` |
+| d1440 draft after reload | `{"custom": "7", "wish": "Keep this wish across reloads"}` |
+| d1440 overlap check | `["wish-all covered by strip strip-under"]` |
+| d1440 route mine h2 | `"My candles"` |
+| d1440 route rewards h2 | `"Rewards"` |
+| d1440 route treasury h2 | `"Treasury"` |
+| d1440 route how h2 | `"How it works"` |
+| d1440 f0 overview | `{"frame": {"visibleSectors": 10, "drawnCandles": 0, "lod": 1, "ms": 2.8000001907348633}, "fps": "7"}` |
+| d1440 f0 pan fps | `{"frame": {"visibleSectors": 6, "drawnCandles": 0, "lod": 2, "ms": 0.20000028610229492}, "fps": "16"}` |
+| d1440 f3000 overview | `{"frame": {"visibleSectors": 50, "drawnCandles": 3000, "lod": 0, "ms": 1.0999999046325684}, "fps": "8"}` |
+| d1440 f3000 pan fps | `{"frame": {"visibleSectors": 6, "drawnCandles": 168, "lod": 2, "ms": 9}, "fps": "13"}` |
+| d1440 f10000 overview | `{"frame": {"visibleSectors": 128, "drawnCandles": 10000, "lod": 0, "ms": 39.90000009536743}, "fps": "8"}` |
+| d1440 f10000 pan fps | `{"frame": {"visibleSectors": 6, "drawnCandles": 168, "lod": 2, "ms": 21.09999990463257}, "fps": "13"}` |
+| d1440 live status | `" Sales closed until activation \u00b7 0 lit"` |
+| d1440 errors | `[]` |
+| m390 zoomin | `{"frame": {"visibleSectors": 1, "drawnCandles": 2, "lod": 2, "ms": 0.3000001907348633}, "fps": "31"}` |
+| m390 zoomout | `{"frame": {"visibleSectors": 24, "drawnCandles": 100, "lod": 0, "ms": 0.40000009536743164}, "fps": "34"}` |
+| m390 pan-to-bounds | `{"frame": {"visibleSectors": 24, "drawnCandles": 100, "lod": 0, "ms": 0.3000001907348633}, "fps": "4"}` |
+| m390 popup before/after pan | `{"a1": {"cls": "detail-wrap", "left": "", "top": "", "title": "Candle #37", "addr": "0x1111111111111111111111111111111111111111"}, "a2": {"left": "", "top": ""}}` |
+| m390 map tools hidden with popup | `true` |
+| m390 map tools hidden on light sheet | `true` |
+| m390 qty "51" | `{"help": "At most 50 candles per purchase. Split larger batches.", "total": "Candles\u2014 | Total\u2014 | Your balanceNot connected | Approval\u2014 | Estimated gas\u2264 0.00004 ETH", "btn": "Enter 1 to 50 candles", "invalid": "` |
+| m390 qty "0" | `{"help": "At least 1 candle.", "total": "Candles\u2014 | Total\u2014 | Your balanceNot connected | Approval\u2014 | Estimated gas\u2264 0.00004 ETH", "btn": "Enter 1 to 50 candles", "invalid": "true"}` |
+| m390 qty "2.5" | `{"help": "Use a whole number from 1 to 50: no decimals, signs or letters.", "total": "Candles\u2014 | Total\u2014 | Your balanceNot connected | Approval\u2014 | Estimated gas\u2264 0.00004 ETH", "btn": "Enter 1 to 50 candles", "in` |
+| m390 qty "-3" | `{"help": "Use a whole number from 1 to 50: no decimals, signs or letters.", "total": "Candles\u2014 | Total\u2014 | Your balanceNot connected | Approval\u2014 | Estimated gas\u2264 0.00004 ETH", "btn": "Enter 1 to 50 candles", "in` |
+| m390 qty "abc" | `{"help": "Use a whole number from 1 to 50: no decimals, signs or letters.", "total": "Candles\u2014 | Total\u2014 | Your balanceNot connected | Approval\u2014 | Estimated gas\u2264 0.00004 ETH", "btn": "Enter 1 to 50 candles", "in` |
+| m390 qty "" | `{"help": "1 candle \u00b7 whole numbers from 1 to 50", "total": "Candles1 | Total1 IMD | Your balanceNot connected | ApprovalChecked when you connect | Estimated gas\u2264 0.00006 ETH", "btn": "Light 1 candle", "invalid": "false"}` |
+| m390 qty "50" | `{"help": "50 candles \u00b7 whole numbers from 1 to 50", "total": "Candles50 | Total50 IMD | Your balanceNot connected | ApprovalChecked when you connect | Estimated gas\u2264 0.00098 ETH", "btn": "Light 50 candles", "invalid": "f` |
+| m390 qty "7" | `{"help": "7 candles \u00b7 whole numbers from 1 to 50", "total": "Candles7 | Total7 IMD | Your balanceNot connected | ApprovalChecked when you connect | Estimated gas\u2264 0.00017 ETH", "btn": "Light 7 candles", "invalid": "false` |
+| m390 draft after reload | `{"custom": "7", "wish": "Keep this wish across reloads"}` |
+| m390 overlap check | `[]` |
+| m390 route mine h2 | `"My candles"` |
+| m390 route rewards h2 | `"Rewards"` |
+| m390 route treasury h2 | `"Treasury"` |
+| m390 route how h2 | `"How it works"` |
+| m390 f0 overview | `{"frame": {"visibleSectors": 15, "drawnCandles": 0, "lod": 0, "ms": 0.40000009536743164}, "fps": "10"}` |
+| m390 f0 pan fps | `{"frame": {"visibleSectors": 4, "drawnCandles": 0, "lod": 1, "ms": 0.20000028610229492}, "fps": "32"}` |
+| m390 f3000 overview | `{"frame": {"visibleSectors": 126, "drawnCandles": 3000, "lod": 0, "ms": 17.09999990463257}, "fps": "10"}` |
+| m390 f3000 pan fps | `{"frame": {"visibleSectors": 4, "drawnCandles": 74, "lod": 1, "ms": 3.1999998092651367}, "fps": "23"}` |
+| m390 f10000 overview | `{"frame": {"visibleSectors": 126, "drawnCandles": 6352, "lod": 0, "ms": 10.400000095367432}, "fps": "11"}` |
+| m390 f10000 pan fps | `{"frame": {"visibleSectors": 4, "drawnCandles": 74, "lod": 1, "ms": 3.200000286102295}, "fps": "21"}` |
+| m390 live status | `" Sales closed until activation \u00b7 0 lit"` |
+| m390 errors | `[]` |
 
-Unit tests (`web/tests/`): the wish limits mirror `Utf8Wish` (280/281 code points, 280 emoji = 1120 bytes, lone surrogate rejected), and the gas bound matches the contract docs. The candle store loads 0/100/3000/10000-candle fixtures in pages of ≤100, makes exactly `ceil(n/100)` page calls and fetches nothing new on resync. Page size >100 is rejected. `candleIdsOf` pagination terminates. Layout positions are unique and deterministic for 10,000 candles, and the hit test is exact. **Purchase flow on labelled mocks**: exact approval → receipt → simulate → buy → receipt order. Approval is skipped when covered. It stops on closed sales, wrong network, insufficient IMD, wallet cancellation and a failed simulation (no buy request), and reports a reverted receipt. The pending hash is kept on RPC failure for reload recovery. The wish renders as escaped text through React SSR.
+How to read it:
+- **Live public reads**: the live page reported "Sales closed until activation · 0 lit" at both widths: the contract is not activated and holds 0 candles. No console errors on desktop; on mobile, one third-party wallet SDK analytics fetch failed (blocked network), with no effect on the page.
+- **Selection / lookup**: Find "37" opened Candle #37 with the full owner address. On desktop the popup is anchored to the flame and moved with the map when it was dragged (left/top changed from 720/420 to 600/480 px). On mobile it is a sheet and the map tools are hidden behind it.
+- **Zoom / pan / reset / bounds**: wheel zoom in and out, drag pan, and a 2000 px drag toward the edge (the camera clamps to the garden plus a woodland ring), then Reset view. See `d1440-f100-*.jpg`.
+- **Quantity edge cases**: 51, 0, 2.5, -3, abc each show a specific error, set `aria-invalid`, blank Candles/Total/Approval and change the button to "Enter 1 to 50 candles". 50 and 7 show identical numbers in the help line, Candles, Total and the button.
+- **Wish retention**: after a reload the custom quantity (7) and the wish text were still in the form.
+- **Overlap**: on mobile no map tool or strip covers any panel input, wish, summary or button. On desktop the check flagged the wish field as "covered by strip"; that field was below the panel's scroll fold (the panel scrolls above the strip). It is a false positive of the probe, confirmed in `d1440-light.jpg`.
+- **Routes**: Light, My Candles, Rewards, Treasury and How it works each opened with the expected heading at both widths.
 
-## 3. Browser evidence (headless Chromium, emulated viewports)
+## Measured performance (headless, software rendering)
 
-| Scenario | Measured |
-| --- | --- |
-| Live, 1440×900 / 390×844 / 320×640 | status "Sales closed until activation · 0 lit" read live in about 2.1–2.3 s; h1 and "Light a candle" inside the first viewport at all three widths; no horizontal overflow |
-| Fixture 0 / 100 / 3000 / 10000, 1440 | navigation to all candles loaded: 5.4 / 5.9 / 6.8 / 7.0 s (includes wallet SDK boot); store streaming after first paint 0.2–0.4 s |
-| Draw cost per frame, close zoom (LOD 2, about 120 candles visible, animated) | 2.7–4.0 ms |
-| Draw cost, full overview (LOD 0) | fixture 3000: 32 sectors, median 0.5 ms; fixture 10000: 105 sectors, all 10,000 candles, **median 16.5 ms, max 19.2 ms** (before the fix: 897 ms, see F1) |
-| Mobile 390 with 10000 fixture | no overflow on garden, light, mine, rewards, treasury or how |
-| Light form | 281-char wish shows "Shorten this wish by 1 characters (limit 280)"; 280 emoji show 1120/1120 bytes and are accepted; button disabled, with the reasons listed (sales closed, not connected, wish limit, privacy acknowledgement); custom 50 + "One per candle" renders 50 rows |
-| Find / escaping | `#7` and `#2` open details whose wishes `<img src=x onerror=…>` and `<script>…` render as text, with 0 child elements in the quote; `#500` gives "Candle #500 does not exist yet. The newest is #100." |
-| Reload | saved camera identical after reload; clicking the candle at the centre opens "Candle #2" |
-| Connect sheet | opens as a dialog listing "Browser wallet" and "Coinbase Wallet" (no extension in headless); Escape closes it and focus returns to Connect |
-| Missing assets (`?noassets=1`) | 11 assets reported missing, garden still draws with fallbacks, 0 page errors |
-| Reduced motion | 0 frames drawn in 3 s idle (52 frames in 3 s without reduced motion) |
-| Pending-tx recovery | a real, already-mined mainnet tx hash (not ours) was seeded as a pending "buy". After reload the toast read "Your earlier purchase confirmed…" and the pending list emptied. This simulates recovery against a live receipt. |
+`fps` is the page's own counter (frames painted in the last second); `ms` is the CPU time of the last `draw()`. Headless Chromium with SwiftShader has no GPU, so these are lower bounds, not device numbers. From the table above: at 10,000 candles the overview frame (128 cells, all 10,000 candles as cached light layers) took about 40 ms, and close-up panning (6 cells, 168 candles with animated flames) took about 6–21 ms per frame at 11–13 fps headless. On mobile, close-up frames took about 3–5 ms at about 20 fps. No 99% similarity score, Lighthouse score or device frame rate was measured, and none is claimed.
 
-Screenshots were inspected in `test/scratch/shots/` and `test/scratch/taste/shots/`. That folder is removed before submission, so it is not delivered. Those inspected: live-390 first screen, detail-1440, fixture-10000 overview, m390-light, m390-treasury and taste 390.
+## Purchase, approval and recovery
 
-## 4. Better Interface review (six domains)
+- Covered by unit tests on labelled mocks (`web/tests/logic.test.ts`, unchanged this round): exact approval amount, approval rejected by the user, purchase rejected, receipt revert, pending-hash recovery after reload, duplicate-click guard, reward claims.
+- **Not done this round:** no mainnet fork (anvil) run and no browser wallet transaction. No real or test purchase was made, and none is claimed. Sales are not activated onchain.
 
-| Domain | Status | Coverage |
+## Better Interface review (six domains)
+
+Coverage: guide `.imd/reads/skills/better-interface/REFERENCE.md`, core principles of all six domains; rendered checks done in headless Chromium at 390 and 1440 (screenshots above); contrast measured only by the design probe.
+
+| Domain | Finding | Fix |
 | --- | --- | --- |
-| Accessibility | Checked | native buttons, links and inputs; labelled controls; visible 2px focus ring; skip link; keyboard pan/zoom on the canvas plus a paged register so every candle is reachable without pointer; dialog Escape and focus return; live regions for steps, errors and toasts; reduced motion; 44px targets (probe: targets pass) |
-| Layout | Checked | first screen at 390 and 320; panel drawer vs bottom sheet; no overflow on any panel at 390 |
-| Writing | Checked | verb-first buttons ("Light 5 candles", "Approve and light…", "Claim 0.3 IMD"); errors say how to fix; empty states point forward; burn stages say "Not burned yet" |
-| Typography | Checked | six sizes, two families, three weights (probe); tabular numbers; balance/pretty wrapping |
-| Colors | Checked | semantic tokens over primitives; contrast measured by the probe at 320/390/1440 (pass). Contrast inside panels and the detail card was not measured, only viewed |
-| UI | Checked | four control states; no border+shadow combos (probe); CSS transitions only, no `transition: all` |
+| Accessibility | Map tools stayed focusable and visible over open panels | `hidden` on the group while a panel/menu is open, or a candle sheet on mobile: `web/src/garden/Garden.tsx:231`, `web/src/App.tsx:201`; CSS guard `web/src/styles.css:437` |
+| Accessibility | Invalid quantity was silently clamped | `aria-invalid`, `aria-describedby` and `role="alert"` message: `web/src/panels/LightPanel.tsx:186` |
+| Accessibility | No keyboard way back to the opening view | Reset view button with label and the `0` key: `web/src/garden/Garden.tsx:244` |
+| Layout | Zoom buttons and minimap covered the purchase form on phones | same `hidden` fix; probe `layout` and `targets` pass |
+| Layout | Screen-fixed frames (arch, canopy, right ledge) framed a small garden picture | removed: `web/src/App.tsx:205` |
+| Writing | Quantity errors were absent | specific reasons: `web/src/lib/quantity.ts:12`; the button names the problem |
+| Writing | No way to copy the full owner address | full address and Copy address with "Copied" feedback: `web/src/panels/Panels.tsx:19` |
+| Typography | none new; one six-size scale kept | probe `type-sizes`, `type-faces`, `tracking` pass |
+| Colors | Vista palette needed tokens; no purple | `VISTA_TOP` / `VISTA_FOOT` and ridge colours: `web/src/garden/vista.ts:12`; probe `contrast` passes |
+| UI | Minimap drew sector tiles, not the world | world minimap (woodland, garden, streams, candles, camera): `web/src/garden/renderer.ts:363` |
+| UI | Panels had no in-place Connect action | `ConnectButton` opens the one connect sheet: `web/src/components/ConnectSheet.tsx:132` |
 
-### Findings and fixes
+## Unresolved findings and limitations
 
-| # | Sev | Location | Evidence | Fix | Recheck |
-| --- | --- | --- | --- | --- | --- |
-| F1 | HIGH | `web/src/garden/renderer.ts:108` (litLayer), `:46` | the 10,000-candle overview took 897 ms per frame: an 80-entry sector cache thrashed over 105 sectors, plus 10,000 additive glows each frame | low-res sector cache plus per-sector cached light layer at LOD 0; hi-res cache capped at 48 | 16.5 ms median |
-| F2 | HIGH | `web/src/garden/renderer.ts:215` | screenshot at 100 candles: the whole terrace washed gold (glow r=150, alpha 0.34), against the brief's "without whitening" | glow r=80, alpha 0.22, smaller reflection | detail-1440 screenshot: light stays local |
-| F3 | MEDIUM | `web/src/styles.css:150` | the fixture label rendered faint because `.intro p` overrode its colour | raised specificity to `.intro .fixture` | label legible in the screenshot |
-| F4 | MEDIUM | `web/src/styles.css:161-163`, `:271`; `web/src/App.tsx:150` | m390-treasury: the dock showed through the 94%-alpha panel | opaque panel surface; dock hidden under a mobile panel | rechecked in the screenshot |
-| F5 | MEDIUM | `web/src/styles.css` (mobile `.map-tools` / `.dock`) | at 390 the minimap overlapped the three-row dock | two-row dock; tools raised to 136px | taste 390 screenshot |
-| F6 | LOW | `web/src/App.tsx:117`, `web/src/styles.css:256` | probe `eyebrows`: the short "Menu" and then "Connect" controls sat within 40px above the h1 at 390 | menu became a labelled icon button; mobile intro top padding increased | probe 16/16 |
-| F7 | LOW | `web/src/styles.css:204` | rows and summary tiles had the same colour as the panel, so their boundaries were invisible | rows, tiles and stages moved to `--night-800` | viewed |
-
-## 5. Limitations (unresolved)
-
-- **No wallet transaction was exercised in a browser.** Purchase and claim logic was tested on labelled mocks (vitest), not on a mainnet fork. The live garden is not activated, so `buyCandles` simulation on mainnet would revert `PurchasesDisabled`. The claim UI was checked only with no wallet connected.
-- Connect sheet: real EIP-6963 extensions, the Coinbase SDK popup and the mobile "Open in" links were not run. A labelled EIP-6963 mock wallet was used for connection, wrong-network, `accountsChanged` and rejected `eth_sendTransaction` (revision, section 6). The Rabby link uses the `go.rabby.io/mobile/` form and has no vendor documentation.
-- Browser: headless Chromium with software rendering and emulated mobile viewports. No physical phone, Safari or Firefox, no screen-reader session, no native 200% zoom. FPS values are limited by headless rAF; draw-time ms is the meaningful measure.
-- The localStorage candle cache is best effort. At very large counts with long wishes it can exceed quota and fall back to memory, so a fresh load re-reads pages (100 per call).
-- Treasury activity covers at most the latest 40,000 blocks (8 × 5,000), so older events need an explorer link. Balances are unaffected.
-- `og:image` is a relative URL (`./og.png`) because the final host is not known here. Some unfurlers need absolute URLs.
-- The JS bundle is 1.4 MB uncompressed, mostly the wallet SDKs.
-
-## 6. Revision: reviewer findings (2026-11-17)
-
-Each finding was first reproduced in headless Chromium against the previously committed `dist/`, extracted with `git archive HEAD dist`. Then it was fixed and rechecked against the new export. The script was `test/scratch/verify.mjs`, which is not delivered. It used a labelled mock JSON-RPC (decoding multicall3 `aggregate3` against the pinned ABI) and a labelled EIP-6963 mock wallet that rejects every `eth_sendTransaction` with code 4001. Nothing was broadcast.
-
-| Finding | Old build | Fix | New build |
-| --- | --- | --- | --- |
-| Hidden individual wish at qty 1 (`LightPanel.tsx`) | reproduced: decoded wallet request `buyCandles([2],["HIDDEN WISH"])`; a 281-char visible wish was not flagged | one effective mode `each = mode==="each" && qty>1` drives both the editor and the submitted items | `buyCandles([6],["VISIBLE WISH"])`; 281 chars flagged "Fix the wish marked above" |
-| Header clips Connect / Switch (`styles.css`) | reproduced: header scrollWidth 324 at 320 (Connect); 397 at 320 and 390 (Switch to Ethereum) | ≤480px hides the wordmark text and keeps the labelled favicon link; `min-width:0`; the switch-error note floats below | scrollWidth = clientWidth at 320 and 390; every control's right edge ≤ viewport, with and without a wallet on chain 8453 |
-| Approval with no gas estimate | reproduced: "Estimated gas …", approve enabled | a gas query error or pending state blocks submission and is listed in problems; "Retry gas estimate" button | disabled with "Unavailable" and a retry; after retry the estimate shows and approve sends exactly `0x095ea7b3` (rejected by the mock) |
-| Wallet modal focus escapes | code read (no trap, no inert) | sheet portalled to body; `#root` inert while open; Tab/Shift+Tab cycle | 9 Tab/Shift+Tab presses stay inside; Escape clears inert and focuses Connect |
-| Treasury 0 on failed reads | code read: `?? 0n` | totals only when all parts are defined; every stage shows "Unavailable"; an alert offers Try again | withdrawal counters failing → "Withdrawn by owner: Unavailable" plus the alert |
-| Find vs loaded count | code read: compared against `candles.length` | `CandleStore.lookup` compares with the onchain total and reads `getCandle(id)` when the page is missing; loading/error messages | total 3000, pages after #100 failing: Find 3000 opens "Candle #3000"; with `getCandle` also failing: "Candle #3000 could not be loaded. Try again."; 3001 → "does not exist yet" |
-| My candles page on account change | code read: page index kept | reset to page 0 on address change; clamp when the page count shrinks | fixture 101: page 2 (1 row) → `accountsChanged` 0x2222… → 25 rows on page 1 |
-| Flat equal rows (taste) | `TERRACES` 162 units apart, every candle 28×56 | receding scene, see DESIGN.md "Garden scene" | screenshots at 1440 and 390 (0, 100 and 3000 fixtures) show a near/far plane. Last-frame draw cost measured 1.5–9 ms at 1440 and 7–10 ms at 390 (headless, software rendering) |
-
-The browser checks passed 17/17 on the new export. The taste probe passed **16/16** on the final build, and the 390 screenshot shows the h1, the status and the "Light a candle" dock on the first screen. `tsc --noEmit` exited 0 and `vite build` succeeded.
-
-Limits of this revision: the scene was judged from screenshots only, in headless Chromium. The candle layout changed from the previous round. Positions are still deterministic per candle ID, and no live candles exist yet (`totalCandles=0`), so no lit candle moves.
-
-## Completion
-
-Complete for the stated scope, which is a static export with live reads and simulated writes. The limits are listed above, mainly the untested real-wallet transactions and the absence of physical-device or screen-reader checks.
+1. **Art (blocker):** no image-generation or illustration tool was available, so no illustrated layers were produced. All scenery is procedural canvas art (now with a procedural vista). It does not match the reference's painterly richness: foliage reads as repeated sprites, there is no sculpted statue, armillary or banner in the world, and the far terraces are simple light points. See `artifacts/screens/side-by-side-*.jpg`. This needs illustrated assets from the requester or a rerun with an image tool.
+2. At 10,000 candles the overview shows a regular rhythm: each grid column has one stream and each row one path, so the large-scale pattern looks gridded even though the edges are continuous.
+3. Per-candle transaction hashes are not stored in the candle record. The popup links to the owner and to the owner's transactions to the garden, not to one exact transaction (except for purchases recovered from this browser's pending store).
+4. Reflections are limited to the warm light pools; there is no mirrored flame in the water.
+5. Hit testing uses a world-space radius; trees of nearer rows can cover a candle visually while it remains clickable.
+6. No fork test or wallet transaction ran (see above). The frame-rate figures are headless lower bounds.

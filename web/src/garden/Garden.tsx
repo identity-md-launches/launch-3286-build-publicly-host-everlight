@@ -3,10 +3,11 @@ import type { Candle } from "../lib/candles";
 import { GardenRenderer } from "./renderer";
 import { hitTest, positionOf } from "./layout";
 
-const CAM_KEY = "everlight:v3:camera"; // v3: continuous landscape layout
+const CAM_KEY = "everlight:v4:camera"; // v4: one world camera (garden, wild woodland and skyline)
 
 export interface GardenHandle {
   jumpTo: (id: number) => void;
+  reset: () => void;
 }
 
 interface Props {
@@ -22,6 +23,8 @@ interface Props {
   onSelect: (id: number | null) => void;
   handleRef: (h: GardenHandle) => void;
   onStats?: (s: { fps: number; ms: number; drawn: number; lod: number; missing: number }) => void;
+  /** A sheet or panel covers the map: zoom, reset and minimap are hidden so they never sit over a form. */
+  toolsHidden?: boolean;
   /** Screen position of the selected candle's flame, for the anchored popup (null when off screen). */
   onAnchor?: (a: { x: number; y: number } | null) => void;
 }
@@ -64,7 +67,7 @@ export function Garden(p: Props) {
       raf = requestAnimationFrame(loop);
       const inp = inputRef.current;
       const animate = !inp.reducedMotion && r.cam.z >= 0.7 && inp.candles.length > 0;
-      if (!animate && !dirty.current) return;
+      if (!animate && !dirty.current && !r.pending) return;
       dirty.current = false;
       r.clamp(Math.max(inp.total, inp.known));
       r.draw(inp, t);
@@ -108,13 +111,19 @@ export function Garden(p: Props) {
     r.cam = { x: pos.x, y: pos.y - 40, z: Math.max(r.cam.z, 1.4) };
     dirty.current = true;
   }, []);
-  useEffect(() => p.handleRef({ jumpTo }), [jumpTo]);
+  const reset = useCallback(() => {
+    const r = rRef.current;
+    if (!r) return;
+    r.home();
+    dirty.current = true;
+  }, []);
+  useEffect(() => p.handleRef({ jumpTo, reset }), [jumpTo, reset]);
 
   const zoom = (f: number, sx?: number, sy?: number) => {
     const r = rRef.current!;
     const ax = sx ?? r.w / 2, ay = sy ?? r.h / 2;
     const before = r.toWorld(ax, ay);
-    r.cam.z = Math.min(4, Math.max(0.06, r.cam.z * f));
+    r.cam.z = Math.min(4, Math.max(r.minZoom(Math.max(p.total, p.known)), r.cam.z * f));
     const after = r.toWorld(ax, ay);
     r.cam.x += before.x - after.x;
     r.cam.y += before.y - after.y;
@@ -180,6 +189,7 @@ export function Garden(p: Props) {
       "+": () => zoom(1.25),
       "=": () => zoom(1.25),
       "-": () => zoom(0.8),
+      "0": () => r.home(),
     };
     const f = map[e.key];
     if (f) {
@@ -208,7 +218,7 @@ export function Garden(p: Props) {
         className="garden-canvas"
         tabIndex={0}
         role="img"
-        aria-label={`Garden map with ${p.total} lit candles. Arrow keys pan, plus and minus zoom. Use Find candle or the candle register to open a candle.`}
+        aria-label={`Garden map with ${p.total} lit candles. Arrow keys pan, plus and minus zoom, 0 resets the view. Use Find candle or the candle register to open a candle.`}
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}
@@ -218,7 +228,7 @@ export function Garden(p: Props) {
       />
       </div>
       {/* minimap and zoom sit outside the canvas wrapper so they stack above the bottom strip */}
-      <div className={p.selected ? "map-tools has-selection" : "map-tools"}>
+      <div className={`map-tools${p.selected ? " has-selection" : ""}`} hidden={p.toolsHidden}>
         <canvas
           ref={miniRef}
           className="minimap"
@@ -231,6 +241,9 @@ export function Garden(p: Props) {
         <div className="zoom" role="group" aria-label="Zoom">
           <button type="button" className="icon-btn" onClick={() => zoom(1.3)} aria-label="Zoom in">+</button>
           <button type="button" className="icon-btn" onClick={() => zoom(1 / 1.3)} aria-label="Zoom out">−</button>
+          <button type="button" className="icon-btn" onClick={reset} aria-label="Reset view" title="Reset view">
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 12a8 8 0 1 0 2.4-5.7" /><path d="M4 4v4h4" /></svg>
+          </button>
         </div>
       </div>
     </>

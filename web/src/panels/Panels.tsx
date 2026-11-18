@@ -8,6 +8,7 @@ import { STYLE_NAMES, date, imd, short, safeChecksum } from "../lib/format";
 import { explainError } from "../lib/errors";
 import { pendingStore } from "../lib/purchase";
 import type { Candle } from "../lib/candles";
+import { ConnectButton } from "../components/ConnectSheet";
 import { FIXTURE, useActivity, useMyIds, useRewards, useTreasury } from "../hooks";
 
 const addrLink = (a: string, base = ETHERSCAN) => (
@@ -15,6 +16,15 @@ const addrLink = (a: string, base = ETHERSCAN) => (
 );
 
 /** Candle details. Wish text renders as a React text node, never as HTML. */
+function CopyAddress({ value }: { value: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button type="button" className="link copy" onClick={() => navigator.clipboard?.writeText(value).then(() => { setDone(true); setTimeout(() => setDone(false), 1600); }, () => setDone(false))}>
+      {done ? "Copied" : "Copy address"}
+    </button>
+  );
+}
+
 export function CandleDetail({ c, onClose, mine }: { c: Candle; onClose: () => void; mine: boolean }) {
   return (
     <section className="detail" aria-labelledby="detail-title">
@@ -32,8 +42,15 @@ export function CandleDetail({ c, onClose, mine }: { c: Candle; onClose: () => v
         </dl>
       </div>
       {c.wish ? <blockquote className="wish">{c.wish}</blockquote> : <p className="muted">No wish was written for this candle.</p>}
+      <p className="full-addr"><code>{c.purchaser}</code> <CopyAddress value={c.purchaser} /></p>
       {FIXTURE === null
-        ? <a className="onchain" href={`${ETHERSCAN}/address/${GARDEN}#readContract`} target="_blank" rel="noreferrer">View onchain (getCandle {c.id}) ↗</a>
+        ? (
+          <p className="links">
+            <a className="onchain" href={`${ETHERSCAN}/address/${GARDEN}#readContract`} target="_blank" rel="noreferrer">View onchain (getCandle {c.id}) ↗</a>
+            <a href={`${ETHERSCAN}/address/${c.purchaser}`} target="_blank" rel="noreferrer">Owner on Etherscan ↗</a>
+            <a href={`${ETHERSCAN}/advanced-filter?fadd=${c.purchaser}&tadd=${GARDEN}`} target="_blank" rel="noreferrer">Owner's garden transactions ↗</a>
+          </p>
+        )
         : <p className="fine">Simulated fixture candle: not onchain.</p>}
     </section>
   );
@@ -53,6 +70,7 @@ export function MinePanel({ candles, onJump, highlight, setHighlight }: { candle
       <section aria-labelledby="mine-title">
         <h2 id="mine-title">My candles</h2>
         <p>Connect a wallet to list the candles it lit. Anyone can still find a candle by its number with Find candle.</p>
+        <ConnectButton />
       </section>
     );
   const list = ids.data ?? [];
@@ -163,7 +181,7 @@ export function RewardsPanel() {
     <section aria-labelledby="rewards-title">
       <h2 id="rewards-title">Rewards</h2>
       <p className="lede">30% of every later candle is shared equally among all earlier candles, per candle rather than per wallet. Rewards depend entirely on later purchases: there is no guaranteed return and no fixed APY.</p>
-      {!address && <p>Connect a wallet to read its reward state. Claims stay open even while sales are closed.</p>}
+      {!address && <><p>Connect a wallet to read its reward state. Claims stay open even while sales are closed.</p><ConnectButton /></>}
       {address && r.isLoading && <p role="status">Reading your rewards…</p>}
       {address && r.isError && <p className="bad" role="alert">Rewards could not be read. <button className="link" onClick={() => r.refetch()}>Try again</button></p>}
       {d && (

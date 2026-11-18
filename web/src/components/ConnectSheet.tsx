@@ -33,6 +33,12 @@ export function ConnectSheet() {
   const [menu, setMenu] = useState(false);
   const opener = useRef<HTMLButtonElement>(null);
   const sheet = useRef<HTMLDivElement>(null);
+  // panels open this same sheet through ConnectButton, so there is one connect flow
+  useEffect(() => {
+    const f = () => setOpen(true);
+    addEventListener("everlight:connect", f);
+    return () => removeEventListener("everlight:connect", f);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -120,4 +126,9 @@ export function ConnectSheet() {
       )}
     </>
   );
+}
+
+/** A Connect wallet action inside a panel; it opens the one header connect sheet. */
+export function ConnectButton({ label = "Connect wallet" }: { label?: string }) {
+  return <button type="button" className="btn connect-inline" onClick={() => dispatchEvent(new Event("everlight:connect"))}>{label}</button>;
 }

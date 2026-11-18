@@ -170,3 +170,42 @@ Rendered checks in a browser tool were not available as an interactive tool; Pla
 - No image-generation, illustration or 3D tool was available to this worker. The approved design is a painted, cinematic perspective illustration; this site still draws its garden procedurally (top-down terraced map with a parallax vista). It is not claimed to match the reference, and the requested licensed illustrated environment assets were not produced. The vista was repainted (one castle on its own hill, no black rectangle, no tiled duplicate castles, no painted candle-like lights on far terraces), and the chrome now follows the design's composition: header, headline, docked Light your candle form with live candle preview, bottom find/zoom/minimap/split strip.
 - Perspective scale continuity between near and far terraces, flowing animated water and illustrated bridges/pavilions remain open.
 - Purchases, approvals, replacements and claims are verified by unit tests on labelled mocks only; no fork or live transaction ran.
+
+## Revision 5 (2026-11-18): reopened findings
+
+Environment: Ubuntu 24.04 worker, Node 24.21, Playwright 1 with Chromium headless shell 159 (software rendering). The missing system libraries were extracted from Ubuntu packages into a temporary directory. Everything here is **mock/fixture** evidence; no fork or live transaction ran.
+
+### Commands and results
+- `cd web && npx tsc --noEmit`: exit 0
+- `cd web && npx vitest run`: 7 files, 86/86 passed. New tests cover: 10,000-position capacity at fixtures 0/100/3000/10000; flame, body and foot hit tests on the 2.1× founding candle; fixture read-only (no deps calls); a nonce/block read failure stops before signing; nonce reconciliation from the sent transaction; preflight nonce and block kept when the sent transaction is unknown; a receipt without its transaction stays pending; a successful different replacement is reported with its hash and ids; a claim whose transaction can't be read is unverified and kept; ignition progress.
+- `cd web && npm run build`: built `dist/`, run again after the last source change.
+- `node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste`: 16/16 passed at 320/390/1440 (`artifacts/taste-probe.json`).
+- Playwright check of `dist/` (script in `test/scratch`, not shipped): 20/20 passed (`artifacts/rev5-browser-checks.json`).
+
+### Findings
+| Finding | Reproduced | Fix | Evidence |
+| --- | --- | --- | --- |
+| 27761ccb art fidelity | yes | not fixed: no image, illustration or 3D tool available | limitation below |
+| c58aa7c5 96 positions at fixture 0 | yes (unit test: `sectorCount(0)` was 1) | `layout.ts` `MIN_SECTORS` = 105 | unit test; at 1440 and 390, fixture 0 zoomed out draws 126–128 cultivated cells (`rev5-*-fixture0-zoomed-out.jpg`) |
+| ab06882c sheet over Light form | yes (code path) | `App.tsx` `detailRoute`, `jump` returns to the garden, canvas taps on phones use `jump` | 390 touch: after Find 37 and menu → Light, the detail count is 0 and the form is under (190,550); register #1 → `#/garden`; tapping the flame frames the candle body at y=207, above the sheet top at y=428 |
+| 80e6c460 header clipping 320/1101 | yes at 1280 in this browser (1101 was already fixed by the 1279 breakpoint) | `styles.css` breakpoints at 1279; `everlight.css` ≤360 and 1280–1439 rules | 320 with the mock wallet on Base: Wrong network x=232 w=80 right=312, menu right=224; at 1101/1180/1279/1280/1440 every header control is inside the header and the viewport |
+| b571f235 fixture can purchase | yes (code path) | `readOnly`, handler guards, disabled CTA and claim, persistent label | 320 mock wallet on chain 1: CTA disabled, force-click gives 0 wallet requests; label visible on all 6 routes |
+| 3753abea settles without calldata | yes (unit) | `settleBuy` returns `buy-unknown`, pending entry kept | unit tests in `verify.test.ts` and `logic.test.ts` |
+| 72d38a6a missing nonce/block | yes (unit) | metadata required before signing; `reconcileSent`; `completeMeta` on recovery; same for claims | unit tests |
+| 4652f06e no ignition | yes | `ignite.ts` and the renderer ignition path; live completion and reload recovery both focus and ignite | unit test; browser: the canvas differs right after `__igniteForTest` (fixture-only hook) |
+| 72d73b8a different replacement message | yes (unit) | `differentPurchaseMessage` with the mined hash and ids; the UI links the transaction | unit test |
+| 88fc55f0 flame tap | yes (unit at the old radius) | segment hit test | unit test plus a browser tap on the flame at (195,386) |
+| 24e84b1c clipped share card | yes | new og.png composition | `web/public/og.png` |
+
+### Better Interface review of the changed surfaces
+- Accessibility: the fixture label is a `role="note"` paragraph in the reading order; the wrapped Wrong network button keeps a 44px target and its accessible name; selection changes do not move focus away from the new page.
+- Layout: no overlay is left over the page a visitor navigates to; at 320 the header fits without hidden overflow (measured above).
+- Writing: the state messages say what happened ("confirmed a different candle purchase", "could not be read … stays saved") and do not claim funds were or were not spent beyond what the receipt shows.
+- Typography: no new sizes. The label uses `--text-sm`, and the share card uses the existing serif.
+- Colours: the fixture label reuses the existing gold-on-dark accent pair already used by the intro label.
+- UI: primary actions are disabled on fixtures, with the reason shown in the problems list.
+- Not done: no screen-reader session and no real-device tests.
+
+### Limitations (revision 5)
+- The approved painted perspective artwork and licensed illustrated environment assets were still not produced; no image, illustration or 3D tool was available to this worker. Apart from the larger cultivated area, the garden art and the purchase preview are unchanged.
+- Performance was measured headless only. With 105 cultivated sectors, the fully zoomed-out overview frame took 48–58 ms in software rendering (`rev5-browser-checks.json`); this was not measured on real devices.

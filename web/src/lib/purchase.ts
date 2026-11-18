@@ -1,4 +1,5 @@
 import type { Hash } from "viem";
+import { GARDEN } from "../config";
 
 export type TxKind = "approve" | "buy" | "claim";
 
@@ -12,6 +13,11 @@ export interface PendingTx {
   from?: string;
   nonce?: number;
   block?: string;
+  /**
+   * True once sender and nonce were read from the submitted transaction itself (by its hash). Until then they are
+   * the preflight values read just before the wallet signed, and recovery re-reads the sent hash to reconcile them.
+   */
+  nonceChecked?: boolean;
   /** The exact draft that was signed (buy only): a replacement must carry the same calldata and events. */
   styles?: number[];
   wishes?: string[];
@@ -66,8 +72,9 @@ export type Step =
   | { name: "buy-pending"; hash: Hash }
   /** The purchase was sent but its receipt could not be read: it stays pending and the draft stays locked. */
   | { name: "buy-unknown"; hash: Hash; message: string }
-  | { name: "done"; hash: Hash; firstId: number | null }
-  | { name: "error"; message: string };
+  | { name: "done"; hash: Hash; firstId: number | null; quantity?: number }
+  /** hash: a mined transaction the message refers to (a different confirmed purchase), linked in the UI. */
+  | { name: "error"; message: string; hash?: Hash };
 
 /** The garden CandlesPurchased event found in a receipt, read from the garden contract's own logs only. */
 export interface PurchaseEvent { purchaser: string; firstId: number; quantity: number }
@@ -90,29 +97,45 @@ const same = (a: readonly unknown[], b: readonly unknown[]) => a.length === b.le
 export const REPLACED_MESSAGE =
   "This purchase was cancelled or replaced in your wallet, so no candles were lit and no IMD was taken for them. Your wish is kept; you can light it again.";
 
+export const UNVERIFIED_MESSAGE =
+  "The purchase has a receipt, but its transaction could not be read to check the exact styles and wishes. It stays saved and this draft stays locked; check again in a moment.";
+
+/** A successful replacement that bought candles other than this draft: funds moved, the draft is not completed. */
+export function differentPurchaseMessage(created: { id: number }[]): string {
+  const ids = created.map((c) => `#${c.id}`).join(", ");
+  return `Your replacement transaction confirmed a different candle purchase${ids ? ` (candles ${ids})` : ""}. This draft was not completed. Review the confirmed transaction before buying again.`;
+}
+
 /**
- * A purchase is complete only when its mined receipt succeeded and carries the garden's CandlesPurchased
- * event for this buyer and quantity. The mined hash (a sped-up replacement's, if any) is the one linked.
+ * A purchase is complete only when its mined receipt succeeded, the mined transaction itself was read (sender,
+ * target and calldata), it is this account calling buyCandles on the garden with exactly the signed styles and
+ * wishes, and the garden's CandlesPurchased and CandleCreated events match that draft in order. The mined hash
+ * (a sped-up replacement's, if any) is the one linked.
+ *  - no purchase event for this account: cancelled/replaced, nothing bought (error, draft kept)
+ *  - the transaction or its events could not be read: buy-unknown (pending entry and draft kept, retryable)
+ *  - a successful purchase that differs from the draft: a different confirmed purchase (error with its hash)
  */
-export function settleBuy(r: Receipt, sent: Hash, account: string, quantity?: number, draft?: Draft): Step {
+export function settleBuy(r: Receipt, sent: Hash, account: string, quantity?: number, draft?: Draft, garden: string = GARDEN): Step {
   if (r.status !== "success") return { name: "error", message: "The purchase reverted onchain. Your IMD was not taken; only gas was spent." };
+  const me = account.toLowerCase();
   const ev = r.purchase;
+  if (r.purchase === undefined) return { name: "buy-unknown", hash: sent, message: UNVERIFIED_MESSAGE };
+  if (!ev || ev.purchaser.toLowerCase() !== me) return { name: "error", message: REPLACED_MESSAGE };
+  // the garden bought candles for this account in this transaction: settle only with its calldata and events in hand
+  if (r.created === undefined || r.from === undefined || r.call === undefined || r.to === undefined) return { name: "buy-unknown", hash: sent, message: UNVERIFIED_MESSAGE };
+  const mined = r.hash ?? sent;
+  const different: Step = { name: "error", hash: mined, message: differentPurchaseMessage([...r.created].sort((a, b) => a.id - b.id)) };
+  if (r.from.toLowerCase() !== me || r.to?.toLowerCase() !== garden.toLowerCase() || !r.call) return different;
+  const want = draft;
   const q = draft ? draft.styles.length : quantity;
-  if (!ev || ev.purchaser.toLowerCase() !== account.toLowerCase() || (q !== undefined && ev.quantity !== q)) {
-    return { name: "error", message: REPLACED_MESSAGE };
+  if (q !== undefined && (ev.quantity !== q || r.call.styles.length !== q)) return different;
+  if (want) {
+    if (!same(r.call.styles, want.styles) || !same(r.call.wishes, want.wishes)) return different;
+    const c = [...r.created].sort((a, b) => a.id - b.id);
+    const ok = c.length === want.styles.length && c.every((x, i) => x.id === ev.firstId + i && x.purchaser.toLowerCase() === me && x.style === want.styles[i] && x.wish === want.wishes[i]);
+    if (!ok) return different;
   }
-  if (draft) {
-    // the mined transaction (the sent one or its replacement) must be this account calling buyCandles with
-    // exactly the signed styles and wishes, and the garden must have created exactly those candles in order
-    if (r.from !== undefined && r.from.toLowerCase() !== account.toLowerCase()) return { name: "error", message: REPLACED_MESSAGE };
-    if (r.call !== undefined && (!r.call || !same(r.call.styles, draft.styles) || !same(r.call.wishes, draft.wishes))) return { name: "error", message: REPLACED_MESSAGE };
-    if (r.created !== undefined) {
-      const c = [...r.created].sort((a, b) => a.id - b.id);
-      const ok = c.length === draft.styles.length && c.every((x, i) => x.id === ev.firstId + i && x.purchaser.toLowerCase() === account.toLowerCase() && x.style === draft.styles[i] && x.wish === draft.wishes[i]);
-      if (!ok) return { name: "error", message: REPLACED_MESSAGE };
-    }
-  }
-  return { name: "done", hash: r.hash ?? sent, firstId: ev.firstId };
+  return { name: "done", hash: mined, firstId: ev.firstId, quantity: ev.quantity };
 }
 
 /** One shared purchase state, so a remounted form or a reload sees a purchase that is still in flight. */
@@ -146,8 +169,12 @@ export interface PurchaseDeps {
   remember?: (firstId: number, quantity: number, hash: Hash) => void;
   simulate: (styles: number[], wishes: string[]) => Promise<unknown>;
   buy: (request: unknown) => Promise<Hash>;
-  /** Sender nonce and current block read just before the purchase is requested (for bounded recovery). */
-  submission?: () => Promise<{ nonce: number; block: bigint }>;
+  /** Sender nonce and current block read just before the purchase is requested (for bounded recovery). Required. */
+  submission: () => Promise<{ nonce: number; block: bigint }>;
+  /** The submitted transaction by its hash (sender and actual nonce), or null while the node does not know it yet. */
+  sentTx?: (hash: Hash) => Promise<{ from: string; nonce: number } | null>;
+  /** Fixture pages are read-only: no approval or purchase request ever reaches the wallet. */
+  readOnly?: boolean;
   explain: (e: unknown) => string;
   storage?: Storage | null;
 }
@@ -168,6 +195,7 @@ export async function runPurchase(
     onStep(s);
     return s;
   };
+  if (deps.readOnly) return fail(FIXTURE_MESSAGE);
   try {
     if (styles.length < 1 || styles.length > 50 || styles.length !== wishes.length) return fail("Choose between 1 and 50 candles.");
     if (deps.chainId() !== 1) return fail("Your wallet is on another network. Switch to Ethereum to continue.");
@@ -189,19 +217,55 @@ export async function runPurchase(
     }
     onStep({ name: "simulating" });
     const request = await deps.simulate(styles, wishes);
-    const sub = await deps.submission?.().catch(() => undefined);
+    // recovery metadata comes first: without the sender's nonce and a submission block a replacement could not be
+    // found after a reload, so the wallet is not asked to sign until both are read
+    let sub: { nonce: number; block: bigint };
+    try {
+      sub = await deps.submission();
+    } catch {
+      return fail(META_MESSAGE);
+    }
     onStep({ name: "buy-wallet" });
     const hash = await deps.buy(request);
     const tx: PendingTx = {
       hash, kind: "buy", account: deps.account, quantity: styles.length, createdAt: Date.now(),
-      from: deps.account, nonce: sub?.nonce, block: sub?.block.toString(), styles: [...styles], wishes: [...wishes],
+      from: deps.account, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false, styles: [...styles], wishes: [...wishes],
     };
     pendingStore.add(tx, deps.storage);
     onStep({ name: "buy-pending", hash });
-    return await awaitBuy(deps, tx, onStep);
+    const checked = await reconcileSent(deps, tx);
+    return await awaitBuy(deps, checked, onStep);
   } catch (e) {
     return fail(deps.explain(e));
   }
+}
+
+export const FIXTURE_MESSAGE = "Test fixture: simulated candles, transactions disabled. Open the garden without ?fixture to light real candles.";
+export const META_MESSAGE =
+  "Your account's nonce and the current block could not be read, so this purchase could not be recovered after a reload. Nothing was sent and your draft is kept; try again.";
+
+/**
+ * Replace the preflight sender/nonce of a saved transaction with the submitted transaction's own (read by its hash),
+ * so the bounded replacement search after a reload looks for the nonce the wallet actually used. A failed read keeps
+ * the preflight values with nonceChecked false; recovery retries the reconciliation.
+ */
+export async function reconcileSent(
+  deps: Pick<PurchaseDeps, "sentTx" | "storage">,
+  tx: PendingTx,
+  tries = 3,
+  pause = (ms: number) => new Promise((r) => setTimeout(r, ms)),
+): Promise<PendingTx> {
+  if (!deps.sentTx || tx.nonceChecked) return tx;
+  for (let i = 0; i < tries; i++) {
+    const got = await deps.sentTx(tx.hash).catch(() => null);
+    if (got) {
+      const next: PendingTx = { ...tx, from: got.from, nonce: got.nonce, nonceChecked: true };
+      if (pendingStore.list(deps.storage).some((t) => t.hash === tx.hash)) pendingStore.add(next, deps.storage);
+      return next;
+    }
+    if (i < tries - 1) await pause(1500);
+  }
+  return tx;
 }
 
 /**
@@ -221,9 +285,10 @@ export async function awaitBuy(
     onStep(s);
     return s;
   }
-  pendingStore.remove(tx.hash, deps.storage);
   const draft = tx.styles && tx.wishes && tx.styles.length === tx.wishes.length ? { styles: tx.styles, wishes: tx.wishes } : undefined;
   const s = settleBuy(r, tx.hash, tx.account, tx.quantity, draft);
+  // an unverified receipt keeps the hash saved (and the draft locked) so verification can be retried
+  if (s.name !== "buy-unknown") pendingStore.remove(tx.hash, deps.storage);
   if (s.name === "done" && r.purchase) deps.remember?.(r.purchase.firstId, r.purchase.quantity, s.hash);
   onStep(s);
   return s;

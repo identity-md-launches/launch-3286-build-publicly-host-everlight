@@ -1,0 +1,158 @@
+[
+  {
+    "name": "selection sheet is closed after navigating to Light (390)",
+    "ok": true,
+    "detail": {
+      "before": 1,
+      "after": 0,
+      "hash": "#/light",
+      "formUnder190x550": true
+    }
+  },
+  {
+    "name": "register focus returns to #/garden and shows the candle",
+    "ok": true,
+    "detail": {
+      "hash": "#/garden"
+    }
+  },
+  {
+    "name": "tapping the founding flame selects #1 and frames it above the sheet",
+    "ok": true,
+    "detail": {
+      "title": "Candle #1",
+      "under": "garden-canvas",
+      "flameTap": {
+        "x": 195,
+        "y": 386.1600000000001
+      },
+      "sheetTop": 428,
+      "candleBodyY": 206.72000000000006
+    }
+  },
+  {
+    "name": "no page errors (390 flows)",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "name": "ignition: first frames after ignite() differ from the established lit candle",
+    "ok": true,
+    "detail": {
+      "camera": {
+        "x": 678.8824352753802,
+        "y": 445.4296465287832,
+        "z": 1.4
+      },
+      "pngBytesDiffering": 1080189,
+      "frames": 137
+    }
+  },
+  {
+    "name": "320: Wrong network control and menu fit inside the viewport",
+    "ok": true,
+    "detail": {
+      "warn": {
+        "x": 232,
+        "y": 5.5,
+        "w": 80,
+        "h": 44,
+        "right": 312,
+        "bottom": 49.5
+      },
+      "menu": {
+        "x": 180,
+        "y": 5.5,
+        "w": 44,
+        "h": 44,
+        "right": 224,
+        "bottom": 49.5
+      }
+    }
+  },
+  {
+    "name": "fixture Light page is labelled and read-only (no wallet request)",
+    "ok": true,
+    "detail": {
+      "bar": true,
+      "disabled": true,
+      "sent": 0,
+      "label": "Approve and light 1 candle"
+    }
+  },
+  {
+    "name": "fixture label visible on #/garden (320)",
+    "ok": true,
+    "detail": {}
+  },
+  {
+    "name": "fixture label visible on #/mine (320)",
+    "ok": true,
+    "detail": {}
+  },
+  {
+    "name": "fixture label visible on #/rewards (320)",
+    "ok": true,
+    "detail": {}
+  },
+  {
+    "name": "fixture label visible on #/treasury (320)",
+    "ok": true,
+    "detail": {}
+  },
+  {
+    "name": "fixture label visible on #/how (320)",
+    "ok": true,
+    "detail": {}
+  },
+  {
+    "name": "no page errors (320 flows)",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "name": "1101px: header controls stay inside the header and viewport",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "name": "1180px: header controls stay inside the header and viewport",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "name": "1279px: header controls stay inside the header and viewport",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "name": "1280px: header controls stay inside the header and viewport",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "name": "1440px: header controls stay inside the header and viewport",
+    "ok": true,
+    "detail": []
+  },
+  {
+    "name": "fixture 0 zoomed out at 1440: many cultivated sectors visible",
+    "ok": true,
+    "detail": {
+      "visibleSectors": 128,
+      "drawnCandles": 0,
+      "lod": 0,
+      "ms": 50.200000286102295
+    }
+  },
+  {
+    "name": "fixture 0 zoomed out at 390: many cultivated sectors visible",
+    "ok": true,
+    "detail": {
+      "visibleSectors": 126,
+      "drawnCandles": 0,
+      "lod": 0,
+      "ms": 57.69999980926514
+    }
+  }
+]

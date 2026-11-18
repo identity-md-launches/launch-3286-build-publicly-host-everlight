@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { checkWish, gasBound } from "../src/lib/wish";
 import { CandleStore, fixtureSource, readAllIds } from "../src/lib/candles";
 import { hitTest, positionOf, sectorAt, sectorCount, sectorPlan, spiral, streamX, pathY, worldBounds, SECTOR_H, SECTOR_W, SLOTS_PER_SECTOR } from "../src/garden/layout";
-import { awaitBuy, pendingStore, REPLACED_MESSAGE, runPurchase, type PurchaseDeps, type Step } from "../src/lib/purchase";
+import { awaitBuy, pendingStore, FIXTURE_MESSAGE, META_MESSAGE, REPLACED_MESSAGE, UNVERIFIED_MESSAGE, runPurchase, type PurchaseDeps, type Step } from "../src/lib/purchase";
+import { GARDEN } from "../src/config";
+import { IGNITE_MS, ignite, ignition, igniting, newIds } from "../src/garden/ignite";
 
 class MemStorage {
   m = new Map<string, string>();
@@ -84,9 +86,22 @@ describe("garden layout", () => {
     }
     expect(positionOf(1234)).toEqual(positionOf(1234));
   });
-  it("shows one extra sector of empty holders", () => {
-    expect(sectorCount(0)).toBe(1);
-    expect(sectorCount(SLOTS_PER_SECTOR)).toBe(2);
+  it("the empty garden already holds at least 10,000 unlit holders, then grows one sector ahead", () => {
+    for (const n of [0, 100, 3000, 10000]) expect(sectorCount(n) * SLOTS_PER_SECTOR).toBeGreaterThanOrEqual(10000);
+    expect(sectorCount(0)).toBe(105);
+    expect(sectorCount(10080)).toBe(106);
+    expect(sectorCount(20000)).toBe(Math.floor(20000 / SLOTS_PER_SECTOR) + 1);
+    const b = worldBounds(0);
+    const far = positionOf(9999);
+    expect(far.x >= b.minX && far.x <= b.maxX && far.y >= b.minY && far.y <= b.maxY).toBe(true);
+    expect(hitTest(far.x, far.y - 30 * far.scale, 0, 10)).toBe(9999); // addressable before any purchase
+  });
+  it("hit test covers the flame and holder, not only the body (founding candle at 2.1x)", () => {
+    const p = positionOf(0);
+    expect(p.scale).toBeCloseTo(2.1);
+    expect(hitTest(p.x, p.y - 66 * p.scale, 100, 22 / 1.4)).toBe(0); // flame centre
+    expect(hitTest(p.x, p.y - 42 * p.scale, 100, 22 / 1.4)).toBe(0); // body
+    expect(hitTest(p.x, p.y - 4, 100, 22 / 1.4)).toBe(0); // holder foot
   });
   it("hit test finds the candle under the pointer", () => {
     const p = positionOf(4321);
@@ -139,10 +154,19 @@ describe("garden layout", () => {
   });
 });
 
+/** A complete mined receipt as the live adapter reads it: events, sender, target and decoded calldata. */
+function mined(h: string, firstId: number, styles: number[], wishes: string[], buyer = "0xABC") {
+  return {
+    status: "success" as const, hash: h as `0x${string}`, from: buyer, to: GARDEN, call: { styles, wishes },
+    purchase: { purchaser: buyer, firstId, quantity: styles.length },
+    created: styles.map((st, i) => ({ id: firstId + i, purchaser: buyer, style: st, wish: wishes[i] })),
+  };
+}
+
 function deps(over: Partial<PurchaseDeps> = {}): PurchaseDeps & { calls: string[] } {
   const calls: string[] = [];
   let allowance = 0n;
-  let n = 0;
+  let last: { styles: number[]; wishes: string[] } = { styles: [], wishes: [] };
   const d: PurchaseDeps & { calls: string[] } = {
     calls,
     account: "0xabc",
@@ -153,8 +177,9 @@ function deps(over: Partial<PurchaseDeps> = {}): PurchaseDeps & { calls: string[
     allowance: async () => allowance,
     ethBalance: async () => 10n ** 18n,
     approve: async (amt) => { calls.push(`approve:${amt}`); allowance = amt; return "0xa1" as const; },
-    wait: async (h) => { calls.push(`wait:${h}`); return { status: "success", hash: h, purchase: { purchaser: "0xABC", firstId: 7, quantity: n } }; },
-    simulate: async (s, w) => { calls.push(`simulate:${s.length}:${w.length}`); n = s.length; return { req: true }; },
+    wait: async (h) => { calls.push(`wait:${h}`); return mined(h, 7, last.styles, last.wishes); },
+    submission: async () => ({ nonce: 9, block: 1000n }),
+    simulate: async (s, w) => { calls.push(`simulate:${s.length}:${w.length}`); last = { styles: s, wishes: w }; return { req: true }; },
     buy: async () => { calls.push("buy"); return "0xb1" as const; },
     explain: (e) => (e instanceof Error ? e.message : String(e)),
     ...over,
@@ -167,7 +192,7 @@ describe("purchase flow (labelled mock chain, no real funds)", () => {
     const d = deps();
     const steps: Step[] = [];
     const r = await runPurchase(d, [0, 3, 6], ["", "hi", "🐸"], (s) => steps.push(s));
-    expect(r).toEqual({ name: "done", hash: "0xb1", firstId: 7 });
+    expect(r).toEqual({ name: "done", hash: "0xb1", firstId: 7, quantity: 3 });
     expect(d.calls).toEqual([`approve:${3n * 10n ** 18n}`, "wait:0xa1", "simulate:3:3", "buy", "wait:0xb1"]);
     expect(steps.map((s) => s.name)).toEqual(["checking", "approve-wallet", "approve-pending", "simulating", "buy-wallet", "buy-pending", "done"]);
     expect(pendingStore.list(d.storage)).toEqual([]);
@@ -222,17 +247,47 @@ describe("purchase flow (labelled mock chain, no real funds)", () => {
     const d = deps({
       allowance: async () => 10n ** 30n,
       remember: (...a) => remembered.push(a),
-      wait: async () => ({ status: "success", hash: "0xc3", purchase: { purchaser: "0xabc", firstId: 1, quantity: 3 } }),
+      wait: async () => mined("0xc3", 1, [0, 1, 2], ["", "", ""], "0xabc"),
     });
     const r = await runPurchase(d, [0, 1, 2], ["", "", ""], () => {});
-    expect(r).toEqual({ name: "done", hash: "0xc3", firstId: 1 });
+    expect(r).toEqual({ name: "done", hash: "0xc3", firstId: 1, quantity: 3 });
     expect(remembered).toEqual([[1, 3, "0xc3"]]);
   });
   it("an event for another buyer or quantity does not complete the purchase", async () => {
-    for (const purchase of [{ purchaser: "0xdef", firstId: 1, quantity: 1 }, { purchaser: "0xabc", firstId: 1, quantity: 2 }]) {
-      const r = await runPurchase(deps({ allowance: async () => 10n ** 30n, wait: async () => ({ status: "success", purchase }) }), [1], [""], () => {});
-      expect(r).toEqual({ name: "error", message: REPLACED_MESSAGE });
-    }
+    const other = await runPurchase(deps({ allowance: async () => 10n ** 30n, wait: async () => mined("0xc3", 1, [1], [""], "0xdef") }), [1], [""], () => {});
+    expect(other).toEqual({ name: "error", message: REPLACED_MESSAGE });
+    const two = await runPurchase(deps({ allowance: async () => 10n ** 30n, wait: async () => mined("0xc3", 1, [1, 1], ["", ""]) }), [1], [""], () => {});
+    expect(two).toMatchObject({ name: "error", hash: "0xc3", message: expect.stringContaining("different candle purchase") });
+  });
+  it("fixture pages are read-only: nothing reaches the wallet", async () => {
+    const d = deps({ readOnly: true, allowance: async () => 10n ** 30n });
+    const r = await runPurchase(d, [0], [""], () => {});
+    expect(r).toEqual({ name: "error", message: FIXTURE_MESSAGE });
+    expect(d.calls).toEqual([]);
+  });
+  it("a failed nonce/block read stops before the wallet signs (no unrecoverable pending purchase)", async () => {
+    const d = deps({ allowance: async () => 10n ** 30n, submission: async () => { throw new Error("RPC unavailable"); } });
+    const r = await runPurchase(d, [0], ["original"], () => {});
+    expect(r).toEqual({ name: "error", message: META_MESSAGE });
+    expect(d.calls).not.toContain("buy");
+    expect(pendingStore.list(d.storage)).toEqual([]);
+  });
+  it("persists sender, nonce and block, then reconciles the nonce with the submitted transaction", async () => {
+    let saved: unknown = null;
+    const d = deps({
+      allowance: async () => 10n ** 30n,
+      submission: async () => ({ nonce: 9, block: 1000n }),
+      sentTx: async () => ({ from: "0xabc", nonce: 11 }),
+      wait: async (_h, tx) => { saved = pendingStore.list(d.storage)[0]; expect(tx?.nonce).toBe(11); throw new Error("pending"); },
+    });
+    const r = await runPurchase(d, [0], ["original"], () => {});
+    expect(r.name).toBe("buy-unknown");
+    expect(saved).toMatchObject({ hash: "0xb1", from: "0xabc", nonce: 11, block: "1000", nonceChecked: true, styles: [0], wishes: ["original"] });
+  });
+  it("keeps the preflight nonce and block when the sent transaction cannot be read yet", async () => {
+    const d = deps({ allowance: async () => 10n ** 30n, sentTx: async () => null, wait: async () => { throw new Error("pending"); } });
+    await runPurchase(d, [0], ["original"], () => {});
+    expect(pendingStore.list(d.storage)[0]).toMatchObject({ from: "0xabc", nonce: 9, block: "1000", nonceChecked: false });
   });
 });
 
@@ -243,8 +298,8 @@ describe("purchase recovery after a reload (labelled mock chain)", () => {
     const storage = setup();
     const remembered: unknown[] = [];
     const steps: Step[] = [];
-    const s = await awaitBuy({ storage, explain: String, remember: (...a) => remembered.push(a), wait: async () => ({ status: "success", hash: "0xb0", purchase: { purchaser: "0xabc", firstId: 4, quantity: 3 } }) }, tx, (x) => steps.push(x));
-    expect(s).toEqual({ name: "done", hash: "0xb0", firstId: 4 });
+    const s = await awaitBuy({ storage, explain: String, remember: (...a) => remembered.push(a), wait: async () => mined("0xb0", 4, [0, 0, 0], ["", "", ""], "0xabc") }, tx, (x) => steps.push(x));
+    expect(s).toEqual({ name: "done", hash: "0xb0", firstId: 4, quantity: 3 });
     expect(remembered).toEqual([[4, 3, "0xb0"]]);
     expect(pendingStore.list(storage)).toEqual([]);
   });
@@ -253,6 +308,14 @@ describe("purchase recovery after a reload (labelled mock chain)", () => {
     const s = await awaitBuy({ storage, explain: String, wait: async () => ({ status: "success", hash: "0xb0", purchase: null }) }, tx, () => {});
     expect(s).toEqual({ name: "error", message: REPLACED_MESSAGE });
     expect(pendingStore.list(storage)).toEqual([]);
+  });
+  it("a receipt whose transaction could not be read stays pending (no settle without calldata)", async () => {
+    const storage = setup();
+    const { from, to, call, ...noTx } = mined("0xb0", 4, [0, 0, 0], ["", "", ""], "0xabc");
+    void from; void to; void call;
+    const s = await awaitBuy({ storage, explain: String, wait: async () => noTx }, tx, () => {});
+    expect(s).toEqual({ name: "buy-unknown", hash: "0xa0", message: UNVERIFIED_MESSAGE });
+    expect(pendingStore.list(storage).map((t) => t.hash)).toEqual(["0xa0"]);
   });
   it("no receipt keeps the hash pending (the form stays locked)", async () => {
     const storage = setup();
@@ -296,5 +359,17 @@ describe("Find beyond the streamed pages", () => {
     const s = new CandleStore(failing(3000, 100, true), null);
     await s.sync();
     await expect(s.lookup(3000)).rejects.toThrow();
+  });
+});
+
+describe("ignition after a verified purchase", () => {
+  it("runs once from unlit to lit; candles never ignited are drawn fully lit", () => {
+    expect(ignition(5, 0)).toBe(1);
+    ignite(newIds(41, 3), 1000);
+    expect(ignition(41, 1000)).toBe(0);
+    expect(ignition(43, 1000 + IGNITE_MS / 2)).toBeCloseTo(0.5);
+    expect(igniting()).toBe(true);
+    for (const id of [41, 42, 43]) expect(ignition(id, 1000 + IGNITE_MS)).toBe(1);
+    expect(igniting()).toBe(false);
   });
 });

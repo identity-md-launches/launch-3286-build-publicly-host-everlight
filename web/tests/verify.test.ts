@@ -4,7 +4,7 @@ import { encodeAbiParameters, encodeEventTopics, encodeFunctionData, type Hash, 
 import { wishGardenAbi } from "../src/abi/WishGarden";
 import { GARDEN } from "../src/config";
 import { decodeBuy, readReceipt, settleClaim, CLAIM_REPLACED } from "../src/lib/receipt";
-import { awaitBuy, settleBuy, REPLACED_MESSAGE, type PendingTx } from "../src/lib/purchase";
+import { awaitBuy, differentPurchaseMessage, settleBuy, REPLACED_MESSAGE, UNVERIFIED_MESSAGE, type PendingTx } from "../src/lib/purchase";
 import { locateMined, type RecoveryClient } from "../src/lib/recovery";
 
 const ME = "0x1111111111111111111111111111111111111111";
@@ -41,11 +41,12 @@ describe("replacement purchases are verified against the exact signed draft (moc
   });
   it("accepts a sped-up replacement with identical calldata and events", () => {
     const r = readReceipt({ status: "success", transactionHash: B, logs: goodLogs }, { from: ME, to: GARDEN, input: buyInput(draft.styles, draft.wishes) });
-    expect(settleBuy(r, A, ME, 2, draft)).toEqual({ name: "done", hash: B, firstId: 7 });
+    expect(settleBuy(r, A, ME, 2, draft)).toEqual({ name: "done", hash: B, firstId: 7, quantity: 2 });
   });
   it("rejects a replacement that bought with a different wish, style or quantity", () => {
     const wish = readReceipt({ status: "success", transactionHash: B, logs: [purchasedLog(7n, 2n), createdLog(7n, 2, "other"), createdLog(8n, 5, "")] }, { from: ME, to: GARDEN, input: buyInput([2, 5], ["other", ""]) });
-    expect(settleBuy(wish, A, ME, 2, draft)).toEqual({ name: "error", message: REPLACED_MESSAGE });
+    // a successful but different purchase is reported as such (funds moved), with the mined hash; never "done"
+    expect(settleBuy(wish, A, ME, 2, draft)).toEqual({ name: "error", hash: B, message: differentPurchaseMessage([{ id: 7 }, { id: 8 }]) });
     const style = readReceipt({ status: "success", transactionHash: B, logs: [purchasedLog(7n, 2n), createdLog(7n, 3, draft.wishes[0]), createdLog(8n, 5, "")] }, { from: ME, to: GARDEN, input: buyInput([3, 5], draft.wishes) });
     expect(settleBuy(style, A, ME, 2, draft).name).toBe("error");
     const qty = readReceipt({ status: "success", transactionHash: B, logs: [purchasedLog(7n, 1n), createdLog(7n, 2, draft.wishes[0])] }, { from: ME, to: GARDEN, input: buyInput([2], [draft.wishes[0]]) });
@@ -57,6 +58,10 @@ describe("replacement purchases are verified against the exact signed draft (moc
     const other = "0x2222222222222222222222222222222222222222";
     const f = readReceipt({ status: "success", transactionHash: B, logs: [purchasedLog(7n, 2n, other), createdLog(7n, 2, draft.wishes[0], other)] }, { from: ME, to: other, input: buyInput(draft.styles, draft.wishes) });
     expect(settleBuy(f, A, ME, 2, draft).name).toBe("error");
+  });
+  it("matching events without the mined transaction (lookup failed) are not a verified purchase", () => {
+    const r = readReceipt({ status: "success", transactionHash: B, logs: [purchasedLog(1n, 1n), createdLog(1n, 0, "original")] });
+    expect(settleBuy(r, A, ME, 1, { styles: [0], wishes: ["original"] })).toEqual({ name: "buy-unknown", hash: A, message: UNVERIFIED_MESSAGE });
   });
   it("a zero-value self-transfer cancel never lights candles", () => {
     const r = readReceipt({ status: "success", transactionHash: B, logs: [] }, { from: ME, to: ME, input: "0x" });
@@ -122,6 +127,6 @@ describe("claims show Claimed only with a verified RewardsClaimed (mock)", () =>
     expect(settleClaim({ status: "success", logs: [claimedLog(5n, "0x3333333333333333333333333333333333333333")] }, { from: ME, to: GARDEN, input: claimInput }, ME).ok).toBe(false);
     expect(settleClaim({ status: "success", logs: [claimedLog(5n, ME, "0x2222222222222222222222222222222222222222")] }, { from: ME, to: GARDEN, input: claimInput }, ME).ok).toBe(false);
     expect(settleClaim({ status: "reverted", logs: [claimedLog(5n)] }, { from: ME, to: GARDEN, input: claimInput }, ME).ok).toBe(false);
-    expect(settleClaim({ status: "success", logs: [claimedLog(5n)] }, null, ME).ok).toBe(false);
+    expect(settleClaim({ status: "success", logs: [claimedLog(5n)] }, null, ME)).toMatchObject({ ok: false, unverified: true });
   });
 });

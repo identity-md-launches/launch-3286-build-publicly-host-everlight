@@ -48,7 +48,10 @@ export function readReceipt(r: { status: "success" | "reverted"; transactionHash
 
 const CLAIM_SELECTOR = toFunctionSelector("function claimRewards()");
 
-export type ClaimVerdict = { ok: true; amount: bigint } | { ok: false; message: string };
+/** unverified: the mined transaction could not be read; the claim stays saved and is checked again (never Claimed). */
+export type ClaimVerdict = { ok: true; amount: bigint } | { ok: false; message: string; unverified?: true };
+export const CLAIM_UNVERIFIED =
+  "The claim has a receipt, but its transaction could not be read to verify it. It stays saved; check again in a moment.";
 export const CLAIM_REPLACED =
   "This claim was cancelled or replaced in your wallet, so nothing was claimed. Your rewards are still claimable.";
 
@@ -64,7 +67,8 @@ export function settleClaim(
 ): ClaimVerdict {
   if (r.status !== "success") return { ok: false, message: "The claim reverted onchain. Only gas was spent." };
   const garden = GARDEN.toLowerCase();
-  if (!tx || tx.to?.toLowerCase() !== garden || tx.from.toLowerCase() !== account.toLowerCase() || !tx.input.toLowerCase().startsWith(CLAIM_SELECTOR)) {
+  if (!tx) return { ok: false, message: CLAIM_UNVERIFIED, unverified: true };
+  if (tx.to?.toLowerCase() !== garden || tx.from.toLowerCase() !== account.toLowerCase() || !tx.input.toLowerCase().startsWith(CLAIM_SELECTOR)) {
     return { ok: false, message: CLAIM_REPLACED };
   }
   const ev = parseEventLogs({ abi: wishGardenAbi, logs: r.logs.filter((l) => l.address?.toLowerCase() === garden), eventName: "RewardsClaimed" })

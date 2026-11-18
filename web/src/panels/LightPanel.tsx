@@ -8,15 +8,15 @@ import { ETHERSCAN, GARDEN, IMD, MAX_BATCH, TX_GAS_CAP, config, ethClient } from
 import { checkWish, gasBound } from "../lib/wish";
 import { STYLE_NAMES, eth, imd } from "../lib/format";
 import { explainError } from "../lib/errors";
-import { awaitBuy, isRunning, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step } from "../lib/purchase";
+import { FIXTURE_MESSAGE, awaitBuy, isRunning, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step } from "../lib/purchase";
 import { readReceipt } from "../lib/receipt";
-import { minedTx, settleBuyReceipt, submissionMeta } from "../lib/chain";
+import { minedTx, sentTx, settleBuyReceipt, submissionMeta } from "../lib/chain";
 import { rememberTx } from "../lib/txhash";
 import { parseQuantity } from "../lib/quantity";
 import { ConnectButton } from "../components/ConnectSheet";
 import { WrongNetwork } from "../components/WrongNetwork";
 
-import { store, useGasPrice, useStatus, useWallet } from "../hooks";
+import { FIXTURE, store, useGasPrice, useStatus, useWallet } from "../hooks";
 
 export const DRAFT_KEY = "everlight:draft";
 /** A confirmed purchase ends the saved draft, even when it confirms while this panel is closed. */
@@ -86,7 +86,7 @@ const STEP_TEXT: Record<Step["name"], string> = {
   error: "",
 };
 
-export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void }) {
+export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity: number) => void }) {
   const { address, chainId, isConnected } = useAccount();
   const status = useStatus();
   const wallet = useWallet(address);
@@ -140,6 +140,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
 
   const open = status.data?.open === true;
   const problems: string[] = [];
+  if (FIXTURE !== null) problems.push("Test fixture: simulated candles, transactions disabled.");
   if (status.isError) problems.push("The sales status could not be read. Purchasing stays off until it loads.");
   else if (status.data && !open)
     problems.push(!status.data.activated ? "Sales are closed: the owner has not activated the garden yet." : "Sales are paused by the owner.");
@@ -156,6 +157,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
   const disabled = problems.length > 0 || running;
 
   async function submit() {
+    if (FIXTURE !== null) return setStep({ name: "error", message: FIXTURE_MESSAGE }); // fixture pages never reach the wallet
     if (inFlight || isRunning(purchaseFlow.get()) || pendingStore.list().some((t) => t.kind === "buy")) return; // duplicate-send guard
     inFlight = true;
     const account = address!;
@@ -181,6 +183,8 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
             return readReceipt(rec, (await minedTx(rec.transactionHash)) ?? undefined);
           },
           submission: () => submissionMeta(account),
+          sentTx,
+          readOnly: FIXTURE !== null,
           remember: rememberTx,
           simulate: async (styles, wishes) => {
             const { request } = await simulateContract(config, {
@@ -197,7 +201,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
           if (s.name === "done") clearDraft(); // a confirmed purchase ends the draft; errors and replacements keep it
           setStep(s);
           if (s.name === "done") {
-            store.sync().then(() => onLit(s.firstId));
+            store.sync().then(() => onLit(s.firstId, s.quantity ?? items.length));
             qc.invalidateQueries();
           }
         },
@@ -307,7 +311,12 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null) => void 
             {"hash" in step && <a href={`${ETHERSCAN}/tx/${step.hash}`} target="_blank" rel="noreferrer">View transaction</a>}
           </p>
         )}
-        {step?.name === "error" && <p className="bad" role="alert">{step.message}</p>}
+        {step?.name === "error" && (
+          <p className="bad" role="alert">
+            {step.message}{" "}
+            {step.hash && <a href={`${ETHERSCAN}/tx/${step.hash}`} target="_blank" rel="noreferrer">View the confirmed transaction</a>}
+          </p>
+        )}
         {pendingBuy && (step?.name === "buy-unknown" || !isRunning(step)) && (
           <div className="pending-box" role="status">
             <p>

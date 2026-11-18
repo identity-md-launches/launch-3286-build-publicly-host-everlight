@@ -96,7 +96,7 @@ These are worker-side results from 2026-11-18. The full record is in `artifacts/
 | Check | Result |
 | --- | --- |
 | `npx tsc --noEmit` | exit 0 |
-| `npx vitest run` | 5 files, 55/55 passed (adds popup placement and candle → transaction tests) |
+| `npx vitest run` | 7 files, 86/86 passed (revision 5) |
 | `npm run build` | built into `dist/` |
 | design-critic probe `taste.mjs` | 16/16 checks passed at 320/390/1440 |
 | Playwright walkthrough of the export (live reads plus `?fixture=0/100/3000/10000`, 1440 and 390 wide) | zoom/pan/bounds/reset, Find and the anchored popup, quantity edge cases, draft kept after reload, all routes, map tools hidden behind sheets; frame times measured headless (`artifacts/walkthrough-results.json`) |
@@ -138,3 +138,20 @@ What changed:
 Validation (worker-side, after the last source change): `npx tsc --noEmit` exit 0; `npx vitest run` 7 files, 78/78 passed; `npm run build` built `dist/`; design-critic `taste.mjs` 16/16 passed at 320/390/1440 (`artifacts/taste-probe.json`). Playwright evidence for fixtures 0/100/3000/10000, every page, live reads, load/heap/fps/latency and pan-zoom-select recordings: `artifacts/rev4-evidence.json`, `artifacts/screens/rev4-*`, `artifacts/recordings/rev4-*`; details and environment names in `artifacts/validation.md` ("Revision 4").
 
 **Limitations.** No image-generation, illustration or 3D tool was available to this worker, so the painted, cinematic perspective garden of the approved design was **not** reproduced: the garden is still the procedural top-down terraced map with a repainted parallax vista, and no licensed illustrated environment assets were added. Frame rates were measured in headless software rendering, not on real devices. Purchases, replacements and claims are tested on labelled mocks only; no fork or live transaction ran.
+
+### Revision 5 (2026-11-18): review findings
+
+What changed (source references are in `artifacts/validation.md`, "Revision 5"):
+- **10,000 empty holders from the start**: `sectorCount()` (`web/src/garden/layout.ts`) never drops below `MIN_SECTORS` = 105 sectors × 96 = 10,080 positions, so scenery, minimap, camera bounds and hit testing cover every holder before any purchase. Holders stay unlit until a confirmed record fills them; past 10,080 the garden still grows one sector ahead. This is visual capacity only; the contract's supply rules are unchanged.
+- **Candle details only over the garden**: navigating to another page closes the selection; Find, the register and My Candles focus actions return to `#/garden` first; on phones a canvas tap uses the same framing as Find, so the sheet never covers the candle (`web/src/App.tsx`).
+- **Header**: the tabs stay in the menu up to 1279 px and use tighter padding from 1280 to 1439 px; at 360 px and below the header uses 8 px gaps, a fixed 44 px menu button, and "Wrong network" wraps to two lines inside 80 px.
+- **Fixtures are read-only**: a persistent "Test fixture … transactions disabled" label on every fixture page; purchase, approval and claim handlers refuse to run (`readOnly` in `runPurchase`, plus guards in `LightPanel` and `RewardsPanel`).
+- **Exact verification**: a purchase is settled only once the mined transaction itself has been read. Its sender, the garden as target, the exact `buyCandles` styles and wishes, and the matching events all have to check out. If that transaction can't be read, the purchase stays pending and the draft stays locked, and verification can be retried. A successful replacement that bought different candles is reported as such, with its hash and ids. It is never described as a no-spend cancellation.
+- **Recovery metadata**: the nonce and submission block are read before the wallet signs. If that read fails, nothing is sent. The preflight nonce is then reconciled with the sent transaction (read by its hash) and saved. Recovery after a reload re-reads it, and estimates a bounded block for older entries that lack one. Claims follow the same steps, and a claim whose transaction can't be read stays saved without being shown as Claimed.
+- **Ignition**: once a purchase receipt and its events are verified (live or after a reload), the garden focuses the first new candle. Each new candle then lights once, from unlit wax through a spark, a growing flame and a bloom, to a steady glow (`web/src/garden/ignite.ts`, `renderer.ts`). Under reduced motion it appears already lit. Fixture loading and cached records never trigger the animation.
+- **Hit testing** covers each candle's whole holder-to-flame-tip segment with a minimum touch radius of 22 CSS px, and the closest candle wins, so tapping the founding candle's flame selects it.
+- **Share card** `og.png` is a 1200×630 card made from the empty garden plus the wordmark and one line of description. It has no controls and no live status or counts.
+
+Validation (worker-side, after the last source change): `npx tsc --noEmit` exit 0; `npx vitest run` 7 files, 86/86 passed; `npm run build` built `dist/`; design-critic `taste.mjs` 16/16 passed at 320/390/1440 (`artifacts/taste-probe.json`); a Playwright check of the export ran 20/20 checks in Chromium headless shell 159 (`artifacts/rev5-browser-checks.json`, screenshots `artifacts/screens/rev5-*.jpg`). That browser check used a labelled mock EIP-6963 wallet that rejects any send; no transaction ran.
+
+**Limitations (revision 5).** The garden art is unchanged apart from the larger cultivated area. No image-generation, illustration or 3D tool was available, so the approved painted perspective artwork and licensed detailed stone/brass/wax/foliage assets were still not produced. The garden remains the procedural terraced map with a parallax vista, and the purchase preview is unchanged. The ignition check in the browser uses a fixture-only test hook (`window.__igniteForTest`), not a real purchase.

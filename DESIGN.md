@@ -90,7 +90,7 @@ Contrast: the design probe measured all first-screen text at 320, 390 and 1440 w
 
 ## Components
 
-- **Header** (`.top`): the brand (favicon and "Everlight Garden · on IMD"; under 480px the name stays, set on two lines at 17px, and only " · on IMD" drops). The four tabs Garden / My Candles / Rewards / Treasury sit between gold hairline dividers, and the active tab is emerald with a gold border. The wallet button (`ConnectSheet`) is on the right: "Connect wallet" from 600px, "Connect" below 600px, with `aria-label="Connect wallet"` at every width. Under 1100px the tabs move into a menu button; the menu lists all six routes.
+- **Header** (`.top`): the brand (favicon and "Everlight Garden · on IMD"; under 480px the name stays, set on two lines at 17px, and only " · on IMD" drops). The four tabs Garden / My Candles / Rewards / Treasury sit between gold hairline dividers, and the active tab is emerald with a gold border. The wallet button (`ConnectSheet`) is on the right: "Connect wallet" from 600px, "Connect" below 600px, with `aria-label="Connect wallet"` at every width. Under 1280px the tabs move into a menu button; the menu lists all six routes. From 1280 to 1439px the tabs keep one line with 12px padding.
 - **Intro** (`.intro`): the h1 "Light a wish in the garden" with a centred gold rule, one plain line, a sales-status line with a live dot, and the fixture label when a fixture is active. Under 900px it also shows the primary CTA "Light a candle · 1 IMD".
 - **Side actions** (`.side`, desktop ≥900px): Light a candle · 1 IMD (non-breaking spaces keep "1 IMD" together and the dot with "candle"), My rewards and How it works. Each is a 96px gold-bordered tile.
 - **Bottom strip** (`.strip`):
@@ -112,13 +112,15 @@ Contrast: the design probe measured all first-screen text at 320, 390 and 1440 w
 | Width | Behaviour |
 | --- | --- |
 | ≥1500 | full strip, 20px percentages |
-| 1100–1500 | tighter economics (17px, 8px padding) |
-| <1100 | tabs collapse into the menu button; the "on IMD" suffix is hidden |
+| 1280–1439 | header tabs at 12px padding, 12px header gap, one line |
+| 1280–1500 | tighter economics (17px, 8px padding) |
+| <1280 | tabs collapse into the menu button; the "on IMD" suffix is hidden |
 | <900 | side actions hidden and the intro CTA shown; minimap 132×44 above the strip at right; zoom / reset row at left; economics become a collapsible sheet; the popup becomes a sheet, the map tools and the intro hide behind it |
 | <900 (Find) | after the candle sheet renders, Find measures it and the header and centres the candle and its whole ring in the band between them, zooming out if the band is short |
 | <640 | the intro starts 40px below the header (keeps Connect from reading as an eyebrow); panels become bottom sheets; the strip hides under an open panel |
 | <600 | the wallet button reads "Connect" (accessible name "Connect wallet") |
 | <480 | the wordmark stays: mark plus "Everlight Garden" on two lines at 17px; " · on IMD" hidden |
+| ≤360 | header gaps 8px, menu button fixed 44×44, "Wrong network" wraps to two lines in 80px (13px) |
 
 At 390 wide the first screen shows the garden, the headline and the "Light a candle · 1 IMD" action (see `artifacts/screens/m390-live.jpg` and `m390-f100-home.jpg`). Touch: drag pans, pinch zooms and tap opens a candle. Keyboard: arrows pan, + and − zoom, Find opens any id, and the register lists every candle. `prefers-reduced-motion` stops the flame flicker and the CSS transitions.
 
@@ -133,7 +135,7 @@ At 390 wide the first screen shows the garden, the headline and the "Light a can
 - **Skyline**: `horizonY(x)` in `layout.ts` is shared by the land fill and the row-0 scenery tree line.
 - **Springs**: in the home row each stream starts at `springY(gx)`, 95 units below the skyline at the stream's x, in a small pool under a cluster of mossy boulders with a short cascade; the stream widens from 30% over its first 140 units. The column's sector waterfall moves at least 150 units downstream of the spring and is left out where that would put it on the bridge.
 
-Positions depend only on a candle's position (id − 1), so they are stable across reloads and new purchases. Slot positions (`sectorPlan`, `positionOf`) are unchanged from the previous round; this round changed only how scenery is drawn around them. Hit testing searches the 3×3 sector neighbourhood around the pointer, using the candle body 42 units above the slot. LOD: below 0.3× zoom, cached low-resolution sector images with cached per-sector light layers; from 0.3×, sprites; from 0.7×, animated flames.
+Positions depend only on a candle's position (id − 1), so they are stable across reloads and new purchases. Slot positions (`sectorPlan`, `positionOf`) are unchanged from the previous round; this round changed only how scenery is drawn around them. Hit testing searches the 3×3 sector neighbourhood around the pointer against each candle's whole holder-to-flame segment (`CANDLE_TOP` = 84 scale units), with radius max(16 × scale, 22 CSS px); the closest candle wins. The garden always has at least `MIN_SECTORS` = 105 cultivated sectors (10,080 holders), all unlit until confirmed records fill them. LOD: below 0.3× zoom, cached low-resolution sector images with cached per-sector light layers; from 0.3×, sprites; from 0.7×, animated flames.
 
 ## Revision 4 additions (implemented in `web/src/everlight.css`, loaded after `styles.css`)
 
@@ -153,3 +155,13 @@ Positions depend only on a candle's position (id − 1), so they are stable acro
 - *Candle popup*: title, the wish in serif (wraps anywhere), then the record and explorer links.
 
 **Responsive behaviour.** ≥1180 px: form docked, quick-action column hidden, headline limited to the open area, toasts move left of the dock, castle placed in the open area. 901–1179 px: previous layout (side actions, form in a panel). ≤900 px: candle sheet above the strip (`z-index 30`, scrolls internally), map tools hidden while it is open. ≤360 px: tighter style row, Custom on its own row, smaller headline.
+
+## Revision 5 additions
+
+**Components.**
+- *Fixture label* (`.fixture-bar`, `web/src/everlight.css`): `--gold-300` fill, `--color-on-accent` text, `--text-sm`, 8/12px padding. It sits sticky at the top of every panel (64px right padding clears the close button) and above the docked form; on the garden the intro carries the same text (`.intro .fixture`). The wording is "Test fixture (N simulated candles), transactions disabled."
+- *Candle detail*: shown only on the garden (and beside the docked form at ≥1180px). Navigating to another page closes it; focus actions return to the garden first.
+- *Ignition* (canvas): unlit wax, then for the first 12% a spark at the wick growing from 0.6 to 2.2 units, then the flame scales up with an ease-out-back overshoot (about 1.05) while a bloom of up to 150 × scale units swells and fades, and the glow fades in with a smoothstep. It lasts 1.8 s. Under reduced motion the candle appears fully lit.
+- *Share card* (`web/public/og.png`, 1200×630): the empty moonlit garden from the live renderer, a left-to-right near-black scrim, the favicon at 72px, "EVERLIGHT GARDEN" in the serif at 68px (`#f3dca0`), and one 28px line of description.
+
+**Responsive behaviour.** The header changes are in the table above (≤360, <1280, 1280–1439). Below 900px, tapping a candle on the canvas uses the same framing as Find: the candle is centred in the band between the header and the measured sheet.

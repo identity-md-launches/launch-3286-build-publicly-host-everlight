@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Candle } from "../lib/candles";
 import { GardenRenderer, MAX_ZOOM } from "./renderer";
 import { hitTest, positionOf } from "./layout";
+import { igniting } from "./ignite";
 
 /** The breakpoint below which a selected candle opens as a bottom sheet (App.tsx useNarrow). */
 export const SHEET_QUERY = "(max-width: 900px)";
@@ -68,7 +69,7 @@ export function Garden(p: Props) {
     const loop = (t: number) => {
       raf = requestAnimationFrame(loop);
       const inp = inputRef.current;
-      const animate = !inp.reducedMotion && r.cam.z >= 0.7 && inp.candles.length > 0;
+      const animate = (!inp.reducedMotion && r.cam.z >= 0.7 && inp.candles.length > 0) || igniting();
       if (!animate && !dirty.current && !r.pending) return;
       dirty.current = false;
       r.clamp(Math.max(inp.total, inp.known));
@@ -204,7 +205,8 @@ export function Garden(p: Props) {
       const r = rRef.current!;
       const rect = canvasRef.current!.getBoundingClientRect();
       const w = r.toWorld(e.clientX - rect.left, e.clientY - rect.top);
-      const pos = hitTest(w.x, w.y, Math.max(p.total, p.known), Math.max(26, 18 / r.cam.z));
+      // at least 22 CSS px of touch radius around the visible holder, body and flame
+      const pos = hitTest(w.x, w.y, Math.max(p.total, p.known), 22 / r.cam.z);
       p.onSelect(pos !== null && (pos < p.total || p.extra?.id === pos + 1) ? pos + 1 : null);
     }
   };

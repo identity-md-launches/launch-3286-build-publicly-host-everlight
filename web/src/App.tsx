@@ -7,11 +7,12 @@ import { ConnectSheet } from "./components/ConnectSheet";
 import { LightPanel, recoverBuy } from "./panels/LightPanel";
 import { CandleDetail, HowPanel, MinePanel, Register, RewardsPanel, TreasuryPanel } from "./panels/Panels";
 import { FIXTURE, store, useCandles, useMyIds, useReducedMotion, useStatus } from "./hooks";
-import { pendingStore, type PendingTx } from "./lib/purchase";
+import { UNVERIFIED_MESSAGE, pendingStore, type PendingTx } from "./lib/purchase";
 import { settleReceipt } from "./lib/chain";
 import { settleClaim } from "./lib/receipt";
 import { imd } from "./lib/format";
 import type { Candle } from "./lib/candles";
+import { ignite, newIds } from "./garden/ignite";
 
 const ROUTES = [
   ["garden", "Garden"],
@@ -44,6 +45,11 @@ const Icon = ({ name }: { name: string }) => (
   <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" strokeLinecap="round"><path d={ICON[name]} /></svg>
 );
 type Route = (typeof ROUTES)[number][0];
+/** Routes that show the garden with its candle details: the garden, and Light a candle while docked beside it. */
+const detailRoute = (r: Route) => r === "garden" || (r === "light" && matchMedia(DOCK_QUERY).matches);
+// Fixture pages only: lets the labelled browser checks start an ignition without any purchase (visual only).
+if (FIXTURE !== null) (window as unknown as { __igniteForTest?: (id: number) => void }).__igniteForTest = (id) => ignite([id]);
+const FIXTURE_NOTE = `Test fixture (${FIXTURE ?? 0} simulated candles), transactions disabled.`;
 
 const readRoute = (): Route => {
   const r = location.hash.replace(/^#\/?/, "") as Route;
@@ -53,7 +59,7 @@ const readRoute = (): Route => {
 interface Toast { id: string; text: string; href?: string; bad?: boolean }
 
 /** Re-attach to transactions sent before a reload and report their receipts. */
-function usePendingRecovery(push: (t: Toast) => void) {
+function usePendingRecovery(push: (t: Toast) => void, onLit: (firstId: number, quantity: number) => void) {
   useEffect(() => {
     const list = pendingStore.list();
     list.forEach((tx: PendingTx) => {
@@ -64,8 +70,10 @@ function usePendingRecovery(push: (t: Toast) => void) {
         recoverBuy(tx).then((s) => {
           if (s.name === "done") {
             push({ id: tx.hash, href: `${ETHERSCAN}/tx/${s.hash}`, text: "Your earlier purchase confirmed. Its candles are lit." });
-            store.sync();
-          } else if (s.name === "error") push({ id: tx.hash, bad: true, href: `${ETHERSCAN}/tx/${tx.hash}`, text: `Your earlier purchase did not light candles. ${s.message}` });
+            // verified receipt and events: focus the new candles and light them
+            store.sync().then(() => { if (s.firstId) onLit(s.firstId, s.quantity ?? tx.quantity ?? 1); });
+          } else if (s.name === "error") push({ id: tx.hash, bad: true, href: `${ETHERSCAN}/tx/${s.hash ?? tx.hash}`, text: s.hash ? s.message : `Your earlier purchase did not light candles. ${s.message}` });
+          else if (s.name === "buy-unknown" && s.message === UNVERIFIED_MESSAGE) push({ id: tx.hash, bad: true, href: `${ETHERSCAN}/tx/${tx.hash}`, text: s.message });
           else push({ id: tx.hash, bad: true, href: `${ETHERSCAN}/tx/${tx.hash}`, text: "An earlier purchase has no receipt yet. It is still saved; Light a candle stays locked on it." });
         });
         return;
@@ -74,12 +82,13 @@ function usePendingRecovery(push: (t: Toast) => void) {
       // garden RewardsClaimed event for this account in the mined transaction (never for a cancel/self-transfer)
       settleReceipt(tx.hash, tx)
         .then(({ receipt: r, mined }) => {
-          pendingStore.remove(tx.hash);
           const href = `${ETHERSCAN}/tx/${r.transactionHash}`;
           if (tx.kind === "claim") {
             const v = settleClaim(r, mined, tx.account);
+            if (!("unverified" in v && v.unverified)) pendingStore.remove(tx.hash); // unverified claims stay saved
             push({ id: tx.hash, bad: !v.ok, href, text: v.ok ? `Your earlier claim confirmed: ${imd(v.amount)} IMD claimed.` : v.message });
           } else {
+            pendingStore.remove(tx.hash);
             const ok = r.status === "success" && r.transactionHash === tx.hash;
             push({ id: tx.hash, bad: !ok, href, text: ok ? "Your earlier approval confirmed." : "Your earlier approval was replaced or reverted; approve again when you light candles." });
           }
@@ -146,12 +155,20 @@ export default function App() {
   });
 
   const push = (t: Toast) => setToasts((l) => [...l.filter((x) => x.id !== t.id), t].slice(-3));
-  usePendingRecovery(push);
+  /** After a verified purchase receipt: return to the garden, focus the first new candle and ignite all of them. */
+  const lit = (firstId: number, quantity: number) => {
+    jump(firstId);
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) ignite(newIds(firstId, quantity));
+  };
+  usePendingRecovery(push, lit);
 
   useEffect(() => {
     const f = () => {
-      setRoute(readRoute());
+      const r = readRoute();
+      setRoute(r);
       setMenu(false);
+      // candle details belong to the garden view (and the wide dock beside it), never over another page
+      if (!detailRoute(r)) setSelected(null);
     };
     addEventListener("hashchange", f);
     return () => removeEventListener("hashchange", f);
@@ -175,7 +192,14 @@ export default function App() {
     document.title = route === "garden" ? "Everlight Garden: light a permanent candle" : `${t} · Everlight Garden`;
   }, [route]);
 
+  /** Select and frame a candle in the garden: from another page this first returns to the garden view. */
   const jump = (id: number) => {
+    const r = readRoute();
+    if (!detailRoute(r)) {
+      setRoute("garden");
+      setMenu(false);
+      location.hash = "#/garden";
+    }
     setSelected(id);
     garden.current?.jumpTo(id);
   };
@@ -239,7 +263,7 @@ export default function App() {
         mine={mine}
         highlightMine={highlightMine}
         reducedMotion={reduced}
-        onSelect={setSelected}
+        onSelect={(id) => (id !== null && narrow ? jump(id) : setSelected(id))}
         handleRef={(h) => (garden.current = h)}
         onStats={setStats}
         onAnchor={setAnchor}
@@ -258,7 +282,7 @@ export default function App() {
               {cs.loading && cs.total !== null && total < cs.total ? ` (loading ${total} of ${cs.total})` : ""}
             </p>
             {cs.error && <p className="bad" role="alert">Candles could not be read: the RPCs did not answer. Retrying every 30 seconds.</p>}
-            {FIXTURE !== null && <p className="fixture">Test fixture: {FIXTURE} simulated candles, not onchain.</p>}
+            {FIXTURE !== null && <p className="fixture">{FIXTURE_NOTE}</p>}
           </div>
         )}
 
@@ -290,15 +314,17 @@ export default function App() {
 
         {docked && (
           <aside className="light-dock" aria-label="Light your candle">
-            <LightPanel onLit={(id) => { if (id) jump(id); }} />
+            {FIXTURE !== null && <p className="fixture fixture-bar" role="note">{FIXTURE_NOTE}</p>}
+            <LightPanel onLit={(id, q) => { if (id) lit(id, q); }} />
           </aside>
         )}
 
         {route !== "garden" && !docked && (
           <aside tabIndex={-1} className="panel" aria-label={ROUTES.find(([k]) => k === route)![1]} ref={panelHeading}>
             <a className="x panel-x" href="#/garden" aria-label="Close panel and return to the garden">×</a>
+            {FIXTURE !== null && <p className="fixture fixture-bar" role="note">{FIXTURE_NOTE}</p>}
             <div className="panel-body">
-              {route === "light" && <LightPanel onLit={(id) => { if (id) jump(id); location.hash = "#/garden"; }} />}
+              {route === "light" && <LightPanel onLit={(id, q) => { if (id) lit(id, q); else location.hash = "#/garden"; }} />}
               {route === "mine" && <MinePanel candles={cs.candles} onJump={jump} highlight={highlightMine} setHighlight={setHighlightMine} />}
               {route === "rewards" && <RewardsPanel />}
               {route === "treasury" && <TreasuryPanel />}
@@ -308,7 +334,7 @@ export default function App() {
           </aside>
         )}
 
-        {sel && (
+        {sel && detailRoute(route) && (
           <div
             ref={popRef}
             className={anchored ? `detail-wrap anchored${place?.below ? " below" : ""}` : "detail-wrap"}

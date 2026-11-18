@@ -231,9 +231,17 @@ export function positionOf(position: number): { x: number; y: number; scale: num
   return { x, y, scale, sector, slot };
 }
 
-/** Number of sectors to show: every filled sector plus one sector of empty holders to grow into. */
+/** The empty garden already holds this many individually addressable (unlit) holder positions. */
+export const MIN_POSITIONS = 10_000;
+/** Sectors cultivated before any purchase: enough 96-slot districts for MIN_POSITIONS (105 sectors, 10,080 holders). */
+export const MIN_SECTORS = Math.ceil(MIN_POSITIONS / SLOTS_PER_SECTOR);
+/**
+ * Number of cultivated sectors: at least MIN_SECTORS (every holder present and unlit until a confirmed purchase
+ * fills it), then every filled sector plus one sector of empty holders to grow into. This is a visual capacity
+ * only; the onchain supply rules are the contract's.
+ */
 export function sectorCount(total: number): number {
-  return Math.floor(total / SLOTS_PER_SECTOR) + 1;
+  return Math.max(MIN_SECTORS, Math.floor(total / SLOTS_PER_SECTOR) + 1);
 }
 
 /** Whether the neighbouring cells of a sector are part of the garden: [north, east, south, west]. */
@@ -258,23 +266,29 @@ export function worldBounds(total: number) {
   return { minX, minY, maxX, maxY };
 }
 
-/** Hit test: the candle position nearest (x, y) within radius, or null. Searches the 3x3 sector neighbourhood. */
+/** Vertical extent of a rendered candle above its slot point, in slot-scale units: holder foot to flame tip. */
+export const CANDLE_TOP = 84;
+/**
+ * Hit test against the whole rendered candle: holder, wax body and flame, i.e. the vertical segment from the
+ * slot point (holder foot) to the flame tip, widened by its own half-width or the minimum touch radius `radius`
+ * (world units), whichever is larger. Overlaps resolve to the closest candle. Searches the 3x3 sector neighbourhood.
+ */
 export function hitTest(x: number, y: number, total: number, radius: number): number | null {
   const gx = Math.floor(x / SECTOR_W);
   const gy = Math.floor(y / SECTOR_H);
   const count = sectorCount(total);
   let best: number | null = null;
-  let bd = radius * radius;
+  let bd = Infinity;
   for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
     const sector = sectorAt(gx + dx, gy + dy);
     if (sector < 0 || sector >= count) continue;
     const slots = sectorPlan(sector).slots;
     for (let s = 0; s < SLOTS_PER_SECTOR; s++) {
       const [sx, sy, sc] = slots[s];
-      const ddx = sx - x;
-      const ddy = sy - 42 * sc - y; // candle body stands on its pedestal, above the slot point
-      const d = ddx * ddx + ddy * ddy;
-      if (d < bd) {
+      const top = sy - CANDLE_TOP * sc;
+      const cy = y < top ? top : y > sy ? sy : y; // nearest point on the holder-to-flame segment
+      const d = Math.hypot(sx - x, cy - y);
+      if (d <= Math.max(radius, 16 * sc) && d < bd) {
         bd = d;
         best = sector * SLOTS_PER_SECTOR + s;
       }

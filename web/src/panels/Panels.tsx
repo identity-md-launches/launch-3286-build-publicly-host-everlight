@@ -1,4 +1,4 @@
-import { minedTx, submissionMeta } from "../lib/chain";
+import { minedTx, sentTx, submissionMeta } from "../lib/chain";
 import { settleClaim } from "../lib/receipt";
 import { WrongNetwork } from "../components/WrongNetwork";
 import { useEffect, useRef, useState } from "react";
@@ -9,7 +9,7 @@ import { wishGardenAbi } from "../abi/WishGarden";
 import { BASESCAN, BASE_IMD, BASE_RECEIVER, ETHERSCAN, GARDEN, IMD, OWNER, SOURCE_REPO, config } from "../config";
 import { STYLE_NAMES, date, imd, short, safeChecksum } from "../lib/format";
 import { explainError } from "../lib/errors";
-import { pendingStore } from "../lib/purchase";
+import { FIXTURE_MESSAGE, pendingStore, reconcileSent } from "../lib/purchase";
 import type { Candle } from "../lib/candles";
 import { ConnectButton } from "../components/ConnectSheet";
 import { FIXTURE, useActivity, useCandleTx, useMyIds, useRewards, useTreasury } from "../hooks";
@@ -171,18 +171,24 @@ export function RewardsPanel() {
   const busy = useRef(false);
   async function claim() {
     if (busy.current || !address) return;
+    if (FIXTURE !== null) return setSt({ s: "error", msg: FIXTURE_MESSAGE }); // fixture pages never reach the wallet
     busy.current = true;
     try {
       setSt({ s: "wallet" });
       const { request } = await simulateContract(config, { address: GARDEN, abi: wishGardenAbi, functionName: "claimRewards", account: address, chainId: 1 });
-      const sub = await submissionMeta(address).catch(() => undefined);
+      // the nonce and submission block are read before signing: without them a replaced claim could not be recovered
+      const sub = await submissionMeta(address).catch(() => null);
+      if (!sub) { setSt({ s: "error", msg: "Your account's nonce and the current block could not be read. Nothing was sent; try the claim again." }); return; }
       const hash = await writeContract(config, request);
-      pendingStore.add({ hash, kind: "claim", account: address, createdAt: Date.now(), from: address, nonce: sub?.nonce, block: sub?.block.toString() });
+      const saved = { hash, kind: "claim" as const, account: address, createdAt: Date.now(), from: address, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false };
+      pendingStore.add(saved);
       setSt({ s: "pending", hash });
+      // reconcile the preflight nonce with the submitted transaction's own, for recovery after a reload
+      await reconcileSent({ sentTx }, saved);
       // follows a sped-up or cancelled replacement; only a verified RewardsClaimed from the garden shows Claimed
       const rec = await waitForTransactionReceipt(config, { hash, chainId: 1 });
-      pendingStore.remove(hash);
       const v = settleClaim(rec, await minedTx(rec.transactionHash), address);
+      if (!("unverified" in v && v.unverified)) pendingStore.remove(hash); // unverified: kept and re-checked on reload
       setSt(v.ok ? { s: "done", hash: rec.transactionHash, amount: v.amount } : { s: "error", msg: v.message });
       qc.invalidateQueries();
     } catch (e) {
@@ -208,7 +214,7 @@ export function RewardsPanel() {
         </dl>
       )}
       {d && (
-        <button className="cta wide" onClick={claim} disabled={d.claimable === 0n || chainId !== 1 || st.s === "wallet" || st.s === "pending"}>
+        <button className="cta wide" onClick={claim} disabled={FIXTURE !== null || d.claimable === 0n || chainId !== 1 || st.s === "wallet" || st.s === "pending"}>
           {st.s === "wallet" ? "Confirm in your wallet…" : st.s === "pending" ? "Claiming…" : d.claimable === 0n ? "Nothing to claim yet" : `Claim ${imd(d.claimable)} IMD`}
         </button>
       )}

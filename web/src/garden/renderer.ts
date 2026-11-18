@@ -1,6 +1,7 @@
 import type { Candle } from "../lib/candles";
 import { HOLDER_TOP, HORIZON_CUT, SECTOR_H, SECTOR_MARGIN, SECTOR_W, SLOTS_PER_SECTOR, cameraBounds, horizonY, positionOf, sectorAt, sectorCount, sectorOrigin, streamX } from "./layout";
 import { BASE_PAD, drawSectorBase, drawSectorUpright } from "./scenery";
+import { ignition } from "./ignite";
 import { CASTLE_W, VISTA_CASTLE_X, VISTA_FOOT, VISTA_H, VISTA_TOP, VISTA_W, makeVista, type Vista } from "./vista";
 
 export interface Camera { x: number; y: number; z: number }
@@ -356,19 +357,31 @@ export class GardenRenderer {
       }
     }
     lit.sort((a, b) => a.y - b.y);
+    // ignition of candles a verified receipt just created: 0 = unlit holder, 1 = established flame.
+    // Reduced motion shows the completed state at once.
+    const ign = lit.map(({ c }) => (input.reducedMotion ? 1 : ignition(c.id, time)));
     // warm local light, additive: fixed strength per candle so many candles brighten their own neighbourhood
     ctx.globalCompositeOperation = "lighter";
-    for (const { x, y, k, c } of lit) {
+    lit.forEach(({ x, y, k, c }, i) => {
+      const g = ign[i];
+      const warm = g >= 1 ? 1 : smoothstep(0.2, 1, g);
       const flick = input.reducedMotion ? 1 : 0.88 + 0.12 * Math.sin(time / 260 + c.id * 1.7);
-      ctx.globalAlpha = 0.3 * flick;
+      ctx.globalAlpha = 0.3 * flick * warm;
       const r = 80 * k;
       ctx.drawImage(this.glow, x - r, y - 48 * k - r, r * 2, r * 2);
-      ctx.globalAlpha = 0.28 * flick; // warm pool on the stone at the foot of the holder
+      ctx.globalAlpha = 0.28 * flick * warm; // warm pool on the stone at the foot of the holder
       ctx.drawImage(this.glow, x - 46 * k, y - 18 * k, 92 * k, 34 * k);
-    }
+      if (g < 1 && g > 0.12) {
+        // the catch: a brief bloom that swells as the wick takes and fades into the steady glow
+        const b = Math.sin(Math.PI * ((g - 0.12) / 0.88));
+        const br = 150 * k * (0.5 + 0.5 * g);
+        ctx.globalAlpha = 0.55 * b;
+        ctx.drawImage(this.glow, x - br, y - 56 * k - br, br * 2, br * 2);
+      }
+    });
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
-    for (const { x, y, k, c } of lit) this.drawCandle(x, y, k, c, lod === 2 && !input.reducedMotion ? time : 0);
+    lit.forEach(({ x, y, k, c }, i) => this.drawCandle(x, y, k, c, lod === 2 && !input.reducedMotion ? time : 0, ign[i]));
     return lit.length;
   }
 
@@ -387,7 +400,7 @@ export class GardenRenderer {
   }
 
   /** k is the depth scale of the slot: far terraces hold smaller candles than near ones. */
-  private drawCandle(x: number, y: number, k: number, c: Candle, time: number) {
+  private drawCandle(x: number, y: number, k: number, c: Candle, time: number, ignite = 1) {
     const { ctx } = this;
     const im = this.candleImgs[c.style];
     const f = 0.5 * k; // sprite drawn at 0.5 x depth scale of its 40x80 box, standing in the pedestal cup
@@ -399,6 +412,25 @@ export class GardenRenderer {
       ctx.fillRect(x - 5 * k, top + 14 * k, 10 * k, h - 18 * k);
     }
     const tipY = top + (WICK[c.style] ?? 12) * f;
+    if (ignite < 1) {
+      // unlit wax first; a spark at the wick, then the flame grows from it with a small overshoot
+      if (ignite < 0.12) {
+        const sp = ignite / 0.12;
+        this.ctx.fillStyle = `rgba(255,236,190,${0.4 + 0.6 * sp})`;
+        this.ctx.beginPath();
+        this.ctx.arc(x, tipY - 2 * k, (0.6 + 1.6 * sp) * k, 0, Math.PI * 2);
+        this.ctx.fill();
+        return;
+      }
+      const q = (ignite - 0.12) / 0.88;
+      const grow = 1 + 2.2 * (q - 1) ** 3 + 1.2 * (q - 1) ** 2; // ease-out-back: 0 -> ~1.1 -> 1
+      ctx.save();
+      ctx.translate(x, tipY);
+      ctx.scale(k * 1.5 * Math.max(0.15, grow), k * 1.5 * Math.max(0.05, grow));
+      ctx.drawImage(this.flames[c.style] ?? this.flames[0], -8, -17, 16, 20);
+      ctx.restore();
+      return;
+    }
     const sway = time ? Math.sin(time / 180 + c.id) * 1.6 : 0;
     const stretch = time ? 1 + 0.12 * Math.sin(time / 120 + c.id * 2.3) : 1;
     // pre-rendered flame per style (no per-frame gradients); sway is a skew about the wick, stretch a vertical scale
@@ -454,6 +486,11 @@ export class GardenRenderer {
     g.strokeRect(tl.x * s + ox, tl.y * s + oy, (br.x - tl.x) * s, (br.y - tl.y) * s);
     return { s, ox, oy };
   }
+}
+
+function smoothstep(a: number, b: number, v: number) {
+  const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
+  return t * t * (3 - 2 * t);
 }
 
 function makeGlow() {

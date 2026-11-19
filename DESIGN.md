@@ -1,3 +1,49 @@
+# DESIGN: Everlight Garden, 16-bit pixel revision (current, 2026-11-19)
+
+This section describes the implemented source after the pixel redesign. It supersedes the earlier sections
+below wherever they conflict (those describe the retired painted look and are kept for history).
+
+## Tokens (`web/src/pixel.css`, loaded last over `styles.css` / `everlight.css`)
+| Token | Value | Use |
+| --- | --- | --- |
+| `--px-black` | #050a08 | page background, sprite keylines |
+| `--px-emerald-950/900/800` | #0b1712 / #12251b / #1c3a26 | surfaces, raised surfaces, hover |
+| `--px-green-600/500/400/300` | #2a5233 / #3f7a3c / #6aa84f / #a7d36a | frames, primary button, accent, active nav |
+| `--px-ivory`, `--px-ivory-dim` | #efe6cc / #cdbf9c | body text, secondary text |
+| `--px-gold`, `--px-gold-deep` | #f5c95a / #d79a32 | flames, IMD totals, focus ring |
+| `--radius-*` | 0 | everything is square |
+| `--px-frame` | 2px black keyline + 2px green rim + faint inner rim | panels, dock, sheets, minimap, preview |
+Type: unchanged single scale of six sizes (`--text-sm` 13 to `--text-2xl` 40px); serif stack for headings and
+controls, system sans for body. Focus: 3px gold outline, 2px offset, on every focusable element.
+
+## Pixel art system
+- One density: 1 art pixel = 2 world units (`PX` in `web/src/garden/scenery.ts`). Cells are painted at art
+  resolution and scaled with nearest-neighbour sampling; far views use cached 1/2 and 1/4 reductions.
+- Palette and all sprites: `web/art-src/pixel/build.mjs` -> `web/public/art/px/*.png` (CC0, `px/LICENSE.md`).
+- Ground is sampled per pixel from 16x16 tiles (grass x2 with ordered dither, flagstone path, mossy bank,
+  water); terraces are pixel columns of wall tile with moss coping and hanging moss; bridges are drawn per
+  pixel column with an arch opening; props are sprites at whole art-pixel positions, depth sorted.
+- Vista (`vista.ts`): banded dithered sky, stars, pixel moon, three ridges with terraces and aqueduct arches,
+  one castle; painted at 1/4 resolution and drawn with smoothing off.
+- Candles: unlit holders are part of the cached scenery for all 10,080 slots of the empty garden. Only
+  confirmed candles draw a style sprite (7 styles), one of four flame frames (frame 0 when motion is reduced
+  or far away), a stepped gold halo and a ground glow pool. Overview LOD uses one cached light layer per
+  sector. A warm screen lift grows with log10(lit count). Decorative lamps are green glass, never gold.
+- Water: drifting pixel ripples along every stream in view (static with reduced motion).
+
+## Components
+Header, garden canvas, right purchase dock, minimap/zoom/Find cluster, allocation strip, sheets and modals keep
+their structure from the previous revision (below); this revision restyles them with the tokens above. The
+purchase preview is now a pixel composition (arch, hero pedestal, chosen candle sprite, 4 flame frames at 3x)
+in `LightPanel.tsx` `CandlePreview`. Style picker and My Candles use the pixel candle sprites (`img.px`,
+`image-rendering: pixelated`).
+
+## Responsive behaviour
+Unchanged breakpoints: at 900px and below the dock becomes a dismissible bottom sheet with a persistent
+"Light a candle" action; the garden stays full-bleed and pannable at every width.
+
+---
+
 # Everlight Garden design system
 
 Taken from the final source: `web/src/styles.css` (base tokens, then the "Reference restyle (v2)" block, which overrides them), `web/src/garden/renderer.ts`, `web/src/garden/scenery.ts`, `web/art-src/paint.js` and the components in `web/src/`.

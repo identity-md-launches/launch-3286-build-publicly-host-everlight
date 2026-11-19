@@ -1,5 +1,27 @@
 # Everlight Garden
 
+**Current revision (2026-11-19): 16-bit pixel-art garden.** See `DESIGN.md` (top section) and `artifacts/validation.md` (top section).
+
+## Install, preview, rebuild
+```
+cd web
+npm ci                              # install from package-lock.json
+node art-src/pixel/build.mjs        # (optional) regenerate pixel assets into public/art/px
+npm run build                       # tsc --noEmit + vite build -> ../dist (relative ./ URLs)
+npm run preview                     # serve the export locally
+npx vitest run                      # unit tests
+```
+The committed `dist/` is the static export the host serves; it has no backend.
+
+## Results of this revision
+`tsc --noEmit` exit 0; `vitest` 90/90 passed; `npm run build` ok. **The browser walkthrough and design probe
+did not run.** Headless Chromium on the build machine crashed the garden tab. That is an open, undiagnosed
+defect, so this revision has no screenshots or performance numbers. Details: `artifacts/validation.md`.
+
+---
+
+# Everlight Garden
+
 A wallet-connected static website for the **existing** Everlight Garden contracts. It renders a midnight garden in which every paid candle permanently lights its own position. Visitors can browse, search and read candles without a wallet. Holders can light candles with IMD on Ethereum, list their candles, claim rewards and inspect the treasury and the cross-chain burn stages.
 
 This repository contains only a website. It deploys no contract, token or NFT, and it never sends owner transactions.

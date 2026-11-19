@@ -45,7 +45,7 @@ export function CandleDetail({ c, onClose, mine }: { c: Candle; onClose: () => v
       </div>
       {c.wish ? <blockquote className="wish">{c.wish}</blockquote> : <p className="muted">No wish was written for this candle.</p>}
       <div className="detail-body">
-        <img src={`./art/candle-${c.style}.svg`} alt="" width={40} height={80} />
+        <img className="px" src={`./art/px/candle-${c.style}.png`} alt="" width={40} height={64} />
         <dl className="kv">
           <div><dt>Owner</dt><dd>{FIXTURE === null ? addrLink(c.purchaser) : short(c.purchaser)}{mine ? " (you)" : ""}</dd></div>
           <div><dt>Style</dt><dd>{STYLE_NAMES[c.style] ?? `Style ${c.style}`}</dd></div>

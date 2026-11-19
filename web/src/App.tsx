@@ -287,7 +287,7 @@ export default function App() {
         )}
 
         <nav className="side" aria-label="Quick actions">
-          <a className="side-act" href="#/light"><img src="./art/candle-0.svg" alt="" width={20} height={40} /><span>{"Light a candle\u00a0· 1\u00a0IMD"}</span></a>
+          <a className="side-act" href="#/light"><img className="px" src="./art/px/candle-0.png" alt="" width={20} height={32} /><span>{"Light a candle\u00a0· 1\u00a0IMD"}</span></a>
           <a className="side-act" href="#/rewards"><Icon name="layers" /><span>My rewards</span></a>
           <a className="side-act" href="#/how"><Icon name="sprout" /><span>How it works</span></a>
         </nav>

@@ -1,0 +1,72 @@
+/*
+ * 16-bit pixel skin (approved pixel reference, 2026-11-19). Loaded last: it re-points the shared tokens to the
+ * pixel palette (black / deep emerald surfaces, green interface accents, ivory text, warm gold for flames and
+ * totals) and gives every panel, button and field the same square, 2px stepped pixel frame.
+ */
+:root {
+  --px-black: #050a08;
+  --px-emerald-950: #0b1712;
+  --px-emerald-900: #12251b;
+  --px-emerald-800: #1c3a26;
+  --px-green-600: #2a5233;
+  --px-green-500: #3f7a3c;
+  --px-green-400: #6aa84f;
+  --px-green-300: #a7d36a;
+  --px-ivory: #efe6cc;
+  --px-ivory-dim: #cdbf9c;
+  --px-gold: #f5c95a;
+  --px-gold-deep: #d79a32;
+
+  --color-bg: var(--px-black);
+  --color-surface: rgb(11 23 18 / 0.96);
+  --color-surface-raised: var(--px-emerald-900);
+  --color-surface-hover: var(--px-emerald-800);
+  --color-text: var(--px-ivory);
+  --color-text-secondary: var(--px-ivory-dim);
+  --color-accent: var(--px-green-400);
+  --color-accent-strong: var(--px-green-300);
+  --color-on-accent: var(--px-black);
+  --color-border: rgb(106 168 79 / 0.45);
+  --color-border-strong: var(--px-green-400);
+  --color-line: var(--px-green-500);
+  --color-line-soft: rgb(106 168 79 / 0.35);
+  --color-headline: var(--px-ivory);
+  --color-chrome: rgb(5 10 8 / 0.94);
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+  /* stepped pixel frame: dark keyline, green rim, inner shadow, all whole pixels */
+  --px-frame: 0 0 0 2px var(--px-black), 0 0 0 4px var(--px-green-600), inset 0 0 0 2px rgb(167 211 106 / 0.12);
+}
+img.px, .style-opt img, .px { image-rendering: pixelated; image-rendering: crisp-edges; }
+.light-dock, .sheet, .modal, .dialog, .popup, .panel, .page-card, .card, .strip, .minimap, .find, .tools, [role="dialog"] {
+  border-radius: 0 !important;
+  box-shadow: var(--px-frame) !important;
+}
+button, .btn, .cta, input, textarea, select, .style-opt, .nav a, .q-btn, .chip { border-radius: 0 !important; }
+.cta, .btn.primary, button.primary {
+  background: var(--px-green-500) !important;
+  border: 2px solid var(--px-green-300) !important;
+  color: var(--px-ivory) !important;
+  box-shadow: 0 2px 0 var(--px-black), inset 0 -3px 0 var(--px-green-600) !important;
+  text-shadow: 0 2px 0 rgb(5 10 8 / 0.6);
+}
+.cta:hover, .btn.primary:hover, button.primary:hover { background: #4c8f47 !important; }
+.cta:active, .btn.primary:active { transform: translateY(2px); box-shadow: inset 0 -1px 0 var(--px-green-600) !important; }
+.nav a[aria-current="page"], .nav a.on { color: var(--px-green-300); border-color: transparent; box-shadow: inset 0 -3px 0 var(--px-green-400); }
+.style-opt.on, .q-btn.on, [aria-pressed="true"].q-btn { outline: 2px solid var(--px-green-300); outline-offset: 0; background: var(--px-emerald-800); }
+:focus-visible { outline: 3px solid var(--px-gold) !important; outline-offset: 2px; }
+.total, .imd-total { color: var(--px-gold); }
+/* purchase preview, pixel composition at 3x */
+.px-preview { position: relative; height: 200px; background: linear-gradient(var(--px-black), var(--px-emerald-900)); box-shadow: var(--px-frame); overflow: hidden; }
+.px-preview > * { position: absolute; left: 50%; transform: translateX(-50%); }
+.pv-arch { bottom: 8px; width: 108px; height: 132px; }
+.pv-glow { bottom: 50px; width: 144px; height: 144px; opacity: 0.32; }
+.pv-ped { bottom: 8px; width: 90px; height: 72px; }
+.pv-candle { bottom: 68px; width: 30px; height: 48px; }
+.pv-bush { bottom: 2px; width: 54px; height: 33px; }
+.pv-bush.l { left: calc(50% - 78px); } .pv-bush.r { left: calc(50% + 78px); }
+.pv-flame { width: 21px; height: 30px; opacity: 0; animation: pv-flicker 0.56s steps(1) infinite; }
+.pv-flame.f1 { animation-delay: -0.42s; } .pv-flame.f2 { animation-delay: -0.28s; } .pv-flame.f3 { animation-delay: -0.14s; }
+@keyframes pv-flicker { 0% { opacity: 1; } 25% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .pv-flame { animation: none; } .pv-flame.f0 { opacity: 1; } }

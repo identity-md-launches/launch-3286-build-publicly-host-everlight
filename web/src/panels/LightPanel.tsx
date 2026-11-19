@@ -8,7 +8,6 @@ import { ETHERSCAN, GARDEN, IMD, MAX_BATCH, TX_GAS_CAP, config, ethClient } from
 import { checkWish, gasBound } from "../lib/wish";
 import { STYLE_NAMES, eth, imd } from "../lib/format";
 import { explainError } from "../lib/errors";
-import { BowlBack, BowlFront, PreviewBack } from "./PreviewScene";
 import { FIXTURE_MESSAGE, awaitBuy, isRunning, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step } from "../lib/purchase";
 import { readReceipt } from "../lib/receipt";
 import { minedTx, NONCE_UNVERIFIED, sentTx, settleBuyReceipt, submissionMeta } from "../lib/chain";
@@ -48,7 +47,7 @@ export function recoverBuy(tx: PendingTx): Promise<Step> {
   );
 }
 
-const ART = (i: number) => `./art/candle-${i}.svg`;
+const ART = (i: number) => `./art/px/candle-${i}.png`;
 
 export function StylePicker({ value, onChange, name }: { value: number; onChange: (v: number) => void; name: string }) {
   return (
@@ -56,7 +55,7 @@ export function StylePicker({ value, onChange, name }: { value: number; onChange
       {STYLE_NAMES.map((n, i) => (
         <label key={i} className={`style-opt${value === i ? " on" : ""}`}>
           <input type="radio" name={name} value={i} checked={value === i} onChange={() => onChange(i)} />
-          <img src={ART(i)} alt="" width={20} height={40} />
+          <img className="px" src={ART(i)} alt="" width={20} height={32} />
           <span>{n}</span>
         </label>
       ))}
@@ -362,16 +361,21 @@ function stageClass(step: Step | null, stage: "approve" | "buy" | "done", needAp
   return "stage";
 }
 
-/** Wick tops (y in the 40x80 candle art) so the live preview flame sits on the wick of every style. */
-const WICK = [10, 10, 0, 30, 10, 22, 36];
+/** Wick row of each style in its 10x16 pixel sprite, so the preview flame sits on the wick (art pixels from the top). */
+const WICK = [1, 4, 8, 8, 2, 5, 8];
+/** Purchase preview in the garden's pixel art: arch, founding pedestal, the chosen candle sprite and its flame frames, 3x. */
 export function CandlePreview({ style }: { style: number }) {
   return (
-    <div className="preview" aria-hidden="true">
-      <PreviewBack />
-      <BowlBack />
-      <img className="preview-candle" src={ART(style)} alt="" width={80} height={160} />
-      <BowlFront />
-      <span className="preview-flame" style={{ "--wick": WICK[style] ?? 10 } as React.CSSProperties} />
+    <div className="preview px-preview" aria-hidden="true">
+      <img className="px pv-glow" src="./art/px/glow.png" alt="" />
+      <img className="px pv-arch" src="./art/px/arch.png" alt="" />
+      <img className="px pv-bush l" src="./art/px/bush-flower.png" alt="" />
+      <img className="px pv-bush r" src="./art/px/bush-flower.png" alt="" />
+      <img className="px pv-ped" src="./art/px/pedestal-hero.png" alt="" />
+      <img className="px pv-candle" src={ART(style)} alt="" />
+      {[0, 1, 2, 3].map((k) => (
+        <img key={k} className={`px pv-flame f${k}`} src={`./art/px/flame-${k}.png`} alt="" style={{ bottom: `${116 - (WICK[style] ?? 1) * 3 - 3}px` }} />
+      ))}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import type { Candle } from "../lib/candles";
 import { HOLDER_TOP, HORIZON_CUT, SECTOR_H, SECTOR_MARGIN, SECTOR_W, SLOTS_PER_SECTOR, cameraBounds, horizonY, positionOf, sectorAt, sectorCount, sectorOrigin, streamX } from "./layout";
-import { BASE_PAD, drawSectorBase, drawSectorUpright } from "./scenery";
+import { BASE_PAD, PX, drawSectorBase, drawSectorUpright, springY, streamHalf, type Sheet } from "./scenery";
 import { ignition } from "./ignite";
 import { CASTLE_W, VISTA_CASTLE_X, VISTA_FOOT, VISTA_H, VISTA_TOP, VISTA_W, makeVista, type Vista } from "./vista";
 
@@ -8,20 +8,26 @@ export interface Camera { x: number; y: number; z: number }
 
 /** Closest zoom: the near cache tier paints at 1.0, so scenery is never stretched more than 1.8x (CSS pixels). */
 export const MAX_ZOOM = 1.8;
-/** Cache tiers by zoom: scale of the cached cell bitmaps and LRU size. */
-const TIER_SCALE = [0.125, 0.35, 0.7, 1.0];
-const TIER_KEEP = [600, 60, 20, 8];
-const TIER_COST = [1, 2, 4, 6];
-const tierOf = (z: number) => (z < 0.3 ? 0 : z < 0.75 ? 1 : z < 1.15 ? 2 : 3);
+/**
+ * Cache tiers by zoom: cells are always painted at the art resolution (1 art pixel = PX world units), then kept
+ * whole (tier 2) or reduced by 2 or 4 for far views. Scale of the cached bitmaps per world unit, and LRU size.
+ */
+const TIER_SCALE = [0.125, 0.25, 0.5];
+const TIER_KEEP = [400, 60, 26];
+const TIER_COST = [2, 3, 3];
+const tierOf = (z: number) => (z < 0.22 ? 0 : z < 0.45 ? 1 : 2);
 interface CellArt { base: HTMLCanvasElement; up: HTMLCanvasElement }
 
 /** Asset paths are relative to the page so the export works under any gateway subpath. */
 export const ART_BASE = new URLSearchParams(location.search).has("noassets") ? "./missing-art/" : "./art/";
-const CANDLE_ART = Array.from({ length: 7 }, (_, i) => `candle-${i}.svg`);
-const LAYERS = ["pedestal", "tree-0", "tree-1", "tree-2", "bridge", "gazebo", "waterfall", "bush", "bush-plain", "lantern", "ground", "stone", "frog"].map((n) => `${n}.webp`);
+const CANDLE_ART = Array.from({ length: 7 }, (_, i) => `px/candle-${i}.png`);
+const FLAME_ART = Array.from({ length: 4 }, (_, i) => `px/flame-${i}.png`);
+const TILES = ["tile-grass", "tile-grass-dark", "tile-path", "tile-wall", "tile-moss-stone", "tile-water-0"];
+const PROPS = ["holder", "pedestal-hero", "lamp", "arch", "willow", "tree", "cypress", "bush", "bush-flower", "flowers", "lilypad", "lilypad-flower", "vine", "rock", "frog-reader", "frog-wanderer", "frog-gardener", "frog-sitter", "glow"];
+const LAYERS = [...TILES, ...PROPS].map((n) => `px/${n}.png`);
 
-/** Flame tip offsets per style (fraction of 80-unit sprite height) and glow tint. */
-const WICK = [12, 12, 22, 30, 12, 22, 36];
+/** Wick row per style in its 10x16 sprite (art pixels from the top), and glow tint. */
+const WICK = [1, 4, 8, 8, 2, 5, 8];
 const TINT = ["255,214,150", "255,170,80", "255,206,110", "255,226,190", "255,200,90", "220,236,170", "200,255,236"];
 
 type Img = HTMLImageElement | null;
@@ -53,17 +59,16 @@ export class GardenRenderer {
   cam: Camera = { x: SECTOR_W / 2, y: SECTOR_H / 2, z: 1 };
   private ctx: CanvasRenderingContext2D;
   private candleImgs: Img[] = [];
-  private layerImgs: Record<string, Img> = {};
+  private flameImgs: Img[] = [];
+  private sheet: Sheet = { img: {}, tiles: {} };
   /** Cell caches by detail tier (0 overview, 1 mid, 2 near, 3 close), LRU-bounded. */
   private caches: Map<string, CellArt>[] = [new Map(), new Map(), new Map(), new Map()];
-  private flames: HTMLCanvasElement[];
   /** Cells built per frame are limited; when the budget runs out the frame is redrawn next tick. */
   private budget = 6;
   pending = false;
   private vista: Vista;
   private frameNo = 0;
   private openW = 0;
-  private groundPat: CanvasPattern | null = null;
   private litCache = new Map<number, { count: number; canvas: HTMLCanvasElement }>();
   private glow: HTMLCanvasElement;
   missingAssets = 0;
@@ -75,11 +80,17 @@ export class GardenRenderer {
   constructor(private canvas: HTMLCanvasElement, onReady: () => void) {
     this.ctx = canvas.getContext("2d")!;
     this.glow = makeGlow();
-    this.flames = TINT.map(makeFlame);
     this.vista = makeVista();
-    Promise.all([...CANDLE_ART.map(loadImage), ...LAYERS.map(loadImage)]).then((imgs) => {
+    Promise.all([...CANDLE_ART, ...FLAME_ART, ...LAYERS].map(loadImage)).then((imgs) => {
       this.candleImgs = imgs.slice(0, 7);
-      LAYERS.forEach((n, i) => (this.layerImgs[n] = imgs[7 + i]));
+      this.flameImgs = imgs.slice(7, 11);
+      LAYERS.forEach((n, i) => {
+        const key = n.slice(3, -4), im = imgs[11 + i];
+        this.sheet.img[key] = im;
+        if (TILES.includes(key)) this.sheet.tiles[key] = im ? pixels(im) : null;
+      });
+      const g = this.sheet.img["glow"];
+      if (g) this.glow = upscale(g, 4);
       this.missingAssets = imgs.filter((i) => !i).length;
       this.caches.forEach((c) => c.clear());
       onReady();
@@ -146,56 +157,53 @@ export class GardenRenderer {
     if (hit) { cache.delete(key); cache.set(key, hit); return hit; } // LRU order
     if (this.budget <= 0) { this.pending = true; return null; }
     this.budget -= TIER_COST[tier];
-    const scale = TIER_SCALE[tier];
     const P = BASE_PAD, M = SECTOR_MARGIN;
+    // paint at the art resolution: one canvas pixel per art pixel
     const base = document.createElement("canvas");
-    base.width = Math.round((SECTOR_W + 2 * P) * scale);
-    base.height = Math.round((SECTOR_H + 2 * P) * scale);
-    const bg = base.getContext("2d")!;
-    bg.scale(base.width / (SECTOR_W + 2 * P), base.height / (SECTOR_H + 2 * P));
-    drawSectorBase(bg, index, this.layerImgs, wild);
+    base.width = (SECTOR_W + 2 * P) / PX;
+    base.height = (SECTOR_H + 2 * P) / PX;
+    drawSectorBase(base.getContext("2d")!, index, this.sheet, wild);
     const up = document.createElement("canvas");
-    up.width = Math.round((SECTOR_W + 2 * M) * scale);
-    up.height = Math.round((SECTOR_H + 2 * M) * scale);
-    const ug = up.getContext("2d")!;
-    ug.scale(up.width / (SECTOR_W + 2 * M), up.height / (SECTOR_H + 2 * M));
-    drawSectorUpright(ug, index, this.layerImgs, wild);
+    up.width = (SECTOR_W + 2 * M) / PX;
+    up.height = (SECTOR_H + 2 * M) / PX;
+    drawSectorUpright(up.getContext("2d")!, index, this.sheet, wild);
+    const art = tier === 2 ? { base, up } : { base: reduce(base, TIER_SCALE[tier] * PX), up: reduce(up, TIER_SCALE[tier] * PX) };
     if (cache.size >= TIER_KEEP[tier]) cache.delete(cache.keys().next().value!);
-    const art = { base, up };
     cache.set(key, art);
     return art;
   }
 
-  /** Land: one world-aligned ground texture from the skyline down, under every cell, so nothing shows through. */
+  /** Land under every cell from the skyline down, in whole art pixels, so nothing shows through between cells. */
   private drawLand(tl: { x: number; y: number }, br: { x: number; y: number }) {
     const { ctx } = this;
-    const ground = this.layerImgs["ground.webp"];
-    if (ground && !this.groundPat) {
-      const tile = document.createElement("canvas");
-      tile.width = ground.width; tile.height = ground.height;
-      const tg = tile.getContext("2d")!;
-      tg.drawImage(ground, 0, 0);
-      tg.fillStyle = "rgba(2,8,5,0.5)"; // night shade baked into the tile once
-      tg.fillRect(0, 0, tile.width, tile.height);
-      this.groundPat = ctx.createPattern(tile, "repeat");
+    ctx.fillStyle = "#12251b";
+    const step = Math.max(PX * 4, 8 / this.cam.z);
+    const x0 = Math.floor((tl.x - step) / step) * step;
+    for (let x = x0; x <= br.x + step; x += step) {
+      const y = Math.round(horizonY(x + step / 2) / PX) * PX + PX * 2;
+      ctx.fillRect(x, y, step, br.y + 50 - y);
     }
-    ctx.fillStyle = this.groundPat ?? "#0c2016";
-    const step = Math.max(12, 6 / this.cam.z);
-    ctx.beginPath();
-    const x0 = tl.x - step, x1 = br.x + step;
-    ctx.moveTo(x0, br.y + 50);
-    for (let x = x0; x <= x1 + step; x += step) ctx.lineTo(x, horizonY(x));
-    ctx.lineTo(x1 + step, br.y + 50);
-    ctx.closePath();
-    ctx.fill();
-    // moonlit haze over the far edge of the land, laid once in world space: no band, no seam
-    if (tl.y < HORIZON_CUT + 160) {
-      const haze = ctx.createLinearGradient(0, HORIZON_CUT - 140, 0, HORIZON_CUT + 150);
-      haze.addColorStop(0, "rgba(16,36,44,0.5)");
-      haze.addColorStop(0.55, "rgba(10,28,26,0.2)");
-      haze.addColorStop(1, "rgba(10,28,26,0)");
-      ctx.fillStyle = haze;
-      ctx.fill();
+  }
+
+  /** Flowing water: bright pixel ripples drifting downstream on every stream in view (static when motion is reduced). */
+  private drawWater(tl: { x: number; y: number }, br: { x: number; y: number }, time: number, still: boolean) {
+    const { ctx } = this;
+    if (this.cam.z < 0.3) return;
+    const gx0 = Math.floor(tl.x / SECTOR_W) - 1, gx1 = Math.floor(br.x / SECTOR_W) + 1;
+    const flow = still ? 0 : time * 0.02;
+    for (let gx = gx0; gx <= gx1; gx++) {
+      const head = springY(gx);
+      const y0 = Math.max(tl.y, head + 8), y1 = br.y;
+      const start = Math.floor((y0 - flow) / 14) * 14 + flow;
+      for (let y = start; y < y1; y += 14) {
+        if (y < head + 8) continue;
+        const row = Math.round((y - flow) / 14);
+        const hw = streamHalf(y) - 6;
+        const off = (((row * 37) % 23) / 23 - 0.5) * 2 * hw;
+        const x = Math.round((streamX(gx, y) + off) / PX) * PX, yy = Math.round(y / PX) * PX;
+        ctx.fillStyle = row % 3 ? "rgba(159,240,207,0.55)" : "rgba(239,230,204,0.5)";
+        ctx.fillRect(x, yy, PX * (2 + (row % 3)), PX);
+      }
     }
   }
 
@@ -208,6 +216,7 @@ export class GardenRenderer {
     if (hy < -40) return;
     const v = this.vista;
     const cw = CASTLE_W;
+    ctx.imageSmoothingEnabled = false;
     // scale with zoom like a far layer, but never taller than the visible sky band, so moon and castle stay in view
     const vsMax = (Math.min(Math.max(this.h * 0.7, 320), 760) / VISTA_H) * Math.min(1.25, Math.max(0.62, 0.85 + 0.3 * Math.log2(cam.z + 0.35)));
     const vs = Math.min(vsMax, Math.max(0.3, (hy - 30) / (VISTA_H * 0.78))); // 70px of the band sits under the header
@@ -255,9 +264,7 @@ export class GardenRenderer {
     for (let p = first; p < first + count; p++) {
       const pos = positionOf(p);
       g.fillStyle = `rgb(${TINT[candles[p].style] ?? TINT[0]})`;
-      g.beginPath();
-      g.arc(pos.x - ox, pos.y - oy - 44 * pos.scale, 10 * pos.scale, 0, Math.PI * 2);
-      g.fill();
+      g.fillRect(Math.round(pos.x - ox - 8), Math.round(pos.y - oy - 40 * pos.scale), 16, 16);
     }
     this.litCache.set(index, { count, canvas: c });
     return c;
@@ -283,11 +290,12 @@ export class GardenRenderer {
     ctx.translate(this.w / 2, this.h / 2);
     ctx.scale(cam.z, cam.z);
     ctx.translate(-cam.x, -cam.y);
-    ctx.imageSmoothingEnabled = true;
     this.drawLand(tl, br);
     // LOD: 0 = cached light layers per sector, 1 = sprites, 2 = sprites with animated flames
-    const lod = cam.z < 0.3 ? 0 : cam.z < 0.7 ? 1 : 2;
+    const lod = cam.z < 0.3 ? 0 : cam.z < 0.6 ? 1 : 2;
     const tier = tierOf(cam.z);
+    // magnified art stays crisp (nearest neighbour); reduced far tiers were already filtered when cached
+    ctx.imageSmoothingEnabled = false;
     let drawn = 0, cells = 0;
     const P = BASE_PAD;
     const rows: { gx: number; s: number; art: CellArt | null }[][] = [];
@@ -304,6 +312,7 @@ export class GardenRenderer {
       }
       rows.push(row);
     }
+    this.drawWater(tl, br, time, input.reducedMotion);
     rows.forEach((row, i) => {
       const gy = gy0 + i;
       for (const { gx, art } of row) if (art) ctx.drawImage(art.up, gx * SECTOR_W - M, gy * SECTOR_H - M, SECTOR_W + 2 * M, SECTOR_H + 2 * M);
@@ -314,6 +323,14 @@ export class GardenRenderer {
     });
     if (input.highlightMine || input.selected) this.drawRings(input);
     ctx.restore();
+    // progressive illumination: the night lifts a little, warmly, as verified candles accumulate
+    const lit = Math.min(input.candles.length, extent);
+    if (lit > 0) {
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = `rgba(120,80,20,${(0.07 * Math.min(1, Math.log10(1 + lit) / 4)).toFixed(3)})`;
+      ctx.fillRect(0, 0, this.w, this.h);
+      ctx.globalCompositeOperation = "source-over";
+    }
     (window as any).__gardenFrames = ((window as any).__gardenFrames ?? 0) + 1;
     this.stats = { visibleSectors: cells, drawnCandles: drawn, lod, ms: performance.now() - t0 };
     (window as any).__lastFrame = this.stats;
@@ -366,11 +383,12 @@ export class GardenRenderer {
       const g = ign[i];
       const warm = g >= 1 ? 1 : smoothstep(0.2, 1, g);
       const flick = input.reducedMotion ? 1 : 0.88 + 0.12 * Math.sin(time / 260 + c.id * 1.7);
+      // stepped pixel glow: halo around the flame and a warm pool (its reflection) on the ground below
+      ctx.globalAlpha = 0.34 * flick * warm;
+      const r = 48 * Math.max(1, k * 0.8);
+      ctx.drawImage(this.glow, x - r, y - 44 * k - r, r * 2, r * 2);
       ctx.globalAlpha = 0.3 * flick * warm;
-      const r = 80 * k;
-      ctx.drawImage(this.glow, x - r, y - 48 * k - r, r * 2, r * 2);
-      ctx.globalAlpha = 0.28 * flick * warm; // warm pool on the stone at the foot of the holder
-      ctx.drawImage(this.glow, x - 46 * k, y - 18 * k, 92 * k, 34 * k);
+      ctx.drawImage(this.glow, x - 40 * k, y - 10 * k, 80 * k, 24 * k);
       if (g < 1 && g > 0.12) {
         // the catch: a brief bloom that swells as the wick takes and fades into the steady glow
         const b = Math.sin(Math.PI * ((g - 0.12) / 0.88));
@@ -399,47 +417,31 @@ export class GardenRenderer {
     if (input.selected) ring(input.selected, "#fff3c4");
   }
 
-  /** k is the depth scale of the slot: far terraces hold smaller candles than near ones. */
+  /**
+   * One lit candle: its style sprite standing in the holder cup (HOLDER_TOP above the slot point, or on the hero
+   * pedestal) and one of four flame frames, all at the garden's art resolution (1 sprite pixel = PX world units).
+   * time = 0 freezes the flame on frame 0 (reduced motion or far detail level).
+   */
   private drawCandle(x: number, y: number, k: number, c: Candle, time: number, ignite = 1) {
     const { ctx } = this;
-    const im = this.candleImgs[c.style];
-    const f = 0.5 * k; // sprite drawn at 0.5 x depth scale of its 40x80 box, standing in the pedestal cup
-    const w = 40 * f, h = 80 * f;
-    const top = y - HOLDER_TOP * k - h + 2 * k;
-    if (im) ctx.drawImage(im, x - w / 2, top, w, h);
-    else {
-      ctx.fillStyle = "#efe4c4";
-      ctx.fillRect(x - 5 * k, top + 14 * k, 10 * k, h - 18 * k);
-    }
-    const tipY = top + (WICK[c.style] ?? 12) * f;
-    if (ignite < 1) {
-      // unlit wax first; a spark at the wick, then the flame grows from it with a small overshoot
-      if (ignite < 0.12) {
-        const sp = ignite / 0.12;
-        this.ctx.fillStyle = `rgba(255,236,190,${0.4 + 0.6 * sp})`;
-        this.ctx.beginPath();
-        this.ctx.arc(x, tipY - 2 * k, (0.6 + 1.6 * sp) * k, 0, Math.PI * 2);
-        this.ctx.fill();
-        return;
-      }
-      const q = (ignite - 0.12) / 0.88;
-      const grow = 1 + 2.2 * (q - 1) ** 3 + 1.2 * (q - 1) ** 2; // ease-out-back: 0 -> ~1.1 -> 1
-      ctx.save();
-      ctx.translate(x, tipY);
-      ctx.scale(k * 1.5 * Math.max(0.15, grow), k * 1.5 * Math.max(0.05, grow));
-      ctx.drawImage(this.flames[c.style] ?? this.flames[0], -8, -17, 16, 20);
-      ctx.restore();
+    const im = this.candleImgs[c.style] ?? this.candleImgs[0];
+    const cup = k > 1.5 ? 46 : HOLDER_TOP;
+    const left = Math.round((x - 10) / PX) * PX, top = Math.round((y - cup + 2 - 32) / PX) * PX;
+    if (im) ctx.drawImage(im, left, top, 20, 32);
+    else { ctx.fillStyle = "#efe6cc"; ctx.fillRect(left + 8, top + 8, 4, 22); }
+    if (ignite < 0.12) {
+      // the spark at the wick before the flame takes
+      ctx.fillStyle = "#fff2b0";
+      if (ignite > 0.03) ctx.fillRect(left + 8, top + (WICK[c.style] ?? 1) * PX - PX, PX, PX);
       return;
     }
-    const sway = time ? Math.sin(time / 180 + c.id) * 1.6 : 0;
-    const stretch = time ? 1 + 0.12 * Math.sin(time / 120 + c.id * 2.3) : 1;
-    // pre-rendered flame per style (no per-frame gradients); sway is a skew about the wick, stretch a vertical scale
-    ctx.save();
-    ctx.translate(x, tipY);
-    ctx.scale(k * 1.5, k * 1.5 * stretch);
-    if (sway) ctx.transform(1, 0, -sway / 14, 1, 0, 0);
-    ctx.drawImage(this.flames[c.style] ?? this.flames[0], -8, -17, 16, 20);
-    ctx.restore();
+    const frame = time ? Math.floor(time / 140 + c.id * 1.37) & 3 : 0;
+    const fl = this.flameImgs[frame];
+    const grow = ignite >= 1 ? 1 : Math.min(1, (ignite - 0.12) / 0.6);
+    const fh = Math.max(PX, Math.round((20 * grow) / PX) * PX);
+    const wickY = top + (WICK[c.style] ?? 1) * PX;
+    if (fl) ctx.drawImage(fl, 0, 10 - fh / PX, 7, fh / PX, left + 4, wickY - fh + PX, 14, fh);
+    else { ctx.fillStyle = "#f5c95a"; ctx.fillRect(left + 8, wickY - fh, 4, fh); }
   }
 
   /** Minimap of the actual world: skyline, wild woodland, garden cells, streams, lit candles and the camera. */
@@ -493,35 +495,40 @@ function smoothstep(a: number, b: number, v: number) {
   return t * t * (3 - 2 * t);
 }
 
+/** Fallback glow, in stepped pixel rings, used until the glow sprite loads. */
 function makeGlow() {
   const c = document.createElement("canvas");
-  c.width = c.height = 128;
+  c.width = c.height = 96;
   const g = c.getContext("2d")!;
-  const r = g.createRadialGradient(64, 64, 0, 64, 64, 64);
-  r.addColorStop(0, "rgba(255,200,110,0.9)");
-  r.addColorStop(0.25, "rgba(255,170,70,0.35)");
-  r.addColorStop(1, "rgba(255,140,40,0)");
-  g.fillStyle = r;
-  g.fillRect(0, 0, 128, 128);
+  [["#9a5f1c", 48], ["#d79a32", 32], ["#f5c95a", 18]].forEach(([col, r]) => { g.fillStyle = col as string; g.beginPath(); g.arc(48, 48, r as number, 0, Math.PI * 2); g.fill(); });
   return c;
 }
 
-/** One flame sprite per style: local units x -8..8, y -17..3 (wick at 0,0), painted at 4x. */
-function makeFlame(tint: string) {
+/** RGBA pixels of a small tile image. */
+function pixels(im: HTMLImageElement): Uint8ClampedArray {
   const c = document.createElement("canvas");
-  c.width = 64; c.height = 80;
+  c.width = im.width; c.height = im.height;
   const g = c.getContext("2d")!;
-  g.scale(4, 4);
-  g.translate(8, 17);
-  const fg = g.createRadialGradient(0, -3, 0.5, 0, -4, 9);
-  fg.addColorStop(0, "#fffbe8");
-  fg.addColorStop(0.35, `rgb(${tint})`);
-  fg.addColorStop(1, "rgba(255,140,40,0)");
-  g.fillStyle = fg;
-  g.beginPath();
-  g.moveTo(0, 2);
-  g.quadraticCurveTo(6, -2, 0, -14);
-  g.quadraticCurveTo(-6, -2, 0, 2);
-  g.fill();
+  g.drawImage(im, 0, 0);
+  return g.getImageData(0, 0, c.width, c.height).data;
+}
+
+/** Nearest-neighbour enlargement (keeps the pixel steps of the glow when it is drawn large). */
+function upscale(im: HTMLImageElement, k: number) {
+  const c = document.createElement("canvas");
+  c.width = im.width * k; c.height = im.height * k;
+  const g = c.getContext("2d")!;
+  g.imageSmoothingEnabled = false;
+  g.drawImage(im, 0, 0, c.width, c.height);
+  return c;
+}
+
+/** Filtered reduction of a cached cell for far views. */
+function reduce(src: HTMLCanvasElement, k: number) {
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(src.width * k)); c.height = Math.max(1, Math.round(src.height * k));
+  const g = c.getContext("2d")!;
+  g.imageSmoothingQuality = "high";
+  g.drawImage(src, 0, 0, c.width, c.height);
   return c;
 }

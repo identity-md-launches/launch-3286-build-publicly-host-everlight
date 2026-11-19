@@ -1,3 +1,41 @@
+# Validation: 16-bit pixel revision (2026-11-19)
+
+All results are worker-side on this machine. The verifier checks paths and bytes only.
+
+Approved reference: https://the-imd-daily.duckdns.org/files/42ead1afe64349b79c4d154b7a452b5c8ab517de9be40331eb519d232c4ef83a.png
+fetched (HTTP 200, 2,786,851 bytes, sha256 recorded in the job log) and inspected before any artwork was made.
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Typecheck | `cd web && npx tsc --noEmit` | exit 0 |
+| Unit tests | `cd web && npx vitest run` | 8 files, 90/90 passed (receipt, calldata, nonce recovery, tx hash, popup, wish limits, escaping, quantity) |
+| Production build | `cd web && npm run build` | built `dist/` with relative `./` URLs |
+| Pixel assets | `cd web && node art-src/pixel/build.mjs` | 41 PNGs + manifest in `public/art/px`; contact sheet reviewed by the worker |
+| Browser walkthrough | Playwright 1.49 / headless Chromium 131 with Ubuntu noble libraries unpacked in /tmp | **FAILED TO RUN: the garden tab crashed ("Target crashed") within about 1 s at 1440x900 for `?fixture=0`, `?fixture=100` and `?noassets&fixture=0`. Plain pages with canvas drawing rendered fine in the same browser. Chromium logged no reason and the cause was not found in the time available.** |
+| Design probe (taste.mjs) | not run | Needs the same browser. Not performed |
+
+## What is NOT verified in this revision
+- No screenshots: no rendered garden, no before/after images, no 390-wide first-screen check, no measured
+  frame times or contrast. The `artifacts/screens` images are from the previous (painted) revision.
+- Interaction flows (pan, zoom, minimap, Find, selection popup, mobile sheet, RPC retry) were not exercised in
+  a browser this revision. Their code was not changed, apart from rendering.
+- The tab crash is an open defect. Before publishing, it has to be reproduced in a desktop browser and either
+  ruled out or fixed. Possible causes are the per-pixel cell painting in `scenery.ts` and the cache sizes in
+  `renderer.ts` (`TIER_KEEP`).
+- Wallet actions (connect, approve, purchase, replacement/cancel, claim) are untested live, as before. No
+  transactions were sent. Contracts, ABIs, addresses, economics, ID-to-position mapping (`layout.ts`
+  unchanged) and the transaction protections are untouched.
+
+## Better Interface review (static, no browser)
+Coverage: accessibility (focus ring 3px gold on all focusables, `pixel.css`; decorative preview `aria-hidden`),
+layout (unchanged responsive structure), writing (no copy changes), typography (still six sizes), colours
+(ivory #efe6cc on #0b1712 and on the #3f7a3c button are computed contrast pairs from tokens, not measured
+rendered), UI (square pixel frames applied consistently through `--px-frame`). Finding fixed: the vector
+purchase preview mixed smooth art with pixel sprites (`web/src/panels/PreviewScene.tsx`, removed). Rendered
+checks: not performed.
+
+---
+
 # Validation: one-world repair (follow-up to job 463ed97b-9667-4474-8e34-bab88796fae9)
 
 All results below are worker-side, from 2026-11-18 on this machine, against the final production export in `dist/`. The verifier for this job checks paths and bytes only; nothing here is independently certified.

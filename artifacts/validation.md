@@ -1,4 +1,63 @@
-# Validation: review fixes for job 12f1426d (2026-11-19)
+# Validation: revision 8 of job 12f1426d (2026-11-19)
+
+All results are worker-side, on this machine, against the final `dist/` built by `vite build` after the last source change. The verifier checks paths and bytes only. The npm registry was reachable this run, so the real toolchain was used.
+
+## Toolchain
+| Check | Command | Result |
+|---|---|---|
+| Install | `cd web && npm ci` | ok |
+| Typecheck | `cd web && npx tsc --noEmit` | exit 0 |
+| Unit tests | `cd web && npx vitest run` | 12 files, 119/119 passed |
+| Build | `cd web && npm run build` | ok, relative `./` asset URLs |
+| Design probe | `taste.mjs --out test/scratch/taste` | 16/16 passed at 320/390/1440 (`evidence/rev8/rev8-taste-probe.json`) |
+
+Where the evidence lives: `artifacts/` is listed in this checkout's `.git/info/exclude`, so new files written there never reach the commit. That is why revision 7's `rev7-*` evidence was missing. Revision 8's raw results, probe report and screenshots are committed under `evidence/rev8/`, with identical copies in `artifacts/`.
+
+## Browser checks: `evidence/rev8/rev8-browser-checks.json` (26 passed, 0 failed)
+Environment: **mocked**. Local static server, Playwright 1.x with Chromium headless shell (SwiftShader), and every non-local request aborted (`blockedHosts` in each record). Pages used `?fixture=N` with transactions disabled, or the live build with all RPCs blocked. No fork, no live RPC read, no transaction. "Before" is the export committed at the start of this job (`git archive HEAD dist`); "after" is this build.
+
+| Check | 1600×1000 | 390×844 (touch, DPR 2) |
+|---|---|---|
+| 6 routes at `?fixture=100` (garden, mine, rewards, treasury, light, how): fixture label, no horizontal overflow, no page errors, no local 404s, no "Ecosystem (30%)" | 6/6 pass | 6/6 pass |
+| Fixtures 0 / 3000 / 10000: render, no overflow, no errors | pass | pass |
+| Water at 0 candles, pixels changed in 700 ms, after | 1484 | 1754 |
+| Same, before (the previous export already animated water) | 1487 | 1745 |
+| Reduced motion, 0 candles | 0 (still) | 0 (still) |
+| Find 37 opens Candle #37 with its owner address | pass | pass |
+| 50 candles × 280 "a": split plan | 1–30 (≤16,320,000 gas), 31–50 (≤10,980,000 gas) | same |
+| The same draft after a reload | qty 50, wish 280 characters | same |
+| Live build, RPCs blocked, `#/how` register | "Unavailable … does not mean the garden is empty. Try again"; canvas name "number of lit candles could not be confirmed yet" | same |
+
+Screenshots (`evidence/rev8/screens/`, JPEG; desktop downscaled to 1200 wide, mobile to 390 wide):
+- After: `rev8-after-{d1600,m390}-{garden,mine,rewards,treasury,light,how}.jpg`, `-fixture{0,3000,10000}.jpg`, `-find37.jpg`, `-split-plan.jpg`, `-register-rpc-blocked.jpg`
+- Before: `rev8-before-{d1600,m390}-{garden,light,how,fixture0}.jpg`
+
+## Findings of this round
+| Finding | Verdict | Fix | Evidence |
+|---|---|---|---|
+| 3d9a6e47 evidence missing | fixed | raw results, probe report and before/after screenshots committed; revision 7's dangling references corrected below | this file, `evidence/rev8/*` |
+| 7b461b68 raised terraces without a route | fixed | `stairsOf` (`web/src/garden/scenery.ts`): terraces with no connected flight are drawn as ground-level beds; unreachable flights dropped | reproduced 1,665 / 1,410 / 1,275 (sector 0: 18 / 16 / 13). Now 1,275 raised terraces, all with a connected flight, plus 390 beds (sector 0: 13 raised, all connected, plus 5 beds). `tests/revision8.test.ts` |
+| 2fe5f5a4 pending lock lost on reload under quota | fixed | recovery intent saved before signing (`purchase.ts` `persist`/`replace`, `INTENT_HASH`), resolved by nonce on reload (`chain.ts` `settleReceipt`) | unit tests: a 64-char quota means 0 sends. Intent kept: after a module re-import, the guard is locked and 1 send total |
+| 6fcf22b8 known count hidden without first page | fixed | `Register` and `Garden` aria-label (`verified` prop) | `tests/revision8.test.ts` (rendered markup); the browser check covers the RPC-blocked state only |
+| 21e2a39d claim resendable during pending | fixed | `RewardsPanel` subscribes to saved claims; `checkClaim` shared with reload recovery | code path and typecheck. **No browser wallet mock was run for this** |
+| 39004380 over-cap estimate blocks the batch | fixed | `fittingPrefix` + `refit` re-plan; `isGasCapError`; approval regex narrowed | unit tests: prefix search gives 20 of 30, the plan becomes 20/30, and the RPC message is not shown as an approval error. **No browser wallet mock was run** |
+
+## Better Interface review (changed surfaces)
+- **Accessibility**: new states use `role="status"` (loading, pending claim) and `role="alert"` (failed first page). Check again and Forget are real buttons. The canvas accessible name no longer says 0 for an unknown count (`web/src/garden/Garden.tsx:271`).
+- **Writing**: plain sentences that say what happened, that nothing was sent and what to do next (`web/src/lib/errors.ts`, `RESPLIT`, gas cap).
+- **Layout, typography, colours, UI**: existing components only (`.pending-box`, `.split-plan`, `.fine`, `.bad`). There are no new tokens. The taste probe found no overflow, overlap or contrast failures at 320/390/1440.
+- Rendered contrast beyond the taste probe was not measured.
+
+## Not done / limitations
+- No browser check with an injected wallet or a mocked RPC was run for the claim lock, the gas re-plan or the register's "0 of 100" state. viem's multicall batching made an RPC mock too costly for this run. Those three are covered by unit tests and rendered markup only.
+- A recovery intent whose nonce is still unused after a reload stays locked with Check again and "Forget it". The site cannot tell a signature request still open in the wallet from one that was never signed.
+- If the wallet sends with a different nonce than the preflight pending nonce, an intent cannot find that transaction. The form stays locked until the visitor releases it.
+- Hosting: HTTPS and a fresh load of https://everlight.imd.site/ were not checked from here. The plane publishes the committed `dist/`.
+- No live purchase, claim, approval or fork test ran.
+
+---
+
+# Revision 7: review fixes for job 12f1426d (2026-11-19)
 
 All results are worker-side, on this machine, against the final `dist/` built by `vite build` after the last source change. The verifier checks paths and bytes only.
 
@@ -6,7 +65,7 @@ All results are worker-side, on this machine, against the final `dist/` built by
 `npm ci` and `tsc --noEmit` exit 0, `npx vitest run` 11 files 112/112 passed, `npm run build` ok. The npm registry, GitHub raw files and the task RPC were all reachable this time.
 
 ## Browser checks (Playwright 1.64 alpha, Chromium headless shell r1248, SwiftShader, local static server)
-Raw: `artifacts/rev7-browser-checks.json`. "Before" is the export committed at the start of this job (`git archive HEAD dist`); "after" is this build. Every page used `?fixture=N` with transactions disabled, or the live build with **every non-local request blocked**. Everything here is **mocked**: no fork, no live RPC read, no transaction.
+Raw: revision 7's `rev7-browser-checks.json` was never committed. Revision 8 above replaces it with `evidence/rev8/rev8-browser-checks.json`. "Before" is the export committed at the start of this job (`git archive HEAD dist`); "after" is this build. Every page used `?fixture=N` with transactions disabled, or the live build with **every non-local request blocked**. Everything here is **mocked**: no fork, no live RPC read, no transaction.
 
 | Check | 1600×1000 | 390×844 (touch) |
 |---|---|---|
@@ -24,12 +83,12 @@ Raw: `artifacts/rev7-browser-checks.json`. "Before" is the export committed at t
 
 Console errors on these pages are all `net::ERR_FAILED`. They come from the harness deliberately blocking the public RPCs.
 
-Screenshots (`artifacts/screens/`), at both `d1600` and `m390`:
+Screenshots: revision 7's `rev7-*` files were never committed. Revision 8's `evidence/rev8/screens/rev8-*.jpg` replace them. Originally listed:
 - After: `rev7-after-<vp>-<route>.jpg` for garden, mine, rewards, treasury, light and how; `rev7-after-<vp>-fixture{0,3000,10000}.jpg`; `rev7-after-<vp>-find37.jpg`; `rev7-after-<vp>-split-plan.jpg`; `rev7-after-<vp>-register-rpc-blocked.jpg`.
 - Before: `rev7-before-<vp>-{garden,light,how,fixture0}.jpg`.
 
 ## Design probe and Better Interface review
-`taste.mjs` passed 16/16 at 320/390/1440 (`artifacts/rev7-taste-probe.json`). The 390 view shows the headline, the garden and "Light a candle · 1 IMD" on the first screen.
+`taste.mjs` passed 16/16 at 320/390/1440. The report `rev7-taste-probe.json` was not committed; see `evidence/rev8/rev8-taste-probe.json`. The 390 view shows the headline, the garden and "Light a candle · 1 IMD" on the first screen.
 
 Better Interface pass over what changed:
 - **Accessibility**: the split plan is `role="status"` with an ordered list. Register states use `role="status"`/`role="alert"`, and Try again is a real button. CTA contrast was fixed (`web/src/pixel.css:47-54`).
@@ -398,10 +457,10 @@ Reproduction on the previous `dist/` (before any change):
 - f7808a72 (Treasury Retry): reproduced. `Panels.tsx:306` rendered only the `.bad` sentence; no button.
 - 26e97d45 (dock collapse): reproduced at 1440×900. `#/garden` had no control that hides the dock (`getByRole("button", { name: "Hide the candle panel" })` count 0).
 - 42f8395f (partial scan "none yet"): reproduced by reading `hooks.ts:152-163` (`complete: ... || out.length === 0`, and the panel never read `complete`). After the fix it was checked with mocked RPC (head = deploy + 100,000, empty logs).
-- 2126b59e (moon under header): reproduced. (The rev7 captures cited here were never committed; revision 8 replaces them with `artifacts/screens/rev8-before-garden-*.jpg` and `rev8-after-garden-*.jpg`, see below.)
+- 2126b59e (moon under header): reproduced. (The rev7 captures cited here were never committed; revision 8 replaces them with `evidence/rev8/screens/rev8-before-garden-*.jpg` and `rev8-after-garden-*.jpg`, see below.)
 - a08a9397 (headline) and 108a48ec (brand dot): reproduced. h1 "A wish, a flame, a place forever"; brand text "EVERLIGHT GARDEN\n · on IMD".
 
-Checks after the last source change of revision 7 (the raw log was not committed; current raw results are in `artifacts/rev8-browser-checks.json`):
+Checks after the last source change of revision 7 (the raw log was not committed; current raw results are in `evidence/rev8/rev8-browser-checks.json`):
 
 | Check | Result |
 |---|---|
@@ -417,7 +476,7 @@ Checks after the last source change of revision 7 (the raw log was not committed
 | head = deploy + 1,000 (mock), empty logs | "No purchases, claims or burn jobs yet." |
 | page errors / crashes | none |
 
-Opening-view screenshots now delivered: `artifacts/screens/rev8-before-garden-1440.jpg`, `rev8-after-garden-1440.jpg`, `rev8-before-garden-390.jpg`, `rev8-after-garden-390.jpg` (revision 8, see below). The rev7 files named here before were never committed.
+Opening-view screenshots now delivered: `evidence/rev8/screens/rev8-before-garden-1440.jpg`, `rev8-after-garden-1440.jpg`, `rev8-before-garden-390.jpg`, `rev8-after-garden-390.jpg` (revision 8, see below). The rev7 files named here before were never committed.
 
 Commands: `npm run build` (tsc --noEmit + vite build) exit 0; `npx vitest run` 90/90; `node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste` 16/16 (`artifacts/taste-probe.json`).
 
@@ -432,7 +491,7 @@ Commands: `npm run build` (tsc --noEmit + vite build) exit 0; `npx vitest run` 9
 
 ## Revision 8: reviewer findings
 
-Environment: Ubuntu 24.04 worker, Node 24.21, Playwright 1 with Chromium headless shell 159 (software rendering). Missing system libraries and DejaVu fonts were unpacked from Ubuntu noble packages into /tmp (nothing installed system-wide, nothing in the repository). The export in `dist/` was served by `python3 -m http.server`. Everything below is **local**: fixture runs (`?fixture=…`) and **mocked** RPC answers by request interception. No live RPC failure was reproduced against the real providers this round, and no wallet transaction ran. Raw results: `artifacts/rev8-browser-checks.json`.
+Environment: Ubuntu 24.04 worker, Node 24.21, Playwright 1 with Chromium headless shell 159 (software rendering). Missing system libraries and DejaVu fonts were unpacked from Ubuntu noble packages into /tmp (nothing installed system-wide, nothing in the repository). The export in `dist/` was served by `python3 -m http.server`. Everything below is **local**: fixture runs (`?fixture=…`) and **mocked** RPC answers by request interception. No live RPC failure was reproduced against the real providers this round, and no wallet transaction ran. Raw results: `evidence/rev8/rev8-browser-checks.json`.
 
 | Check | Kind | Result |
 |---|---|---|

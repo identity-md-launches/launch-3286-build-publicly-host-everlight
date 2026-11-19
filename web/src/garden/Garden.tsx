@@ -16,6 +16,8 @@ export interface GardenHandle {
 
 interface Props {
   total: number;
+  /** The onchain total as last read (null while it is unknown): the accessible name never reports unknown as zero. */
+  verified: number | null;
   /** Onchain total (≥ total loaded): positions up to it are lit even before their page streams in. */
   known: number;
   extra?: Candle | null;
@@ -266,7 +268,7 @@ export function Garden(p: Props) {
         className="garden-canvas"
         tabIndex={0}
         role="img"
-        aria-label={`Garden map with ${p.total} lit candles. Arrow keys pan, plus and minus zoom, 0 resets the view. Use Find candle or the candle register to open a candle.`}
+        aria-label={`${p.verified === null ? "Garden map. The number of lit candles could not be confirmed yet." : `Garden map with ${p.verified} lit candle${p.verified === 1 ? "" : "s"}.`} Arrow keys pan, plus and minus zoom, 0 resets the view. Use Find candle or the candle register to open a candle.`}
         onPointerDown={onDown}
         onPointerMove={onMove}
         onPointerUp={onUp}

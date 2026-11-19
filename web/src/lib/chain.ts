@@ -1,6 +1,6 @@
 import type { Hash, TransactionReceipt } from "viem";
 import { ethClient } from "../config";
-import { pendingStore, type PendingTx, type Receipt } from "./purchase";
+import { INTENT_PENDING_MESSAGE, pendingStore, type PendingTx, type Receipt } from "./purchase";
 import { readReceipt, type MinedTx } from "./receipt";
 import { locateMined, type RecoveryClient } from "./recovery";
 
@@ -35,6 +35,15 @@ export async function minedTx(hash: Hash): Promise<MinedTx | null> {
  */
 export async function settleReceipt(hash: Hash, tx?: PendingTx, timeout = 10 * 60_000): Promise<{ receipt: TransactionReceipt; mined: MinedTx | null }> {
   let target = hash;
+  if (tx?.intent) {
+    // a recovery intent saved before signing: no hash is known, so the purchase is found from the sender's nonce
+    // (its calldata and events are then checked against the saved draft before anything counts as lit)
+    const at = await locateMined(recoveryClient, tx);
+    if (at.kind === "pending") throw new Error(INTENT_PENDING_MESSAGE);
+    if (at.kind === "unknown") throw new Error(at.reason);
+    const receipt = await ethClient.getTransactionReceipt({ hash: at.hash });
+    return { receipt, mined: await minedTx(receipt.transactionHash) };
+  }
   if (tx) tx = await completeMeta(tx);
   if (tx && verifiedMeta(tx)) {
     const at = await locateMined(recoveryClient, tx);

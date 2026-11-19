@@ -1,0 +1,464 @@
+{
+ "generated": "2026-11-19T14:02:12.709Z",
+ "environment": "MOCKED: local static server, Playwright Chromium headless shell (SwiftShader), every non-local request aborted, ?fixture=N pages with transactions disabled. No fork, no live RPC, no transaction.",
+ "results": [
+  {
+   "check": "route",
+   "vp": "d1600",
+   "route": "garden",
+   "fixture": 100,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 100 lit candles. Arrow keys pan, plus and mi",
+   "pageErrors": [],
+   "local404": [],
+   "blockedHosts": [
+    "ethereum-rpc.publicnode.com",
+    "eth.drpc.org",
+    "1rpc.io",
+    "eth.merkle.io"
+   ],
+   "pass": true
+  },
+  {
+   "check": "route",
+   "vp": "d1600",
+   "route": "mine",
+   "fixture": 100,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 100 lit candles. Arrow keys pan, plus and mi",
+   "pageErrors": [],
+   "local404": [],
+   "blockedHosts": [
+    "ethereum-rpc.publicnode.com",
+    "eth.drpc.org",
+    "1rpc.io",
+    "eth.merkle.io"
+   ],
+   "pass": true
+  },
+  {
+   "check": "route",
+   "vp": "d1600",
+   "route": "rewards",
+   "fixture": 100,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 100 lit candles. Arrow keys pan, plus and mi",
+   "pageErrors": [],
+   "local404": [],
+   "blockedHosts": [
+    "ethereum-rpc.publicnode.com",
+    "eth.drpc.org",
+    "1rpc.io",
+    "eth.merkle.io"
+   ],
+   "pass": true
+  },
+  {
+   "check": "route",
+   "vp": "d1600",
+   "route": "treasury",
+   "fixture": 100,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 100 lit candles. Arrow keys pan, plus and mi",
+   "pageErrors": [],
+   "local404": [],
+   "blockedHosts": [
+    "ethereum-rpc.publicnode.com",
+    "eth.drpc.org",
+    "1rpc.io",
+    "eth.merkle.io"
+   ],
+   "pass": true
+  },
+  {
+   "check": "route",
+   "vp": "d1600",
+   "route": "light",
+   "fixture": 100,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 100 lit candles. Arrow keys pan, plus and mi",
+   "pageErrors": [],
+   "local404": [],
+   "blockedHosts": [
+    "ethereum-rpc.publicnode.com",
+    "eth.drpc.org",
+    "1rpc.io",
+    "eth.merkle.io"
+   ],
+   "pass": true
+  },
+  {
+   "check": "route",
+   "vp": "d1600",
+   "route": "how",
+   "fixture": 100,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 100 lit candles. Arrow keys pan, plus and mi",
+   "pageErrors": [],
+   "local404": [],
+   "blockedHosts": [
+    "ethereum-rpc.publicnode.com",
+    "eth.drpc.org",
+    "1rpc.io",
+    "eth.merkle.io"
+   ],
+   "pass": true
+  },
+  {
+   "check": "fixture",
+   "vp": "d1600",
+   "fixture": 0,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 0 lit candles. Arrow keys pan, plus and minu",
+   "changedPixels700ms": 1484,
+   "pageErrors": [],
+   "pass": true
+  },
+  {
+   "check": "fixture",
+   "vp": "d1600",
+   "fixture": 3000,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 3000 lit candles. Arrow keys pan, plus and m",
+   "pageErrors": [],
+   "pass": true
+  },
+  {
+   "check": "fixture",
+   "vp": "d1600",
+   "fixture": 10000,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 10000 lit candles. Arrow keys pan, plus and ",
+   "pageErrors": [],
+   "pass": true
+  },
+  {
+   "check": "reduced-motion",
+   "vp": "d1600",
+   "fixture": 0,
+   "build": "after",
+   "changedPixels700ms": 0,
+   "pass": true
+  },
+  {
+   "check": "water-before",
+   "vp": "d1600",
+   "fixture": 0,
+   "build": "before",
+   "changedPixels700ms": 1487
+  },
+  {
+   "check": "before-screenshot",
+   "vp": "d1600",
+   "route": "garden",
+   "fixture": 100,
+   "build": "before",
+   "pageErrors": []
+  },
+  {
+   "check": "before-screenshot",
+   "vp": "d1600",
+   "route": "light",
+   "fixture": 100,
+   "build": "before",
+   "pageErrors": []
+  },
+  {
+   "check": "before-screenshot",
+   "vp": "d1600",
+   "route": "how",
+   "fixture": 100,
+   "build": "before",
+   "pageErrors": []
+  },
+  {
+   "check": "find",
+   "vp": "d1600",
+   "fixture": 100,
+   "build": "after",
+   "id": 37,
+   "opened": true,
+   "ownerShown": true,
+   "pass": true
+  },
+  {
+   "check": "split-plan",
+   "vp": "d1600",
+   "fixture": 100,
+   "build": "after",
+   "plan": [
+    "Purchase 1: candles 1–3030 IMD · ≤ 16,320,000 gas",
+    "Purchase 2: candles 31–5020 IMD · ≤ 10,980,000 gas"
+   ],
+   "afterReload": {
+    "qty": "50",
+    "wish": 280
+   },
+   "pass": true
+  },
+  {
+   "check": "register-rpc-blocked",
+   "vp": "d1600",
+   "build": "after-live-build",
+   "register": "Candle register\n\nUnavailable: the candle count could not be read from Ethereum. This does not mean the garden is empty. Try again",
+   "canvasLabel": "Garden map. The number of lit candles could not be confirmed yet. Arrow keys pan",
+   "pass": true
+  },
+  {
+   "check": "route",
+   "vp": "m390",
+   "route": "garden",
+   "fixture": 100,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 100 lit candles. Arrow keys pan, plus and mi",
+   "pageErrors": [],
+   "local404": [],
+   "blockedHosts": [
+    "ethereum-rpc.publicnode.com",
+    "eth.drpc.org",
+    "1rpc.io",
+    "eth.merkle.io"
+   ],
+   "pass": true
+  },
+  {
+   "check": "route",
+   "vp": "m390",
+   "route": "mine",
+   "fixture": 100,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 100 lit candles. Arrow keys pan, plus and mi",
+   "pageErrors": [],
+   "local404": [],
+   "blockedHosts": [
+    "ethereum-rpc.publicnode.com",
+    "eth.drpc.org",
+    "1rpc.io",
+    "eth.merkle.io"
+   ],
+   "pass": true
+  },
+  {
+   "check": "route",
+   "vp": "m390",
+   "route": "rewards",
+   "fixture": 100,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 100 lit candles. Arrow keys pan, plus and mi",
+   "pageErrors": [],
+   "local404": [],
+   "blockedHosts": [
+    "ethereum-rpc.publicnode.com",
+    "eth.drpc.org",
+    "1rpc.io",
+    "eth.merkle.io"
+   ],
+   "pass": true
+  },
+  {
+   "check": "route",
+   "vp": "m390",
+   "route": "treasury",
+   "fixture": 100,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 100 lit candles. Arrow keys pan, plus and mi",
+   "pageErrors": [],
+   "local404": [],
+   "blockedHosts": [
+    "ethereum-rpc.publicnode.com",
+    "eth.drpc.org",
+    "1rpc.io",
+    "eth.merkle.io"
+   ],
+   "pass": true
+  },
+  {
+   "check": "route",
+   "vp": "m390",
+   "route": "light",
+   "fixture": 100,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 100 lit candles. Arrow keys pan, plus and mi",
+   "pageErrors": [],
+   "local404": [],
+   "blockedHosts": [
+    "ethereum-rpc.publicnode.com",
+    "eth.drpc.org",
+    "1rpc.io",
+    "eth.merkle.io"
+   ],
+   "pass": true
+  },
+  {
+   "check": "route",
+   "vp": "m390",
+   "route": "how",
+   "fixture": 100,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 100 lit candles. Arrow keys pan, plus and mi",
+   "pageErrors": [],
+   "local404": [],
+   "blockedHosts": [
+    "ethereum-rpc.publicnode.com",
+    "eth.drpc.org",
+    "1rpc.io",
+    "eth.merkle.io"
+   ],
+   "pass": true
+  },
+  {
+   "check": "fixture",
+   "vp": "m390",
+   "fixture": 0,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 0 lit candles. Arrow keys pan, plus and minu",
+   "changedPixels700ms": 1754,
+   "pageErrors": [],
+   "pass": true
+  },
+  {
+   "check": "fixture",
+   "vp": "m390",
+   "fixture": 3000,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 3000 lit candles. Arrow keys pan, plus and m",
+   "pageErrors": [],
+   "pass": true
+  },
+  {
+   "check": "fixture",
+   "vp": "m390",
+   "fixture": 10000,
+   "build": "after",
+   "overflowX": false,
+   "fixtureLabel": true,
+   "ecosystem30": false,
+   "canvasLabel": "Garden map with 10000 lit candles. Arrow keys pan, plus and ",
+   "pageErrors": [],
+   "pass": true
+  },
+  {
+   "check": "reduced-motion",
+   "vp": "m390",
+   "fixture": 0,
+   "build": "after",
+   "changedPixels700ms": 0,
+   "pass": true
+  },
+  {
+   "check": "water-before",
+   "vp": "m390",
+   "fixture": 0,
+   "build": "before",
+   "changedPixels700ms": 1745
+  },
+  {
+   "check": "before-screenshot",
+   "vp": "m390",
+   "route": "garden",
+   "fixture": 100,
+   "build": "before",
+   "pageErrors": []
+  },
+  {
+   "check": "before-screenshot",
+   "vp": "m390",
+   "route": "light",
+   "fixture": 100,
+   "build": "before",
+   "pageErrors": []
+  },
+  {
+   "check": "before-screenshot",
+   "vp": "m390",
+   "route": "how",
+   "fixture": 100,
+   "build": "before",
+   "pageErrors": []
+  },
+  {
+   "check": "find",
+   "vp": "m390",
+   "fixture": 100,
+   "build": "after",
+   "id": 37,
+   "opened": true,
+   "ownerShown": true,
+   "pass": true
+  },
+  {
+   "check": "split-plan",
+   "vp": "m390",
+   "fixture": 100,
+   "build": "after",
+   "plan": [
+    "Purchase 1: candles 1–3030 IMD · ≤ 16,320,000 gas",
+    "Purchase 2: candles 31–5020 IMD · ≤ 10,980,000 gas"
+   ],
+   "afterReload": {
+    "qty": "50",
+    "wish": 280
+   },
+   "pass": true
+  },
+  {
+   "check": "register-rpc-blocked",
+   "vp": "m390",
+   "build": "after-live-build",
+   "register": "Candle register\n\nUnavailable: the candle count could not be read from Ethereum. This does not mean the garden is empty. Try again",
+   "canvasLabel": "Garden map. The number of lit candles could not be confirmed yet. Arrow keys pan",
+   "pass": true
+  }
+ ]
+}

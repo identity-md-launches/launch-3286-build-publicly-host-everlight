@@ -1,7 +1,7 @@
-import { minedTx, sentTx, submissionMeta } from "../lib/chain";
+import { minedTx, sentTx, settleReceipt, submissionMeta } from "../lib/chain";
 import { settleClaim } from "../lib/receipt";
 import { WrongNetwork } from "../components/WrongNetwork";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useAccount } from "wagmi";
 import { simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
 import { useQueryClient } from "@tanstack/react-query";
@@ -9,7 +9,7 @@ import { wishGardenAbi } from "../abi/WishGarden";
 import { BASESCAN, BASE_IMD, BASE_RECEIVER, ETHERSCAN, GARDEN, GARDEN_DEPLOY_BLOCK, IMD, LEGACY_GARDEN, OWNER, SOURCE_REPO, config } from "../config";
 import { STYLE_NAMES, date, imd, short, safeChecksum } from "../lib/format";
 import { explainError } from "../lib/errors";
-import { FIXTURE_MESSAGE, pendingStore, reconcileSent } from "../lib/purchase";
+import { FIXTURE_MESSAGE, pendingStore, reconcileSent, type PendingTx } from "../lib/purchase";
 import type { Candle } from "../lib/candles";
 import { ConnectButton } from "../components/ConnectSheet";
 import { FIXTURE, useActivity, useCandleTx, useMyIds, useRewards, useTreasury } from "../hooks";
@@ -149,16 +149,19 @@ export function Register({ candles, info, onRetry, onJump }: { candles: Candle[]
       {error && (
         <p className="bad" role="alert">
           {candles.length > 0
-            ? `The latest candles could not be read (${when ? `last updated ${when}` : "showing cached records"}). The list may be incomplete. `
-            : "Unavailable: the candle count could not be read from Ethereum. This does not mean the garden is empty. "}
+            ? `The latest candles could not be read (${when ? `last updated ${when}` : "showing cached records"}). ${total !== null ? `Showing ${candles.length} of ${total} candles. ` : ""}The list may be incomplete. `
+            : total !== null && total > 0
+              ? `Showing 0 of ${total} candles. The first page could not be loaded. `
+              : "Unavailable: the candle count could not be read from Ethereum. This does not mean the garden is empty. "}
           <button type="button" className="link" onClick={onRetry} disabled={loading}>{loading ? "Trying…" : "Try again"}</button>
         </p>
       )}
       {!error && total === null && candles.length === 0 && <p role="status">Reading the candle register from Ethereum…</p>}
+      {!error && total !== null && total > 0 && candles.length === 0 && <p className="fine" role="status">Showing 0 of {total} candles, loading the first page…</p>}
       {total === 0 && candles.length === 0 && !error && <p>No candle has been lit yet. Every holder in the garden is empty and waiting.</p>}
       {candles.length > 0 && (
         <>
-          {(partial || total === null) && (
+          {!error && (partial || total === null) && (
             <p className="fine" role="status">
               {total === null ? `Showing ${candles.length} saved candles; the current total is not confirmed yet.` : `Showing ${candles.length} of ${total} candles${loading ? ", loading the rest…" : "."}`}
             </p>
@@ -180,6 +183,23 @@ export function Register({ candles, info, onRetry, onJump }: { candles: Candle[]
   );
 }
 
+/**
+ * Settle a claim sent earlier (after a reload, or from Check again): follows a replacement from the saved sender and
+ * nonce, and counts it only with the garden's RewardsClaimed event for this account. The saved hash is removed only
+ * once the outcome is known; an unverified or missing receipt keeps it, so Claim stays locked on it.
+ */
+export async function checkClaim(tx: PendingTx): Promise<{ ok: boolean; text: string; href: string; settled: boolean }> {
+  try {
+    const { receipt: r, mined } = await settleReceipt(tx.hash, tx);
+    const v = settleClaim(r, mined, tx.account);
+    const unverified = "unverified" in v && !!v.unverified;
+    if (!unverified) pendingStore.remove(tx.hash);
+    return { ok: v.ok, settled: !unverified, href: `${ETHERSCAN}/tx/${r.transactionHash}`, text: v.ok ? `Your earlier claim confirmed: ${imd(v.amount)} IMD claimed.` : v.message };
+  } catch {
+    return { ok: false, settled: false, href: `${ETHERSCAN}/tx/${tx.hash}`, text: "The claim sent earlier has no receipt yet. It is still saved and Claim stays off until it settles." };
+  }
+}
+
 type ClaimState = { s: "idle" } | { s: "wallet" } | { s: "pending"; hash: string } | { s: "done"; hash: string; amount: bigint } | { s: "error"; msg: string };
 
 export function RewardsPanel() {
@@ -188,8 +208,25 @@ export function RewardsPanel() {
   const qc = useQueryClient();
   const [st, setSt] = useState<ClaimState>({ s: "idle" });
   const busy = useRef(false);
+  // a claim sent earlier by this wallet to this garden (this page or before a reload) that has not settled yet:
+  // Claim stays off until it does, so the same rewards are never requested twice
+  const pendingVersion = useSyncExternalStore(pendingStore.subscribe, pendingStore.version);
+  const pendingClaim = useMemo(
+    () => (address ? pendingStore.list().filter((t) => t.kind === "claim" && t.account.toLowerCase() === address.toLowerCase()).at(-1) ?? null : null),
+    [pendingVersion, address],
+  );
+  const [checking, setChecking] = useState(false);
+  async function recheck() {
+    if (!pendingClaim || checking) return;
+    setChecking(true);
+    const v = await checkClaim(pendingClaim);
+    setChecking(false);
+    if (v.settled) setSt(v.ok ? { s: "idle" } : { s: "error", msg: v.text });
+    qc.invalidateQueries();
+  }
   async function claim() {
     if (busy.current || !address) return;
+    if (pendingStore.list().some((t) => t.kind === "claim" && t.account.toLowerCase() === address.toLowerCase())) return; // duplicate-claim guard
     if (FIXTURE !== null) return setSt({ s: "error", msg: FIXTURE_MESSAGE }); // fixture pages never reach the wallet
     busy.current = true;
     try {
@@ -233,8 +270,8 @@ export function RewardsPanel() {
         </dl>
       )}
       {d && (
-        <button className="cta wide" onClick={claim} disabled={FIXTURE !== null || d.claimable === 0n || chainId !== 1 || st.s === "wallet" || st.s === "pending"}>
-          {st.s === "wallet" ? "Confirm in your wallet…" : st.s === "pending" ? "Claiming…" : d.claimable === 0n ? "Nothing to claim yet" : `Claim ${imd(d.claimable)} IMD`}
+        <button className="cta wide" onClick={claim} disabled={FIXTURE !== null || d.claimable === 0n || chainId !== 1 || st.s === "wallet" || st.s === "pending" || pendingClaim !== null}>
+          {st.s === "wallet" ? "Confirm in your wallet…" : st.s === "pending" ? "Claiming…" : pendingClaim ? "Waiting for the earlier claim" : d.claimable === 0n ? "Nothing to claim yet" : `Claim ${imd(d.claimable)} IMD`}
         </button>
       )}
       {address && chainId !== 1 && <WrongNetwork action="claim" />}
@@ -242,6 +279,20 @@ export function RewardsPanel() {
         {st.s === "pending" && <p>Claim sent. Waiting for its receipt… <a href={`${ETHERSCAN}/tx/${st.hash}`} target="_blank" rel="noreferrer">View transaction</a></p>}
         {st.s === "done" && <p>Claimed {imd(st.amount)} IMD. <a href={`${ETHERSCAN}/tx/${st.hash}`} target="_blank" rel="noreferrer">View transaction</a></p>}
         {st.s === "error" && <p className="bad" role="alert">{st.msg}</p>}
+        {pendingClaim && st.s !== "pending" && st.s !== "wallet" && (
+          <div className="pending-box" role="status">
+            <p>
+              A claim sent earlier has no settled receipt yet. Claim stays off until it settles, so the same rewards are not requested twice.{" "}
+              <a href={`${ETHERSCAN}/tx/${pendingClaim.hash}`} target="_blank" rel="noreferrer">View pending claim</a>
+            </p>
+            <div className="pending-acts">
+              <button type="button" className="btn" onClick={recheck} disabled={checking}>{checking ? "Checking…" : "Check again"}</button>
+              <button type="button" className="link" onClick={() => { pendingStore.remove(pendingClaim.hash); setSt({ s: "idle" }); }}>
+                Forget it: my wallet shows it was dropped
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       <h3>How rewards accrue</h3>
       <ul className="bullets">

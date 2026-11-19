@@ -5,9 +5,9 @@ import { ETHERSCAN } from "./config";
 import { Garden, SHEET_QUERY, type GardenHandle } from "./garden/Garden";
 import { ConnectSheet } from "./components/ConnectSheet";
 import { LightPanel, recoverBuy } from "./panels/LightPanel";
-import { CandleDetail, HowPanel, MinePanel, Register, RewardsPanel, TreasuryPanel } from "./panels/Panels";
+import { CandleDetail, HowPanel, MinePanel, Register, RewardsPanel, TreasuryPanel, checkClaim } from "./panels/Panels";
 import { FIXTURE, store, useCandles, useMyIds, useReducedMotion, useStatus } from "./hooks";
-import { UNVERIFIED_MESSAGE, pendingStore, type PendingTx } from "./lib/purchase";
+import { INTENT_PENDING_MESSAGE, UNVERIFIED_MESSAGE, pendingStore, type PendingTx } from "./lib/purchase";
 import { settleReceipt } from "./lib/chain";
 import { settleClaim } from "./lib/receipt";
 import { imd } from "./lib/format";
@@ -62,7 +62,7 @@ function usePendingRecovery(push: (t: Toast) => void, onLit: (firstId: number, q
   useEffect(() => {
     const list = pendingStore.list();
     list.forEach((tx: PendingTx) => {
-      push({ id: tx.hash, text: `Checking a ${tx.kind === "buy" ? "purchase" : tx.kind} sent earlier…`, href: `${ETHERSCAN}/tx/${tx.hash}` });
+      push({ id: tx.hash, text: `Checking a ${tx.kind === "buy" ? "purchase" : tx.kind} sent earlier…`, href: tx.intent ? undefined : `${ETHERSCAN}/tx/${tx.hash}` });
       if (tx.kind === "buy") {
         // a purchase is settled only by the garden's CandlesPurchased event in the mined (possibly replacement)
         // receipt; until then the Light a candle form stays locked on the same draft
@@ -73,12 +73,18 @@ function usePendingRecovery(push: (t: Toast) => void, onLit: (firstId: number, q
             store.sync().then(() => { if (s.firstId) onLit(s.firstId, s.quantity ?? tx.quantity ?? 1); });
           } else if (s.name === "error") push({ id: tx.hash, bad: true, href: `${ETHERSCAN}/tx/${s.hash ?? tx.hash}`, text: s.hash ? s.message : `Your earlier purchase did not light candles. ${s.message}` });
           else if (s.name === "buy-unknown" && s.message === UNVERIFIED_MESSAGE) push({ id: tx.hash, bad: true, href: `${ETHERSCAN}/tx/${tx.hash}`, text: s.message });
+          else if (tx.intent) push({ id: tx.hash, bad: true, text: "message" in s ? s.message : INTENT_PENDING_MESSAGE });
           else push({ id: tx.hash, bad: true, href: `${ETHERSCAN}/tx/${tx.hash}`, text: "An earlier purchase has no receipt yet. It is still saved; Light a candle stays locked on it." });
         });
         return;
       }
       // approvals and claims: follow a replacement from the saved sender/nonce; a claim counts only with the
       // garden RewardsClaimed event for this account in the mined transaction (never for a cancel/self-transfer)
+      if (tx.kind === "claim") {
+        // the Rewards panel keeps Claim off for this wallet until this saved claim settles
+        checkClaim(tx).then((v) => { push({ id: tx.hash, bad: !v.ok, href: v.href, text: v.text }); store.sync(); });
+        return;
+      }
       settleReceipt(tx.hash, tx)
         .then(({ receipt: r, mined }) => {
           const href = `${ETHERSCAN}/tx/${r.transactionHash}`;
@@ -278,6 +284,7 @@ export default function App() {
       <Garden
         total={total}
         known={Math.max(total, cs.total ?? 0)}
+        verified={cs.total}
         extra={extra}
         candles={cs.candles}
         selected={selected}

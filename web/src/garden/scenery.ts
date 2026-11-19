@@ -121,7 +121,7 @@ export function drawSectorUpright(g: CanvasRenderingContext2D, index: number, sh
     }
   }
   const items: Item[] = [];
-  const stairs = wild ? { terraces: [], gazebo: null } : stairsOf(plan);
+  const stairs = wild ? { terraces: [] as Stair[], gazebo: null, flush: new Set<number>() } : stairsOf(plan);
   // ground first: flagstone walks from stair feet to the path
   for (const st of stairs.terraces) {
     if (st.walk) drawWalk(g, st.walk, pathPat);
@@ -130,7 +130,8 @@ export function drawSectorUpright(g: CanvasRenderingContext2D, index: number, sh
   if (stairs.gazebo?.stair?.walk) drawWalk(g, stairs.gazebo.stair.walk, pathPat);
   if (stairs.gazebo?.back) drawWalk(g, stairs.gazebo.back, pathPat);
   const stairOf = new Map(stairs.terraces.map((st) => [st.terrace, st] as const));
-  if (!wild) plan.terraces.forEach((t, ti) => items.push({ y: t.cy + t.rx * TILT, draw: () => drawTerrace(g, t, plan.slots, im, wallPat, lawnPat, pathPat, put, r, stairOf.get(ti)) }));
+  const flush = stairs.flush;
+  if (!wild) plan.terraces.forEach((t, ti) => items.push({ y: t.cy + t.rx * TILT, draw: () => drawTerrace(g, t, plan.slots, im, wallPat, lawnPat, pathPat, put, r, stairOf.get(ti), flush.has(ti)) }));
   const onStairs = (x: number, y: number, rad: number) => {
     const all = stairs.gazebo?.stair ? [...stairs.terraces, stairs.gazebo.stair] : stairs.terraces;
     for (const st of all) {
@@ -237,7 +238,7 @@ function drawBridge(
 function drawTerrace(
   g: CanvasRenderingContext2D, t: Terrace, slots: [number, number, number][], im: Sheet["img"],
   wallPat: CanvasPattern | null, lawnPat: CanvasPattern | null, pathPat: CanvasPattern | null,
-  put: (n: string, x: number, y: number, flip?: boolean) => void, r: () => number, stair?: Stair,
+  put: (n: string, x: number, y: number, flip?: boolean) => void, r: () => number, stair?: Stair, flush = false,
 ) {
   if (t.rx > 0) {
     const pad = 0.16, depth = 46 * t.scale, R = t.rx + 16 * t.scale;
@@ -250,14 +251,16 @@ function drawTerrace(
       const c = cols.get(X);
       if (!c || yo > c.yo) cols.set(X, { yo, yi: Math.min(yi, yo - 6) });
     }
-    const wall = snap(t.wall);
+    // a ground-level bed (no flight could reach the path from its wall): a low stone kerb at path height, never a
+    // raised platform, so the holders on it are reached from the surrounding ground
+    const wall = flush ? PX * 2 : snap(t.wall);
     for (const [X, { yo, yi }] of cols) {
       g.fillStyle = lawnPat ?? "#1c3a26"; g.fillRect(X, yi, PX, yo - yi);
       g.fillStyle = wallPat ?? "#3f413a"; g.fillRect(X, yo, PX, wall);
       g.fillStyle = "#050a08"; g.fillRect(X, yo + wall, PX, PX); // foot shadow line
       g.fillStyle = (X / PX) % 7 === 0 ? "#a7d36a" : "#6aa84f"; g.fillRect(X, yo - PX, PX, PX); // mossy coping
       g.fillStyle = "#c4bb98"; g.fillRect(X, yo, PX, PX);
-      if (hash2(X, yo, 3) < 0.09) { g.fillStyle = "#3f7a3c"; g.fillRect(X, yo + PX, PX, snap(4 + hash2(X, 1, 4) * (wall - 4))); } // hanging moss
+      if (!flush && hash2(X, yo, 3) < 0.09) { g.fillStyle = "#3f7a3c"; g.fillRect(X, yo + PX, PX, snap(4 + hash2(X, 1, 4) * (wall - 4))); } // hanging moss
     }
     // white flowers at the wall foot and shrubs on the lawn behind the holders
     const keys = [...cols.keys()];
@@ -339,7 +342,7 @@ function walkToPath(plan: SectorPlan, x: number, y: number, reach: number, side 
 
 /** Diagnostic: why raised terraces got no flight (counted once per terrace, read by tests). */
 export const WHY: Record<string, number> = {};
-const stairCache = new Map<number, { terraces: Stair[]; gazebo: { stair: Stair | null; back: [number, number, number, number] | null } | null }>();
+const stairCache = new Map<number, { terraces: Stair[]; gazebo: { stair: Stair | null; back: [number, number, number, number] | null } | null; flush: Set<number> }>();
 
 /**
  * Stairs of a sector, from its plan alone (no slot moves): a flight at one end of every terrace long enough to
@@ -402,7 +405,14 @@ export function stairsOf(plan: SectorPlan) {
     gazebo = { stair, back };
   }
   connect(plan, terraces, gazebo);
-  const out = { terraces, gazebo };
+  // Every terrace drawn raised must be reachable: one whose flight could not be placed, or whose flight has no route
+  // to the path (directly or through a connected neighbour), is drawn as a ground-level bed instead and its
+  // unreachable flight is dropped. Holder coordinates (candle IDs to positions) never move.
+  const flush = new Set<number>();
+  plan.terraces.forEach((t, ti) => {
+    if (t.rx > 0 && !terraces.some((f) => f.terrace === ti && f.connected)) flush.add(ti);
+  });
+  const out = { terraces: terraces.filter((f) => f.connected), gazebo, flush };
   stairCache.set(plan.index, out);
   return out;
 }

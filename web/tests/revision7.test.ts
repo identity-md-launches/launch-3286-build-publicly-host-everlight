@@ -10,9 +10,9 @@ import { wishGardenAbi } from "../src/abi/WishGarden";
 
 class MemStorage {
   m = new Map<string, string>();
-  failSet: (k: string) => boolean = () => false;
+  failSet: (k: string, v: string) => boolean = () => false;
   getItem(k: string) { return this.m.get(k) ?? null; }
-  setItem(k: string, v: string) { if (this.failSet(k)) throw new DOMException("full", "QuotaExceededError"); this.m.set(k, v); }
+  setItem(k: string, v: string) { if (this.failSet(k, v)) throw new DOMException("full", "QuotaExceededError"); this.m.set(k, v); }
   removeItem(k: string) { this.m.delete(k); }
   clear() { this.m.clear(); }
   key() { return null; }
@@ -86,14 +86,16 @@ describe("storage failures around a purchase (finding 1adfd347)", () => {
     expect(calls).toEqual([]);
   });
   it("a storage failure after broadcast keeps the hash pending and the draft locked", async () => {
-    const st = new MemStorage(); st.failSet = (k) => !k.endsWith(":probe"); // probe passes, the real save fails
+    // the recovery intent is saved before signing; saving the sent hash over it fails (revision 8: intent first)
+    const st = new MemStorage(); st.failSet = (_k, v) => v.includes('"0xb7"');
     const calls: string[] = [];
     const steps: Step[] = [];
     const r = await runPurchase(deps(st, calls), [0], ["Keep this wish"], (s) => steps.push(s));
     expect(calls).toEqual(["buy", "wait"]);
     expect(r.name).toBe("buy-unknown");
     expect(steps.some((s) => s.name === "buy-pending")).toBe(true);
-    expect(pendingStore.list(st as unknown as Storage).map((t) => t.hash)).toEqual(["0xb7"]); // held in memory: the UI guard sees it
+    // the saved intent plus the sent hash held in memory: the UI guard sees both
+    expect(pendingStore.list(st as unknown as Storage).map((t) => t.hash)).toEqual([`0x${"0".repeat(64)}`, "0xb7"]);
   });
 });
 
@@ -125,7 +127,8 @@ describe("terraces are joined to the paths (finding 2fd0db9a)", () => {
         }
       }
     }
-    expect(flights / raised).toBeGreaterThan(0.8);
+    // revision 8: unreachable flights are dropped and their terraces drawn as ground-level beds (see revision8.test.ts)
+    expect(flights).toBe(connected);
     expect(connected / raised).toBeGreaterThan(0.72);
   });
 });

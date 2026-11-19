@@ -21,7 +21,16 @@ export interface PendingTx {
   /** The exact draft that was signed (buy only): a replacement must carry the same calldata and events. */
   styles?: number[];
   wishes?: string[];
+  /**
+   * A recovery intent saved before the wallet is asked to sign: the exact draft, sender, nonce and submission block,
+   * with a placeholder hash of the same length (so saving the real hash later needs no extra space). A reload that
+   * finds it keeps the form locked and resolves the purchase from the sender's nonce before another send.
+   */
+  intent?: boolean;
 }
+
+/** Placeholder hash of a recovery intent (no transaction has this hash). */
+export const INTENT_HASH = `0x${"0".repeat(64)}` as Hash;
 
 // v2: scoped to the live garden, so a transaction sent to an earlier contract is never re-attached here
 const PENDING_KEY = "everlight:v2:pending:0x33a514c5e2028f1affd70b82f170e8193df030a5";
@@ -69,6 +78,44 @@ export const pendingStore = {
         saved = true;
       }
     } catch { /* kept in memory: this page stays locked on it, but a reload cannot recover it */ }
+    pendingChanged();
+    return saved;
+  },
+  /**
+   * Save an entry to storage or not at all: on failure nothing is kept in memory and false is returned. Used for the
+   * recovery intent, which must be in storage before the wallet is asked to sign.
+   */
+  persist(tx: PendingTx, storage: Storage | null = safeStorage()): boolean {
+    if (!storage) return false;
+    try {
+      storage.setItem(PENDING_KEY, JSON.stringify([...readStored(storage).filter((t) => t.hash !== tx.hash), tx]));
+    } catch {
+      return false;
+    }
+    const mem = memFor(storage);
+    const i = mem.findIndex((t) => t.hash === tx.hash);
+    if (i >= 0) mem[i] = tx; else mem.push(tx);
+    pendingChanged();
+    return true;
+  },
+  /**
+   * Replace a saved entry (the recovery intent) with the sent transaction in one write. Never throws: if the write
+   * fails the intent stays saved, so a reload still locks the form and resolves the purchase by its nonce, and this
+   * page holds the sent hash in memory. Returns whether the sent entry itself was saved.
+   */
+  replace(oldHash: string, tx: PendingTx, storage: Storage | null = safeStorage()): boolean {
+    const mem = memFor(storage);
+    const j = mem.findIndex((t) => t.hash === oldHash);
+    if (j >= 0) mem.splice(j, 1);
+    const i = mem.findIndex((t) => t.hash === tx.hash);
+    if (i >= 0) mem[i] = tx; else mem.push(tx);
+    let saved = false;
+    try {
+      if (storage) {
+        storage.setItem(PENDING_KEY, JSON.stringify([...readStored(storage).filter((t) => t.hash !== tx.hash && t.hash !== oldHash), tx]));
+        saved = true;
+      }
+    } catch { /* the intent stays saved */ }
     pendingChanged();
     return saved;
   },
@@ -274,29 +321,38 @@ export async function runPurchase(
     } catch {
       return fail(META_MESSAGE);
     }
-    // the hash of a sent purchase must be recoverable after a reload, so storage is checked before signing
-    if (!pendingStore.writable(deps.storage === undefined ? undefined : deps.storage)) return fail(STORAGE_MESSAGE);
+    // the purchase must be recoverable after a reload, so its recovery intent (exact draft, sender, nonce and
+    // submission block, with room for the hash) is saved before the wallet is asked to sign; if it cannot be saved,
+    // nothing is sent
+    const intent: PendingTx = {
+      hash: INTENT_HASH, kind: "buy", intent: true, account: deps.account, quantity: styles.length, createdAt: Date.now(),
+      from: deps.account, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false, styles: [...styles], wishes: [...wishes],
+    };
+    if (!pendingStore.persist(intent, deps.storage === undefined ? undefined : deps.storage)) return fail(STORAGE_MESSAGE);
     onStep({ name: "buy-wallet" });
-    const hash = await deps.buy(request);
+    let hash: Hash;
+    try {
+      hash = await deps.buy(request);
+    } catch (e) {
+      pendingStore.remove(INTENT_HASH, deps.storage); // the wallet refused or failed before sending: nothing to recover
+      throw e;
+    }
     // from here on the purchase is broadcast: no failure may unlock the draft as if nothing had been sent
     sent = {
       hash, kind: "buy", account: deps.account, quantity: styles.length, createdAt: Date.now(),
       from: deps.account, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false, styles: [...styles], wishes: [...wishes],
     };
-    const saved = pendingStore.add(sent, deps.storage);
+    const saved = pendingStore.replace(INTENT_HASH, sent, deps.storage);
     onStep({ name: "buy-pending", hash });
-    if (!saved) {
-      // held in memory only: this page stays locked on it and keeps waiting for its receipt
-      const checked = await reconcileSent(deps, sent).catch(() => sent!);
-      const s = await awaitBuy(deps, checked, onStep);
-      return s;
-    }
-    const checked = await reconcileSent(deps, sent);
-    return await awaitBuy(deps, checked, onStep);
+    const checked = saved ? await reconcileSent(deps, sent) : await reconcileSent(deps, sent).catch(() => sent!);
+    const s = await awaitBuy(deps, checked, onStep);
+    // settled: an intent that could not be overwritten with the hash is no longer needed
+    if (s.name !== "buy-unknown") pendingStore.remove(INTENT_HASH, deps.storage);
+    return s;
   } catch (e) {
     if (sent) {
       // a failure after broadcast (storage, RPC): keep the hash pending and the draft locked, never a plain error
-      pendingStore.add(sent, deps.storage);
+      pendingStore.replace(INTENT_HASH, sent, deps.storage);
       const s: Step = { name: "buy-unknown", hash: sent.hash, message: SENT_UNKNOWN_MESSAGE };
       onStep(s);
       return s;
@@ -309,6 +365,9 @@ export const STORAGE_MESSAGE =
   "This browser is not letting the site save recovery data (storage is full or blocked), so a sent purchase could not be recovered after a reload. Nothing was sent and your draft is kept. Free some site storage or leave private mode, then try again.";
 export const SENT_UNKNOWN_MESSAGE =
   "Your purchase was sent, but the page could not finish tracking it. It stays locked on this transaction so it is not sent twice; check its receipt below.";
+
+export const INTENT_PENDING_MESSAGE =
+  "A purchase was waiting for your wallet's confirmation when the page closed, and its nonce has not been used yet, so it may still be pending in your wallet. This draft stays locked so it is not sent twice. Check again, or release it if your wallet shows no pending purchase.";
 
 export const FIXTURE_MESSAGE = "Test fixture: simulated candles, transactions disabled. Open the garden without ?fixture to light real candles.";
 export const META_MESSAGE =

@@ -1,4 +1,27 @@
-## Current revision (2026-11-19, review fixes for job 12f1426d): read first
+## Current revision (2026-11-19, revision 8 of job 12f1426d): read first
+
+Revision 8 answers six review findings (answers in `.imd-responses.json`):
+- **Purchase recovery intent before signing** (`web/src/lib/purchase.ts`, `web/src/lib/chain.ts`). Before the wallet is asked to sign, the page saves a recovery intent with the exact draft, the sender, the nonce and the submission block. The intent carries a placeholder hash of the same length, so saving the real hash later needs no extra space. If the intent cannot be saved, nothing is sent. After broadcast the intent is replaced by the sent hash in one write. If that write fails, the intent stays saved. A reload then keeps the form locked and resolves the purchase from the sender's nonce (`locateMined`) before another send is possible. The exact calldata and events are still checked against the saved draft. The one-character storage probe is gone.
+- **Claims lock while a saved claim is pending** (`RewardsPanel` and `checkClaim` in `web/src/panels/Panels.tsx`). The Rewards panel subscribes to saved claims for the connected wallet on this garden. Claim stays disabled ("Waiting for the earlier claim") until the claim settles. The panel shows the pending claim link, Check again, and "Forget it: my wallet shows it was dropped".
+- **Oversized contract gas estimates re-plan the batch** (`fittingPrefix` in `web/src/lib/split.ts`, `LightPanel.tsx`). If the contract's estimate for the next purchase is above 16,777,216 gas, or the RPC refuses it with a gas error such as "gas required exceeds allowance", the page searches for the largest ordered prefix that fits. It then re-plans the next purchase to that prefix and shows the new plan with its estimate. Nothing is sent until the visitor confirms again, and every wish is kept. RPC gas-cap errors are no longer reported as an IMD approval problem (`isGasCapError` in `web/src/lib/errors.ts`).
+- **Register shows a known total while the first page is missing.** It shows "Showing 0 of 100 candles, loading the first page…" while the page loads. If the page fails, it shows "Showing 0 of 100 candles. The first page could not be loaded." with Try again. The garden canvas's accessible name uses the verified onchain total, or says the count could not be confirmed yet. It never says 0 for an unknown count.
+- **Every terrace drawn raised is reachable** (`stairsOf` in `web/src/garden/scenery.ts`). A terrace whose flight could not be placed, or whose flight has no route to the path, is now drawn as a ground-level bed with a low stone kerb. Its unreachable flight is dropped. Across the 105 initial sectors that is 1,275 raised terraces, each with a connected flight, and 390 ground-level beds. The founding sector has 13 raised terraces, all connected, and 5 beds. Holder coordinates and candle IDs are unchanged.
+- **Evidence is committed**: `evidence/rev8/rev8-browser-checks.json`, `evidence/rev8/rev8-taste-probe.json` and 32 screenshots `evidence/rev8/screens/rev8-{before,after}-*.jpg`.
+
+Validation (worker-side, after the last source change):
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Install | `cd web && npm ci` | ok |
+| Typecheck | `cd web && npx tsc --noEmit` | exit 0 |
+| Unit tests | `cd web && npx vitest run` | 12 files, 119/119 passed (new `tests/revision8.test.ts`) |
+| Build | `cd web && npm run build` | built `dist/` with relative `./` URLs |
+| Browser | Playwright + Chromium headless shell, local static server, all non-local requests aborted | 26 passed, 0 failed (`evidence/rev8/rev8-browser-checks.json`) |
+| Design probe | `node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste` | 16/16 passed (`evidence/rev8/rev8-taste-probe.json`) |
+
+Every browser check used fixtures or blocked RPCs (**mocked**). No fork test and no live transaction ran. I did not check HTTPS or a fresh load of https://everlight.imd.site/ from here.
+
+## Revision 7 notes (superseded where revision 8 differs)
 
 This round fixes the reviewer's findings and, unlike the previous round, it was built with the real toolchain: `npm ci`, `tsc` and `vite build` all ran on this machine. The committed `dist/` is a normal `vite build` output, so the hand-spliced bundle from the previous round has been replaced.
 
@@ -19,8 +42,8 @@ Validation (worker-side, after the last source change):
 | Typecheck | `cd web && npx tsc --noEmit` | exit 0 |
 | Unit tests | `cd web && npx vitest run` | 11 files, 112/112 passed (new `tests/revision7.test.ts`: split plan, draft consumption, motion gate and cap, storage failure before and after broadcast, unknown count, terrace connectivity, ABI field) |
 | Build | `cd web && npm run build` | built `dist/` with relative `./` URLs |
-| Browser | Playwright + Chromium headless shell (software GL), local static server | `artifacts/rev7-browser-checks.json`, screenshots `artifacts/screens/rev7-{before,after}-*.jpg`; summary in `artifacts/validation.md` |
-| Design probe | `node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste` | 16/16 passed (`artifacts/rev7-taste-probe.json`) |
+| Browser | Playwright + Chromium headless shell (software GL), local static server | revision 7's raw log and screenshots were never committed; see revision 8's evidence above |
+| Design probe | `node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste` | 16/16 passed (revision 7's report was not committed; see `evidence/rev8/rev8-taste-probe.json`) |
 
 Every browser check used fixtures or blocked RPCs (**mocked**). No fork test and no live transaction ran. I did not check HTTPS or a fresh load of https://everlight.imd.site/ from here.
 
@@ -248,9 +271,9 @@ Validation (worker-side, after the last source change): `npm run build` (runs `t
 **Limitations (revision 7).** The moon placement was checked at 320, 390, 1180, 1440 and 1920 at the opening view only, not at every zoom level. The Etherscan event link is the fallback for history older than the 40,000-block window; the site does not page further back itself. The art limits recorded for revision 6 still apply.
 
 
-### Revision 8 validation
+### Earlier round also labelled "revision 8" (historic, before this job's revision 8)
 
-`npm run build` exit 0; `npx vitest run` 10 files, 102/102 passed; taste.mjs 16/16 passed. Playwright checks of the local export, using fixtures and a mocked RPC, are listed in `artifacts/validation.md` ("Revision 8") with raw results in `artifacts/rev8-browser-checks.json`. They cover:
+`npm run build` exit 0; `npx vitest run` 10 files, 102/102 passed; taste.mjs 16/16 passed. Playwright checks of the local export, using fixtures and a mocked RPC, were run. Their raw file was written to `artifacts/` and never committed, because `artifacts/` is excluded from Git in this checkout. This job's revision 8 evidence in `evidence/rev8/` replaces it. They covered:
 
 - Treasury range narrowing, the stale and unavailable states, and Try again
 - Find #37 and #10000 at 1440 and 390

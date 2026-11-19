@@ -11,12 +11,14 @@ export interface Batch { start: number; items: Item[]; bound: bigint }
  * holds at most MAX_BATCH candles, and its documented gas upper bound (300,000 + 170,000 per candle + 1,300 per
  * wish byte) stays within one transaction's gas cap. Every purchase is confirmed separately in the wallet.
  */
-export function planBatches(items: Item[], cap: bigint = TX_GAS_CAP, max = MAX_BATCH): Batch[] {
+export function planBatches(items: Item[], cap: bigint = TX_GAS_CAP, max = MAX_BATCH, firstMax?: number): Batch[] {
   const out: Batch[] = [];
   let cur: Item[] = [], bytes = 0, start = 0;
   items.forEach((it, i) => {
     const b = enc.encode(it.wish).length;
-    if (cur.length > 0 && (cur.length >= max || gasBound(cur.length + 1, bytes + b) > cap)) {
+    // firstMax: the contract's own gas estimate showed only that many leading candles fit the next purchase
+    const lim = out.length === 0 && firstMax !== undefined && firstMax > 0 ? Math.min(max, firstMax) : max;
+    if (cur.length > 0 && (cur.length >= lim || gasBound(cur.length + 1, bytes + b) > cap)) {
       out.push({ start, items: cur, bound: gasBound(cur.length, bytes) });
       cur = []; bytes = 0; start = i;
     }
@@ -24,6 +26,21 @@ export function planBatches(items: Item[], cap: bigint = TX_GAS_CAP, max = MAX_B
   });
   if (cur.length) out.push({ start, items: cur, bound: gasBound(cur.length, bytes) });
   return out;
+}
+
+/**
+ * Largest ordered prefix (1..n-1) whose estimate fits, by binary search over `fits(k)` (an estimate in gas, or null
+ * when it is above the cap or the RPC refuses it for gas). Returns 0 when not even one candle fits.
+ */
+export async function fittingPrefix(n: number, fits: (k: number) => Promise<bigint | null>): Promise<{ n: number; est: bigint | null }> {
+  let lo = 0, hi = n - 1, est: bigint | null = null;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const e = await fits(mid);
+    if (e !== null) { lo = mid; est = e; } else hi = mid - 1;
+  }
+  if (lo > 0 && est === null) est = await fits(lo);
+  return { n: lo, est };
 }
 
 /** The saved purchase form (session storage). */

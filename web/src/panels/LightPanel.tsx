@@ -7,13 +7,13 @@ import { wishGardenAbi } from "../abi/WishGarden";
 import { ETHERSCAN, GARDEN, IMD, MAX_BATCH, TX_GAS_CAP, config, ethClient } from "../config";
 import { checkWish, gasBound } from "../lib/wish";
 import { STYLE_NAMES, eth, imd } from "../lib/format";
-import { explainError } from "../lib/errors";
-import { FIXTURE_MESSAGE, awaitBuy, isRunning, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step } from "../lib/purchase";
+import { explainError, isGasCapError } from "../lib/errors";
+import { FIXTURE_MESSAGE, INTENT_HASH, INTENT_PENDING_MESSAGE, awaitBuy, isRunning, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step } from "../lib/purchase";
 import { readReceipt } from "../lib/receipt";
 import { minedTx, NONCE_UNVERIFIED, sentTx, settleBuyReceipt, submissionMeta } from "../lib/chain";
 import { rememberTx } from "../lib/txhash";
 import { parseQuantity } from "../lib/quantity";
-import { DRAFT_KEY, consumeSavedDraft, planBatches } from "../lib/split";
+import { DRAFT_KEY, consumeSavedDraft, fittingPrefix, planBatches } from "../lib/split";
 import { ConnectButton } from "../components/ConnectSheet";
 import { WrongNetwork } from "../components/WrongNetwork";
 
@@ -43,13 +43,17 @@ export function recoverBuy(tx: PendingTx): Promise<Step> {
       // locates a replacement from the saved sender, nonce and submission block, then verifies its calldata and events
       wait: (hash, saved) => settleBuyReceipt(hash, saved),
       remember: rememberTx,
-      explain: (e) => e instanceof Error && e.message === NONCE_UNVERIFIED
-        ? NONCE_UNVERIFIED
+      explain: (e) => e instanceof Error && (e.message === NONCE_UNVERIFIED || e.message === INTENT_PENDING_MESSAGE)
+        ? e.message
         : "The receipt of the purchase you sent could not be read yet. It is still saved and this form stays locked so it is not sent twice.",
     },
     tx,
     onStep,
-  );
+  ).then((s) => {
+    // the purchase behind a saved intent is settled: the intent itself is no longer needed
+    if (s.name !== "buy-unknown") pendingStore.remove(INTENT_HASH);
+    return s;
+  });
 }
 
 const ART = (i: number) => `./art/px/candle-${i}.png`;
@@ -145,7 +149,12 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
   const wishBytes = checks.reduce((a, c) => a + c.bytes, 0);
   const hasWish = items.some((it) => it.wish.length > 0);
   // ordered purchases that each fit one transaction's gas; the next one is what the button sends
-  const plan = useMemo(() => (qtyValid && checks.every((c) => c.ok) ? planBatches(items) : []), [items, qtyValid, checks.every((c) => c.ok)]);
+  // when the contract's own gas estimate showed fewer leading candles fit than the static bound allowed, the next
+  // purchase is re-planned to that many (for exactly this draft; any edit or a confirmed purchase drops it)
+  const itemsKey = useMemo(() => JSON.stringify(items), [items]);
+  const [refit, setRefit] = useState<{ key: string; n: number; est: bigint | null } | null>(null);
+  const firstMax = refit && refit.key === itemsKey && refit.n > 0 ? refit.n : undefined;
+  const plan = useMemo(() => (qtyValid && checks.every((c) => c.ok) ? planBatches(items, TX_GAS_CAP, MAX_BATCH, firstMax) : []), [items, qtyValid, checks.every((c) => c.ok), firstMax]);
   const next = plan[0];
   const nextQty = next ? next.items.length : qty;
   const split = plan.length > 1;
@@ -180,6 +189,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
     const account = address!;
     if (!next) return;
     const batch = next.items;
+    const key = itemsKey;
     try {
       await runPurchase(
         {
@@ -206,12 +216,27 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
           readOnly: FIXTURE !== null,
           remember: rememberTx,
           simulate: async (styles, wishes) => {
+            // estimate this exact purchase against the contract first; it must fit one transaction's gas cap. An
+            // estimate above the cap, or an RPC refusing it for gas, re-plans the next purchase to the largest ordered
+            // prefix that fits (nothing is sent; the new plan is shown for a fresh confirmation)
+            const fits = async (k: number): Promise<bigint | null> => {
+              try {
+                const e = await ethClient.estimateContractGas({ address: GARDEN, abi: wishGardenAbi, functionName: "buyCandles", args: [styles.slice(0, k), wishes.slice(0, k)], account });
+                return e <= TX_GAS_CAP ? e : null;
+              } catch (e) {
+                if (isGasCapError(e)) return null;
+                throw e;
+              }
+            };
+            const est = await fits(styles.length);
+            if (est === null) {
+              const p = await fittingPrefix(styles.length, fits);
+              setRefit({ key, n: p.n, est: p.est });
+              throw new Error(`RESPLIT:${p.n}:${p.est ?? 0}`);
+            }
             const { request } = await simulateContract(config, {
               address: GARDEN, abi: wishGardenAbi, functionName: "buyCandles", args: [styles, wishes], account, chainId: 1,
             });
-            // estimate this exact purchase against the contract; it must fit one transaction's gas cap
-            const est = await ethClient.estimateContractGas({ address: GARDEN, abi: wishGardenAbi, functionName: "buyCandles", args: [styles, wishes], account });
-            if (est > TX_GAS_CAP) throw new Error(`GAS_TOO_HIGH:${est}`);
             const withRoom = (est * 120n) / 100n;
             return { ...request, gas: withRoom > TX_GAS_CAP ? TX_GAS_CAP : withRoom };
           },
@@ -309,6 +334,9 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
       {split && (
         <div className="split-plan" role="status">
           <p>These wishes are too long for one Ethereum transaction, so this draft is lit in {plan.length} purchases, in order. Each one needs its own confirmation; unsent candles stay in the form.</p>
+          {firstMax !== undefined && refit?.est != null && (
+            <p>Re-planned from the contract's own estimate: purchase 1 is now {firstMax} candle{firstMax > 1 ? "s" : ""}, estimated {refit.est.toLocaleString("en-US")} gas{gasOk ? ` (about ${eth(refit.est * gas.data!)} ETH)` : ""}.</p>
+          )}
           <ol>
             {plan.map((b, i) => (
               <li key={b.start} className={i === 0 ? "next" : ""}>
@@ -359,11 +387,13 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
           <div className="pending-box" role="status">
             <p>
               {step?.name === "buy-unknown" ? step.message : "A purchase you sent earlier has no receipt yet. This draft stays locked so it is not sent twice."}{" "}
-              <a href={`${ETHERSCAN}/tx/${pendingBuy.hash}`} target="_blank" rel="noreferrer">View pending transaction</a>
+              {pendingBuy.intent
+                ? <a href={`${ETHERSCAN}/address/${pendingBuy.account}`} target="_blank" rel="noreferrer">View your wallet's transactions</a>
+                : <a href={`${ETHERSCAN}/tx/${pendingBuy.hash}`} target="_blank" rel="noreferrer">View pending transaction</a>}
             </p>
             <div className="pending-acts">
               <button type="button" className="btn" onClick={() => recoverBuy(pendingBuy)}>Check again</button>
-              <button type="button" className="link" onClick={() => { pendingStore.remove(pendingBuy.hash); setStep(null); }}>
+              <button type="button" className="link" onClick={() => { pendingStore.remove(pendingBuy.hash); pendingStore.remove(INTENT_HASH); setStep(null); }}>
                 Forget it: my wallet shows it was dropped
               </button>
             </div>

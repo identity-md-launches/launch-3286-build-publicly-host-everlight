@@ -39,6 +39,10 @@ controls, system sans for body. Focus: 3px gold outline, 2px offset, on every fo
   a flagstone walk leads to the path: straight, longer, or two-leg (L-shaped). If no walk reaches the path, the walk
   goes to the foot of a neighbouring flight that is already connected (`stairsOf` + `connect` in `scenery.ts`). Walks
   keep off holders, water and other terraces. Decoration keeps off every walk leg.
+- Ground-level beds (revision 8): a terrace with no flight that connects to the path is drawn without a raised wall. It
+  gets a lawn band with a 2-art-pixel stone kerb (`wall-tile`), mossy coping and no hanging moss
+  (`drawTerrace(…, flush)` in `scenery.ts`). Its holders keep their coordinates and are reached from the ground. Every
+  terrace still drawn raised has a connected flight.
 
 ## Components
 Header, garden canvas, right purchase dock, minimap/zoom/Find cluster, allocation strip, sheets and modals keep
@@ -49,7 +53,15 @@ their structure from the previous revision (below); this revision restyles them 
   rule. The rows wrap at narrow widths. The primary button names the next purchase ("Light 30 candles (purchase 1 of 2)").
 - **Candle register states** (`Register`, `Panels.tsx`). "Reading the candle register…" while the total is unknown. An
   alert "Unavailable … Try again" when it could not be read. "Showing N of M candles" for a partial list. The empty-garden
-  sentence appears only after a verified total of 0. The
+  sentence appears only after a verified total of 0. With a known total and no loaded rows: "Showing 0 of M candles,
+  loading the first page…" (`.fine`, `role="status"`), or after a failure "Showing 0 of M candles. The first page could
+  not be loaded." with Try again (`.bad`, `role="alert"`).
+- **Re-planned purchase** (revision 8). When the contract's estimate shows fewer candles fit, the split plan gains a line
+  "Re-planned from the contract's own estimate: purchase 1 is now N candles, estimated G gas (about E ETH)". The error
+  line above the button says nothing was sent and every wish is kept.
+- **Pending claim** (revision 8). It reuses `.pending-box` / `.pending-acts` from the purchase lock: a status line with
+  the pending claim link, a Check again button (`.btn`) and a Forget link (`.link`). The Claim button (`.cta.wide`)
+  reads "Waiting for the earlier claim" and is disabled. The
 purchase preview is now a pixel composition (arch, hero pedestal, chosen candle sprite, 4 flame frames at 3x)
 in `LightPanel.tsx` `CandlePreview`. Style picker and My Candles use the pixel candle sprites (`img.px`,
 `image-rendering: pixelated`).

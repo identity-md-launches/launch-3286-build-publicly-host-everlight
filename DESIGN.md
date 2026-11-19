@@ -221,3 +221,13 @@ Positions depend only on a candle's position (id − 1), so they are stable acro
 - **Anchored candle popup.** It sits above or below the flame, kept 8 px plus the pointer clear of the selection ring. When neither fits it goes beside the ring (right, then left) with the pointer on the facing edge (`.side-right`, `.side-left`, `--pointer-y`). If no side fits, it takes the band above or below with a scrolling body (`.capped`, `--pop-max`).
 - **Treasury activity states.** Reading, Unavailable (`.bad`), Stale ("Showing activity from the last successful scan…", `.stale-note`: headline ivory with a 3 px `--gold-500` rule and `--space-2` inset), and the verified range line (`.fine`). Older-blocks and Try again appear only when the scan stopped early.
 - **Share card.** `og.png` is 1200×630, taken from the empty pixel garden with the DejaVu Serif title in `#f3dc9a` and the subtitle in ivory over a left-hand dark gradient.
+
+
+## Revision 6 additions
+
+- **Split bar** (`web/src/App.tsx` `SPLIT`): four allocations (30% Burn, 60% Previous paid candles, 5% Operations, 5% Founder) plus a `.split-first` note, "90% burn for the first-ever candle". The note is allowed to wrap (`white-space: normal`), and its figure uses `--text-md`.
+- **How it works** (`HowPanel`): section headings at `h3`, with `.bullets` lists, `.summary` allocation tiles and a `.faq` list.
+- **FAQ** (`.faq`): native `<details>` cards on `--night-800` with a 1px `--color-border` edge, `--radius-sm` corners and `--space-2` gaps. Each `summary` is at least 44 px tall, 600 weight, with a 2px `--color-accent` focus ring. Answers use `--color-text-secondary`.
+- **Light panel**: a second `.costs` disclosure, "Where your 1 IMD goes", sits under Cost details and links to How it works.
+- **Style names** follow the contract: Purity, Hope, Love, Success, Health, Wealth, Happiness.
+- No new tokens or type sizes. Responsive behaviour is unchanged: the split collapses into its "Split of 1 IMD" disclosure on narrow screens.

@@ -1,4 +1,4 @@
-// ABI of the Base EverlightBurnReceiver, from the pinned source commit f3ae2915, docs/base/EverlightBurnReceiver.json.
+// ABI of the Base EverlightBurnReceiver, from launch-3312-everlight-garden-deploy-revised at 5752e230, docs/base/EverlightBurnReceiver.json (entries unchanged from the earlier receiver).
 export const burnReceiverAbi = [
  {
   "type": "constructor",

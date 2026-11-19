@@ -30,7 +30,7 @@ export interface StoreState {
   updatedAt: number | null;
 }
 
-const CACHE_KEY = `everlight:v1:candles:${GARDEN.toLowerCase()}`;
+const CACHE_KEY = `everlight:v2:candles:${GARDEN.toLowerCase()}`;
 
 /**
  * Incremental candle index. Reads totalCandles, then pages getCandles(first, 100) only for ids it has

@@ -346,6 +346,10 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
         </dl>
         <p className="fine">Gas is an upper bound from the contract docs ({bound.toLocaleString("en-US")} gas for this batch{needApproval ? " plus about 60,000 for the approval" : ""}) at the current gas price. All seven styles cost the same and carry the same rights. Candles appear in the garden only after the purchase receipt is verified.</p>
       </details>
+      <details className="costs">
+        <summary>Where your 1 IMD goes</summary>
+        <p className="fine">30% burn allocation, 60% shared equally among earlier paid candles, 5% operations and 5% founder. The first-ever candle sends 90% to the burn allocation. Burning is queued on Ethereum, bridged and burned on Base later, so it is not instant. Rewards are claimed by hand on the Rewards page and depend on later purchases: there is no fixed yield. <a href="#/how">How it works</a></p>
+      </details>
     </section>
   );
 }

@@ -457,3 +457,12 @@ textarea:focus-visible, .custom input:focus-visible, .find input:focus-visible {
 .draft-lock:disabled { opacity: 0.72; }
 .pending-box { margin-top: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
 .pending-acts { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+
+/* How it works: questions (native details, keyboard operable) and the first-candle note in the split bar */
+.faq { display: flex; flex-direction: column; gap: var(--space-2); margin: 0 0 var(--space-4); }
+.faq details { background: var(--night-800); border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+.faq summary { display: flex; align-items: center; min-height: 44px; padding: 0 var(--space-3); cursor: pointer; font-weight: 600; color: var(--color-text); }
+.faq summary:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.faq details p { margin: 0; padding: 0 var(--space-3) var(--space-3); color: var(--color-text-secondary); }
+.split li.split-first { white-space: normal; }
+.split li.split-first strong { font-size: var(--text-md); }

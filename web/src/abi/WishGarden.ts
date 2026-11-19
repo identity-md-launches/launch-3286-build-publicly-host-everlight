@@ -1,5 +1,6 @@
-// Full inherited ABI of WishGarden (WishGarden -> EverlightBridgeQueue -> WishGardenTreasury -> GardenEconomy, Ownable2Step, ReentrancyGuard)
-// Exported from the pinned source commit f3ae2915b2fc99c56079da2fc9addef2e94397e0, docs/abi/WishGarden.json.
+// Full inherited ABI of the revised WishGarden (WishGarden -> EverlightBridgeQueue -> WishGardenTreasury -> GardenEconomy, Ownable2Step, ReentrancyGuard)
+// From launch-3312-everlight-garden-deploy-revised at 5752e230de18fa714111903f03d258a1e93faf2e, docs/abi/WishGarden.json:
+// same entries as the earlier garden's ABI plus the BurnAllocated event (16 events).
 export const wishGardenAbi = [
  {
   "type": "constructor",
@@ -1440,6 +1441,25 @@ export const wishGardenAbi = [
     "type": "address",
     "indexed": true,
     "internalType": "address"
+   },
+   {
+    "name": "amount",
+    "type": "uint256",
+    "indexed": false,
+    "internalType": "uint256"
+   }
+  ],
+  "anonymous": false
+ },
+ {
+  "type": "event",
+  "name": "BurnAllocated",
+  "inputs": [
+   {
+    "name": "candleId",
+    "type": "uint256",
+    "indexed": true,
+    "internalType": "uint256"
    },
    {
     "name": "amount",

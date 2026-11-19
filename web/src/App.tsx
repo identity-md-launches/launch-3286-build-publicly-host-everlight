@@ -26,11 +26,10 @@ const ROUTES = [
 const NAV = [...ROUTES.slice(0, 4), ROUTES[5]];
 /** At this width the Light your candle form is docked beside the garden, as in the approved design. */
 const DOCK_QUERY = "(min-width: 1180px)";
-/** Contract split of every 1 IMD candle (WishGarden): unchanged economics. */
+/** Contract split of every 1 IMD candle (revised WishGarden, allocationBps 3000/6000/0/500/500). */
 const SPLIT = [
   ["30%", "Burn", "flame"],
-  ["30%", "Previous paid candles", "layers"],
-  ["30%", "Ecosystem", "sprout"],
+  ["60%", "Previous paid candles", "layers"],
   ["5%", "Operations", "gear"],
   ["5%", "Founder", "people"],
 ] as const;
@@ -328,6 +327,7 @@ export default function App() {
               {SPLIT.map(([pct, label, ic]) => (
                 <li key={label}><Icon name={ic} /><strong>{pct}</strong> {label}</li>
               ))}
+              <li className="split-first"><strong>90%</strong> burn for the first-ever candle</li>
             </ul>
           </details>
           {findBusy !== null && <p className="find-err find-wait" role="status">Loading candle #{findBusy}…</p>}

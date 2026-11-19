@@ -23,7 +23,8 @@ export interface PendingTx {
   wishes?: string[];
 }
 
-const PENDING_KEY = "everlight:v1:pending";
+// v2: scoped to the live garden, so a transaction sent to an earlier contract is never re-attached here
+const PENDING_KEY = "everlight:v2:pending:0x33a514c5e2028f1affd70b82f170e8193df030a5";
 const pendingSubs = new Set<() => void>();
 let pendingVersion = 0;
 const pendingChanged = () => { pendingVersion++; pendingSubs.forEach((f) => f()); };

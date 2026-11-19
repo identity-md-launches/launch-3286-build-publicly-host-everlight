@@ -1,3 +1,22 @@
+## Revision 6 status (read first)
+
+The live integration now targets the revised garden `0x33a514c5e2028f1affd70b82f170e8193df030a5` and the Base receiver `0x4FdE47d5b574F9F18bC86D9878A460e6b1373D1E`. The split is 30% burn, 60% earlier candles, 5% operations, 5% founder, and ecosystem 0%.
+
+The committed `dist/` for this revision was patched from the edited source because this machine had no network access for `npm ci`. `npm run build` and `npm run typecheck` were **not** run for this revision. See `artifacts/validation.md` (Revision 6) for exactly what ran and what did not.
+
+Install, preview and rebuild:
+
+```sh
+cd web
+npm ci              # install the locked dependencies
+npm run typecheck   # tsc --noEmit
+npm test            # vitest unit tests
+npm run build       # typecheck + vite build into ../dist (relative asset URLs, base ./)
+npm run preview     # serve the built export locally
+```
+
+Open `?fixture=0|100|3000|10000` for labelled test fixtures with transactions disabled.
+
 # Everlight Garden
 
 **Current revision (2026-11-19): 16-bit pixel-art garden.** See `DESIGN.md` (top section) and `artifacts/validation.md` (top section).

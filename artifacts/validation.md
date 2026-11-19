@@ -1,3 +1,70 @@
+# Revision 6: live revised garden, new economics and help (job 12f1426d)
+
+## What changed
+- **Contracts** (`web/src/config.ts`): garden `0x33a514c5e2028f1affd70b82f170e8193df030a5`, Base receiver `0x4FdE47d5b574F9F18bC86D9878A460e6b1373D1E`, IMD and owner unchanged. Event scans start at block **26448736**: that is the block of creation tx `0x9305085fac09f628e90afdcd1d9a6dc5cfdbb21b2a8c36780eedbe10a6004a8e` (a CREATE2 factory call), read from eth.blockscout.com. The source link now points at `launch-3312-everlight-garden-deploy-revised@5752e230`.
+- **ABI**: I compared `docs/abi/WishGarden.json` at 5752e230 with the old ABI entry by entry. Every function, error and signature matches; the only addition is `event BurnAllocated(uint256 indexed candleId, uint256 amount)`, which is now in `web/src/abi/WishGarden.ts` and in the bundle. `docs/base/EverlightBurnReceiver.json` has the same entries as the old receiver ABI. Caveat: I could only reach these files through a page-reading tool that summarises, not as raw bytes, so this is an entry-by-entry comparison, not a byte diff.
+- **Readiness** is still read live (`activated`, `purchasesPaused`, `baseReady`); nothing is hardcoded.
+- **Cache keys**: `everlight:v2:candles:<garden>`, `everlight:v2:tx:<garden>`, and `everlight:v2:pending:<garden>`. The pending key used to be unscoped, so a transaction sent to the old contract could have been re-attached to the new one; now it cannot.
+- **Legacy**: the old garden `0x39e5…3b31` appears only as a read-only Etherscan link (Treasury → Contracts and How it works). It is never read, cached or written, so its candle IDs cannot mix with the new garden's. It had 0 candles when read on 2026-11-18 (rev 5). I couldn't re-read it this run.
+- **Economics**: split bar, How it works, Rewards, Treasury and the Light panel now say 30% burn, 60% earlier paid candles, 5% operations, 5% founder, ecosystem 0%. The first-ever candle gets 90% burn. The Ecosystem bucket row and the "ecosystem bucket" copy are gone.
+- **Styles** now use the contract names, in index order: Purity, Hope, Love, Success, Health, Wealth, Happiness.
+- **Help**:
+  - How it works was rewritten to cover: purpose, purchase steps with price and gas, the seven styles, batch splitting, public and permanent wishes (280 code points / 1,120 bytes), allocation, sequential per-candle rewards with the 101 → 0.006 / 0.018 example, batch order, manual claiming per contract, the five burn stages (only "Burned on Base" is called a burn), owner responsibilities, what a candle is (a contract record, not an NFT, not a share of treasury assets; 10,000 slots is a layout, not a cap), contract links, and an FAQ (no IMD endorsement, not an investment).
+  - Beside the purchase action there is a new "Where your 1 IMD goes" disclosure.
+  - Rewards has the worked example and explains manual claiming.
+
+## How the export was produced (important limitation)
+Every outbound connection from the shell was refused on this machine: npm registry, GitHub, the Etherscan relay and the local RPC (via the proxy: `Empty reply from server`). `web/node_modules` does not exist, and there is no vite, typescript, react or viem anywhere on disk. **So `npm run build`, `tsc --noEmit` and `vitest` could not run.**
+
+Instead I made each change in `web/src` and mirrored it into the committed export:
+- Plain string constants were replaced exactly, with each match count asserted.
+- The changed JSX (How it works, the Rewards bullets, the Treasury note and legacy row, the split note, the Light panel disclosure) was compiled from the edited source with the Babel bundled in Playwright (TypeScript + React automatic runtime). It was renamed to the bundle's minified bindings and spliced in.
+- The CSS added to `web/src/styles.css` was appended, minified, to the export stylesheet.
+- The changed files got new content-hash names (`index-EpotlNQ3.js`, `index-JBgzkUub.css`) so caches load them fresh. References in `index.html` and the lazy chunks were updated.
+- Every JS chunk passes `node --check`.
+
+`npm ci && npm run build` from `web/` regenerates an equivalent `dist/` once the registry is reachable. That rebuild has not been run.
+
+## Checks actually run (Playwright Chromium headless shell 1248, local static server, this machine)
+Full data: `artifacts/rev6-browser-checks.json`. All checks below are **fixture/mocked**, with transactions disabled. **No fork or live transaction checks ran**, and no spending happened.
+
+| Check | 1600×1000 | 390×844 |
+|---|---|---|
+| Six routes (garden, mine, rewards, treasury, light, how) at `?fixture=100`: render, no horizontal overflow, fixture label shown, no "Ecosystem (30%)" | pass | pass |
+| Fixtures 0 / 3000 / 10000 render | pass | pass |
+| Find candle 37 opens its detail | pass | pass |
+| Water/canvas motion at 0 candles (main canvas, 900 ms) | changes | **no change measured** (see unresolved) |
+| `prefers-reduced-motion: reduce` stops canvas motion | pass | n/a |
+| How it works FAQ opens with keyboard (Enter) | pass | – |
+| Address links point to the new garden, receiver, IMD and owner | pass | – |
+| Local asset 404s | none | none |
+
+Console errors on every page are `net::ERR_EMPTY_RESPONSE` from the public RPCs, which the sandbox blocks.
+
+Live mode (no fixture) loaded, but no live value could be read from here: after 6 s the Treasury was still reading. **I couldn't verify live readiness or balances, HTTPS on everlight.imd.site, or a fresh load of the hosted site.**
+
+Screenshots are in `artifacts/screens/rev6-*.jpg`:
+- after: `rev6-d1600-*`, `rev6-m390-*`
+- before (original export, same fixture): `rev6-before-*`
+
+## Design probe and Better Interface review
+- `taste.mjs` **did not run**. Its Playwright needs Chromium revision 1246 and only 1248 is installed; I couldn't install a matching one offline.
+- Better Interface, applied to what this revision changed:
+  - Accessibility: the FAQ uses native `<details>`/`<summary>` with 44 px targets and a visible focus ring (`web/src/styles.css`, end of file).
+  - Writing: plain language, numbers given as amounts (0.60 / 0.006 / 0.018 IMD), queued funds never called burned (`web/src/panels/Panels.tsx`, HowPanel).
+  - Typography and colours: only existing tokens.
+  - Layout: the split note wraps instead of clipping (`.split li.split-first`).
+  - Rendered contrast was not measured.
+
+## Unresolved
+1. **Art.** The art direction items in the brief were not done because no build tool was available: connected paths/stairs replacing floating platforms, four terrace arrangements, the scenery and depth rework, and the sprite and animation changes. The renderer, scenery and layout are unchanged from rev 5.
+2. **Mobile water.** At 390×844 with the default camera, the stream is not in view and no canvas change was measured.
+3. **Unit tests and typecheck** (`vitest`, `tsc`) were not run, and no fork tests ran.
+4. The purchase, approval, receipt, replacement and split logic is unchanged from rev 5 apart from the addresses and keys. It was not re-tested against the new contract.
+
+
+---
+
 # Validation: 16-bit pixel revision (2026-11-19)
 
 All results are worker-side on this machine. The verifier checks paths and bytes only.

@@ -36,4 +36,5 @@ export function date(ts: number | bigint): string {
   return d.toLocaleString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-export const STYLE_NAMES = ["Moon taper", "Ember pillar", "Lantern bloom", "Lily float", "Gilded spiral", "Frog lamp", "Star votive"];
+/** Contract style names, in index order (docs/integration.json candle.styles). */
+export const STYLE_NAMES = ["Purity", "Hope", "Love", "Success", "Health", "Wealth", "Happiness"];

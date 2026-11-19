@@ -6,7 +6,7 @@ import { useAccount } from "wagmi";
 import { simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
 import { useQueryClient } from "@tanstack/react-query";
 import { wishGardenAbi } from "../abi/WishGarden";
-import { BASESCAN, BASE_IMD, BASE_RECEIVER, ETHERSCAN, GARDEN, GARDEN_DEPLOY_BLOCK, IMD, OWNER, SOURCE_REPO, config } from "../config";
+import { BASESCAN, BASE_IMD, BASE_RECEIVER, ETHERSCAN, GARDEN, GARDEN_DEPLOY_BLOCK, IMD, LEGACY_GARDEN, OWNER, SOURCE_REPO, config } from "../config";
 import { STYLE_NAMES, date, imd, short, safeChecksum } from "../lib/format";
 import { explainError } from "../lib/errors";
 import { FIXTURE_MESSAGE, pendingStore, reconcileSent } from "../lib/purchase";
@@ -201,7 +201,7 @@ export function RewardsPanel() {
   return (
     <section aria-labelledby="rewards-title">
       <h2 id="rewards-title">Rewards</h2>
-      <p className="lede">30% of every later candle is shared equally among all earlier candles, per candle rather than per wallet. Rewards depend entirely on later purchases: there is no guaranteed return and no fixed APY.</p>
+      <p className="lede">60% of every new candle (0.60 IMD) is shared equally among all earlier candles, counted per candle rather than per wallet. Rewards depend entirely on later purchases: with no new purchases there are no new rewards, and there is no fixed yield or guaranteed profit.</p>
       {!address && <><p>Connect a wallet to read its reward state. Claims stay open even while sales are closed.</p><ConnectButton /></>}
       {address && r.isLoading && <p role="status">Reading your rewards…</p>}
       {address && r.isError && <p className="bad" role="alert">Rewards could not be read. <button className="link" onClick={() => r.refetch()}>Try again</button></p>}
@@ -227,9 +227,11 @@ export function RewardsPanel() {
       <h3>How rewards accrue</h3>
       <ul className="bullets">
         <li>A candle earns only from candles bought after it. It never earns from its own purchase.</li>
-        <li>The very first candle has no earlier candles, so its reward share goes to the ecosystem bucket.</li>
+        <li>The very first candle has no earlier candles, so its 60% reward share is added to the burn allocation (90% burn in total).</li>
         <li>A batch is processed one candle at a time, so earlier candles in your batch earn from later ones in it.</li>
-        <li>Rewards are paid in IMD to the wallet that bought the candle. Candles are nontransferable records, not NFTs.</li>
+        <li>Example: candle 101 gives each of the 100 earlier candles 0.006 IMD before rounding. A wallet holding three of them receives 0.018 IMD from that purchase.</li>
+        <li>Rewards are never sent automatically. They wait in this garden contract until you claim them here, and each claim is its own transaction with gas.</li>
+        <li>Rewards go to the wallet that bought the candle. Candles are nontransferable contract records, not NFTs and not a share of treasury assets.</li>
       </ul>
     </section>
   );
@@ -271,19 +273,18 @@ export function TreasuryPanel() {
           </dl>
           <h3>Buckets</h3>
           <dl className="summary">
-            {row("Ecosystem (30%)", e.ecosystemBalance, "owner-managed")}
             {row("Operations (5%)", e.operationsBalance)}
             {row("Founder (5%)", e.founderBalance)}
             {row("Withdrawn by owner", sum(e.totalEcosystemWithdrawn, e.totalOperationsWithdrawn, e.totalFounderWithdrawn))}
           </dl>
-          <p className="fine">Ecosystem funds are managed by the owner ({addrLink(OWNER)}). They are not owned by candle buyers.</p>
-          <h3>Rewards (30%)</h3>
+          <p className="fine">Operations and founder funds are withdrawn by the owner ({addrLink(OWNER)}). They are not owned by candle buyers. This garden has no ecosystem allocation (0%).</p>
+          <h3>Rewards (60%)</h3>
           <dl className="summary">
             {row("Allocated to earlier candles", e.totalRewardsAllocated)}
             {row("Claimed", e.totalRewardsClaimed)}
             {row("Owed, not yet claimed", e.rewardLiability)}
           </dl>
-          <h3>Burn (30%), stage by stage</h3>
+          <h3>Burn (30%; 90% for the first-ever candle), stage by stage</h3>
           <ol className="stages">
             <li><strong>Allocated</strong><span>{amt(e.totalBurnAllocated)}</span><em>Set aside on Ethereum by purchases. Not burned yet.</em></li>
             <li><strong>Queued</strong><span>{amt(e.burnQueued)}</span><em>Waiting for the owner to open a burn job. Not burned yet.</em></li>
@@ -301,6 +302,7 @@ export function TreasuryPanel() {
         <li>IMD (Ethereum): {addrLink(IMD)}</li>
         <li>Burn receiver (Base): {addrLink(BASE_RECEIVER, BASESCAN)}</li>
         <li>IMD (Base): {addrLink(BASE_IMD, BASESCAN)}</li>
+        <li>Earlier garden, not used by this site (its own history only; candle numbers are separate): {addrLink(LEGACY_GARDEN)}</li>
         <li><a href={SOURCE_REPO} target="_blank" rel="noreferrer">Contract source at the pinned commit</a></li>
       </ul>
       <h3>Recent activity</h3>
@@ -355,32 +357,86 @@ function describe(name: string, a: any): string {
 
 export function HowPanel() {
   return (
-    <section aria-labelledby="how-title">
+    <section aria-labelledby="how-title" className="how">
       <h2 id="how-title">How it works</h2>
+      <p className="lede">Everlight Garden is a shared garden of candles on Ethereum. Each candle costs 1 IMD, can carry a public wish, and stays lit in the garden for as long as Ethereum runs.</p>
+
+      <h3>Lighting a candle</h3>
       <ol className="bullets">
         <li>Connect a wallet on Ethereum that holds IMD and a little ETH for gas. Viewing the garden needs no wallet.</li>
-        <li>Choose 1 to 50 candles, a style for each and an optional wish. Every style costs the same 1 IMD.</li>
-        <li>Approve exactly the total, then confirm the purchase. Your candles light in the next free positions once the receipt confirms.</li>
+        <li>Choose 1 to 50 candles, one of seven styles for each (Purity, Hope, Love, Success, Health, Wealth or Happiness) and an optional wish. Every style costs the same 1 IMD.</li>
+        <li>Approve exactly the total in IMD, then confirm the purchase. Each step is a separate Ethereum transaction and costs gas in ETH.</li>
+        <li>Your candles light in the next free spots once the receipt confirms. A large batch with long wishes can exceed what one block allows; the site then splits it into several purchases, each with its own confirmation.</li>
       </ol>
+
+      <h3>Wishes are public and permanent</h3>
+      <p>A wish is optional. It is written into the contract for anyone to read, and it can never be edited, hidden or deleted. Keep private details out of it. Each wish is at most 280 characters and 1,120 bytes, and it is always shown as plain text.</p>
+
       <h3>Where each IMD goes</h3>
       <dl className="summary">
         <div><dt>Burn allocation</dt><dd>30%</dd></div>
-        <div><dt>Earlier candles</dt><dd>30%</dd></div>
-        <div><dt>Ecosystem</dt><dd>30%</dd></div>
+        <div><dt>Earlier paid candles</dt><dd>60%</dd></div>
         <div><dt>Operations</dt><dd>5%</dd></div>
         <div><dt>Founder</dt><dd>5%</dd></div>
       </dl>
+      <p className="fine">There is no ecosystem allocation (0%). The first-ever candle has no earlier candles to share with, so its 60% joins the burn: 90% burn allocation, 5% operations, 5% founder.</p>
+
+      <h3>How rewards work</h3>
+      <ul className="bullets">
+        <li>Each new candle shares its 0.60 IMD equally among every candle bought before it. Rewards are counted per candle, not per wallet.</li>
+        <li>Example: candle 101 gives each of the 100 earlier candles 0.006 IMD before rounding. A wallet with three of those candles receives 0.018 IMD.</li>
+        <li>A candle never earns from its own payment, and past rewards are never shared again.</li>
+        <li>A batch is processed in order, so the earlier candles in your batch also share in the later ones.</li>
+        <li>Rewards come only from new purchases. With no new purchases there are no new rewards. There is no fixed yield and no guaranteed profit.</li>
+      </ul>
+
+      <h3>Claiming</h3>
+      <p>Rewards are not sent to your wallet automatically. They wait in this garden contract until you open Rewards and claim them, in a transaction you confirm and pay gas for. Rewards from an earlier contract can only be claimed from that contract.</p>
+
+      <h3>Burning, stage by stage</h3>
+      <ol className="bullets">
+        <li><strong>Allocated</strong>: each purchase sets IMD aside for burning on Ethereum. It is not burned yet.</li>
+        <li><strong>Queued</strong>: the owner opens a burn job for the allocated IMD. Still not burned.</li>
+        <li><strong>Bridged</strong>: the job sends the IMD across the bridge to the burn receiver on Base.</li>
+        <li><strong>Burned on Base</strong>: the receiver burns it and the Base supply goes down. Only this stage is a burn.</li>
+        <li><strong>Acknowledged</strong>: a receipt returns to Ethereum and the garden records the burn as confirmed.</li>
+      </ol>
+
+      <h3>What the owner does</h3>
+      <ul className="bullets">
+        <li>The owner ({addrLink(OWNER)}) opens sales or pauses them, starts burn jobs and pays their bridge fees, and withdraws the operations and founder shares.</li>
+        <li>Sales open only when the owner activates them. The garden reads this from the contract every time; this site never sends owner transactions.</li>
+      </ul>
+
       <h3>What a candle is</h3>
       <ul className="bullets">
-        <li>A permanent, nontransferable record on Ethereum: owner, style, date and wish. It is not an NFT and never expires.</li>
-        <li>There is no supply cap, no lottery and no free candle. Every light in the garden was paid for.</li>
-        <li>Wishes are public and immutable, up to 280 characters and 1120 bytes. They are shown as plain text.</li>
-        <li>Rewards come only from later purchases. There is no promised return.</li>
+        <li>A permanent record in the garden contract: owner, style, date and wish. It is not an NFT, cannot be transferred, and is not a share of the treasury or its assets.</li>
+        <li>The garden map holds 10,000 spots and grows when they fill. That is a layout, not a supply cap. Empty holders stay unlit; only verified purchases light a candle.</li>
+        <li>There is no lottery, no free candle and no new token.</li>
       </ul>
+
+      <h3>Contracts</h3>
+      <ul className="bullets">
+        <li>Garden (Ethereum): {addrLink(GARDEN)}</li>
+        <li>Burn receiver (Base): {addrLink(BASE_RECEIVER, BASESCAN)}</li>
+        <li>IMD on Ethereum: {addrLink(IMD)}; IMD on Base: {addrLink(BASE_IMD, BASESCAN)}</li>
+        <li>Earlier garden, not used by this site: {addrLink(LEGACY_GARDEN)}. Its candle numbers are separate from this garden's.</li>
+        <li><a href={SOURCE_REPO} target="_blank" rel="noreferrer">Contract source at the pinned commit</a></li>
+      </ul>
+
+      <h3>Questions</h3>
+      <div className="faq">
+        <details><summary>Is this endorsed by IMD?</summary><p>No. Everlight Garden is an independent project that accepts IMD as payment. Using the token does not mean its issuers support or review this garden.</p></details>
+        <details><summary>Is a candle an investment?</summary><p>No. A candle is a record with a wish. It may receive a share of later purchases, but it can also receive nothing more if nobody buys after you.</p></details>
+        <details><summary>Can I edit or delete my wish?</summary><p>No. Wishes are stored onchain forever and anyone can read them.</p></details>
+        <details><summary>Why is my candle not lit yet?</summary><p>A candle lights only after its purchase receipt is confirmed on Ethereum. If you reload while waiting, the site picks the transaction up again, including a sped-up or replaced one.</p></details>
+        <details><summary>What do I pay in total?</summary><p>1 IMD per candle, plus ETH gas for the approval and for each purchase transaction. Claiming rewards also costs gas.</p></details>
+      </div>
+
       <h3>Reading the garden</h3>
       <ul className="bullets">
         <li>Lit candles glow in their own spot. Empty stone holders mark the places the next candles will take.</li>
-        <li>Drag or use arrow keys to move, scroll, pinch or press plus and minus to zoom, and use the minimap to jump.</li>
+        <li>Drag or use arrow keys to move, scroll, pinch or press plus and minus to zoom, and use the minimap to jump. Find goes straight to a candle number.</li>
       </ul>
     </section>
   );

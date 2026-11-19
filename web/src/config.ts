@@ -9,16 +9,29 @@ export const SITE_NAME = "Everlight Garden";
 export const SITE_DESCRIPTION =
   "A midnight garden of permanent onchain candles. Light a candle with 1 IMD on Ethereum and leave a public wish.";
 
-/** Existing deployed contracts (pinned source commit f3ae2915b2fc99c56079da2fc9addef2e94397e0). */
+/**
+ * Live contracts (revised Everlight Garden). Source and ABI: launch-3312-everlight-garden-deploy-revised at
+ * 5752e230de18fa714111903f03d258a1e93faf2e, docs/integration.json and docs/abi/WishGarden.json.
+ * Readiness (bridge, activation, sales) is always read from the chain, never assumed here.
+ */
 export const SOURCE_REPO =
-  "https://github.com/identity-md-launches/launch-3281-everlightgarden-everlighttreasury-everli/tree/f3ae2915b2fc99c56079da2fc9addef2e94397e0";
-export const GARDEN: Address = "0x39e55288f5b84dd867a784c95f110818ea8f3b31";
+  "https://github.com/identity-md-launches/launch-3312-everlight-garden-deploy-revised/tree/5752e230de18fa714111903f03d258a1e93faf2e";
+export const GARDEN: Address = "0x33a514c5e2028f1affd70b82f170e8193df030a5";
 export const IMD: Address = "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7";
-export const BASE_RECEIVER: Address = "0xb525358f3f1c531522a27092e8aa1c054bb963fc";
+export const BASE_RECEIVER: Address = "0x4FdE47d5b574F9F18bC86D9878A460e6b1373D1E";
 export const BASE_IMD: Address = "0xFF0C532FDB8Cd566Ae169C1CB157ff2Bdc83E105";
 export const OWNER: Address = "0x48E4E74fE1d0c14404cEB57B9fec5b21329C6ec9";
-/** First block holding the garden's code (found by bisection on eth_getCode); event queries start here. */
-export const GARDEN_DEPLOY_BLOCK = 26433359n;
+/**
+ * Block of the garden's creation transaction 0x9305085fac09f628e90afdcd1d9a6dc5cfdbb21b2a8c36780eedbe10a6004a8e
+ * (CREATE2 factory call, block 26448736); event queries start here.
+ */
+export const GARDEN_DEPLOY_BLOCK = 26448736n;
+/**
+ * Earlier garden (source f3ae2915, 30/30/30/5/5 split). Linked for its own history only: the site never reads,
+ * caches or writes to it, and its candle IDs are never merged with the live garden's.
+ */
+export const LEGACY_GARDEN: Address = "0x39e55288f5b84dd867a784c95f110818ea8f3b31";
+export const LEGACY_BASE_RECEIVER: Address = "0xb525358f3f1c531522a27092e8aa1c054bb963fc";
 
 export const CANDLE_PRICE = 10n ** 18n;
 export const MAX_BATCH = 50;

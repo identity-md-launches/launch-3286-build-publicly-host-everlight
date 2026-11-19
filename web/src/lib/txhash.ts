@@ -8,7 +8,7 @@ export const CANDLES_PURCHASED = parseAbiItem(
 );
 
 /** Candle id -> hash of the transaction that lit it, from CandlesPurchased logs (receipts, activity reads, lookups). */
-const KEY = `everlight:v1:tx:${GARDEN.toLowerCase()}`;
+const KEY = `everlight:v2:tx:${GARDEN.toLowerCase()}`;
 let memo: Record<string, Hash> | null = null;
 function table(): Record<string, Hash> {
   if (memo) return memo;

@@ -2,7 +2,7 @@ import type { Candle } from "../lib/candles";
 import { HOLDER_TOP, HORIZON_CUT, SECTOR_H, SECTOR_MARGIN, SECTOR_W, SLOTS_PER_SECTOR, cameraBounds, horizonY, positionOf, sectorAt, sectorCount, sectorOrigin, streamX } from "./layout";
 import { BASE_PAD, PX, drawSectorBase, drawSectorUpright, springY, streamHalf, type Sheet } from "./scenery";
 import { ignition } from "./ignite";
-import { CASTLE_W, VISTA_CASTLE_X, VISTA_FOOT, VISTA_H, VISTA_TOP, VISTA_W, makeVista, type Vista } from "./vista";
+import { CASTLE_BOXES, CASTLE_W, MOON_AT, MOON_R, VISTA_CASTLE_X, VISTA_FOOT, VISTA_H, VISTA_TOP, VISTA_W, makeVista, type Vista } from "./vista";
 
 export interface Camera { x: number; y: number; z: number }
 
@@ -69,6 +69,8 @@ export class GardenRenderer {
   private vista: Vista;
   private frameNo = 0;
   private openW = 0;
+  /** Cached DOM edges the moon must keep clear of: header bottom and the headline's text box (viewport px). */
+  private skyAvoid: { header: number; text: DOMRect | null } = { header: 56, text: null };
   private litCache = new Map<number, { count: number; canvas: HTMLCanvasElement }>();
   private glow: HTMLCanvasElement;
   missingAssets = 0;
@@ -224,16 +226,53 @@ export class GardenRenderer {
     const top = hy + 40 * vs - th;
     // parallax: the castle sits right of centre at the opening view and drifts slowly as the camera pans
     // the castle sits right of centre in the part of the screen the docked form leaves open
-    if (this.frameNo++ % 30 === 0) this.openW = Math.min(this.w, document.querySelector(".light-dock")?.getBoundingClientRect().left ?? this.w);
-    const x0 = (900 - cam.x) * cam.z * 0.12 + (this.openW || this.w) * 0.66 - VISTA_CASTLE_X * tw;
+    if (this.frameNo++ % 30 === 0) {
+      this.openW = Math.min(this.w, document.querySelector(".light-dock")?.getBoundingClientRect().left ?? this.w);
+      const h1 = document.querySelector(".intro h1");
+      let text: DOMRect | null = null;
+      if (h1 && h1.textContent) { const r = document.createRange(); r.selectNodeContents(h1); const b = r.getBoundingClientRect(); if (b.width > 0) text = b; }
+      this.skyAvoid = { header: document.querySelector(".top")?.getBoundingClientRect().bottom ?? 56, text };
+    }
+    const x0 = (900 - cam.x) * cam.z * 0.12 + (this.openW || this.w) * 0.7 - VISTA_CASTLE_X * tw;
     const start = (((x0 % tw) + tw) % tw) - tw;
     v.layers.forEach((layer, i) => {
       for (let x = start; x < this.w; x += tw) ctx.drawImage(layer, x, top, tw + 1, th);
       // the castle is one image, drawn once: wide screens never repeat it
-      if (i === v.castleAfter) ctx.drawImage(v.castle, x0 + VISTA_CASTLE_X * tw - (cw * vs) / 2, top, cw * vs, th);
+      if (i === v.castleAfter) {
+        const left = x0 + VISTA_CASTLE_X * tw - (cw * vs) / 2;
+        const px = (cw * vs) / v.castle.width; // one castle-art pixel on screen
+        this.drawMoon(left + MOON_AT.x * cw * vs, top + MOON_AT.y * th, px, CASTLE_BOXES.map((c) => ({ l: left + c.l * px, r: left + c.r * px, t: top + c.t * px })));
+        ctx.drawImage(v.castle, left, top, cw * vs, th);
+      }
     });
     ctx.fillStyle = VISTA_FOOT;
     ctx.fillRect(0, top + th - 1, this.w, this.h);
+  }
+
+  /**
+   * The moon sits upper left of the castle in open sky. Candidate spots are tried in order and the first that clears
+   * the header, the headline text, the castle silhouette and the docked panel is used: default, above the headline,
+   * right of the headline, right of the castle, then a smaller moon between header and headline.
+   */
+  private drawMoon(x: number, y: number, px: number, castle: { l: number; r: number; t: number }[]) {
+    const m = this.vista.moon, r0 = MOON_R * px;
+    const { header, text } = this.skyAvoid;
+    const right = this.openW || this.w;
+    const hit = (b: { left: number; right: number; top: number; bottom: number }, cx: number, cy: number, r: number, gap: number) =>
+      cx + r + gap > b.left && cx - r - gap < b.right && cy + r + gap > b.top && cy - r - gap < b.bottom;
+    const clear = (cx: number, cy: number, r: number) =>
+      cx - r >= 4 && cx + r <= right - 4 && cy - r >= header + 4 && cy + r <= this.h &&
+      !(text && hit(text, cx, cy, r, 6)) && !castle.some((c) => hit({ left: c.l, right: c.r, top: c.t, bottom: this.h }, cx, cy, r, 2));
+    const yc = Math.max(y, header + r0 + 6);
+    const tries: [number, number, number][] = [[x, y, r0], [x, yc, r0]];
+    if (text) tries.push([x, text.top - r0 - 10, r0], [text.right + r0 + 16, yc, r0]);
+    const cr = Math.max(...castle.map((c) => c.r));
+    tries.push([cr + r0 + 14, yc, r0]);
+    if (text) { const r = Math.min(r0, (text.top - header - 14) / 2); if (r >= 9) tries.push([x, header + 5 + r, r], [Math.min(x, right - r - 8), header + 5 + r, r]); }
+    const pick = tries.find(([cx, cy, r]) => clear(cx, cy, r));
+    if (!pick) return; // no clear sky at this size and zoom: leave it out rather than draw it under text or chrome
+    const [cx, cy, r] = pick, size = m.width * px * (r / r0);
+    this.ctx.drawImage(m, Math.round(cx - size / 2), Math.round(cy - size / 2), Math.round(size), Math.round(size));
   }
 
   /** Overview LOD: one pre-rendered light layer per sector, rebuilt only when that sector gains candles. */

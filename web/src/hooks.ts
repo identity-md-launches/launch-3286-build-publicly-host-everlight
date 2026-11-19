@@ -150,6 +150,7 @@ export function useActivity() {
       const head = await ethClient.getBlockNumber();
       const out: { name: string; block: bigint; tx: string; args: any }[] = [];
       let to = head;
+      let reachedDeploy = false;
       for (let i = 0; i < 8 && to >= GARDEN_DEPLOY_BLOCK && out.length < 50; i++) {
         const from = to - 4_999n > GARDEN_DEPLOY_BLOCK ? to - 4_999n : GARDEN_DEPLOY_BLOCK;
         const logs = await ethClient.getLogs({ address: GARDEN, events: EVENTS, fromBlock: from, toBlock: to });
@@ -157,10 +158,12 @@ export function useActivity() {
           out.push({ name: l.eventName, block: l.blockNumber!, tx: l.transactionHash!, args: l.args });
           if (l.eventName === "CandlesPurchased" && l.transactionHash) rememberTx(Number((l.args as any).firstCandleId), Number((l.args as any).quantity), l.transactionHash);
         }
-        if (from === GARDEN_DEPLOY_BLOCK) break;
+        if (from === GARDEN_DEPLOY_BLOCK) { reachedDeploy = true; break; }
         to = from - 1n;
       }
-      return { items: out.slice(0, 50), complete: to <= GARDEN_DEPLOY_BLOCK || out.length === 0, head };
+      // complete only when every block back to the garden's deployment was read; an empty partial scan is not "no activity"
+      const scannedFrom = reachedDeploy ? GARDEN_DEPLOY_BLOCK : to + 1n;
+      return { items: out.slice(0, 50), complete: reachedDeploy, scannedFrom, scannedBlocks: head - scannedFrom + 1n, head };
     },
   });
 }

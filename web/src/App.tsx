@@ -134,6 +134,19 @@ export default function App() {
   const narrow = useNarrow();
   const wide = useNarrow(DOCK_QUERY);
   const docked = wide && (route === "garden" || route === "light");
+  // the docked purchase panel can be collapsed to a slim tab so the garden takes the full width;
+  // opening Light a candle (#/light) always brings it back
+  const [dockHidden, setDockHidden] = useState(false);
+  useEffect(() => { if (route === "light") setDockHidden(false); }, [route]);
+  const dockOpen = docked && !dockHidden;
+  const dockToggle = useRef<HTMLButtonElement>(null);
+  const dockFocus = useRef(false);
+  useEffect(() => {
+    if (!dockFocus.current) return;
+    dockFocus.current = false;
+    dockToggle.current?.focus();
+  }, [dockHidden]);
+  const toggleDock = (hidden: boolean) => { dockFocus.current = true; setDockHidden(hidden); };
   // the split disclosure is a sheet on phones: while it is open the map tools step aside
   const [splitOpen, setSplitOpen] = useState(() => !matchMedia(SHEET_QUERY).matches);
   useEffect(() => setSplitOpen(!narrow), [narrow]);
@@ -234,12 +247,12 @@ export default function App() {
     : status.isError ? "Sales status unavailable" : "Reading sales status…";
 
   return (
-    <div className="app">
+    <div className={docked && dockHidden ? "app dock-collapsed" : "app"}>
       <a className="skip" href="#main">Skip to the garden tools</a>
       <header className="top">
         <a className="brand" href="#/garden" aria-label="Everlight Garden, home">
           <img src="./favicon.svg" alt="" width={32} height={32} />
-          <span className="brand-name">Everlight Garden</span><span className="brand-on"> · on IMD</span>
+          <span className="brand-name">Everlight Garden</span><span className="brand-on"> on IMD</span>
         </a>
         <nav aria-label="Main" className={menu ? "nav open" : "nav"}>
           {(menu ? ROUTES : NAV).map(([k, label]) => (
@@ -274,7 +287,7 @@ export default function App() {
       <main id="main" className="overlay">
         {(route === "garden" || docked) && (
           <div className={(anchored && place?.overlapsAvoid && !place.hidden) || (narrow && !!sel) ? "intro intro-yield" : "intro"}>
-            <h1>A wish, a flame, a place forever</h1>
+            <h1>Every wish leaves a light.</h1>
             <p className="intro-line">Write a wish and light a permanent candle in the garden for 1 IMD on Ethereum.</p>
             <a className="cta intro-cta" href="#/light">{"Light a candle\u00a0· 1\u00a0IMD"}</a>
             <p className="status-line" role="status">
@@ -312,8 +325,16 @@ export default function App() {
           {findError && <p id="find-err" className="find-err" role="alert">{findError}</p>}
         </div>
 
-        {docked && (
-          <aside className="light-dock" aria-label="Light your candle">
+        {docked && dockHidden && (
+          <button ref={dockToggle} type="button" className="cta dock-tab" aria-expanded="false" onClick={() => toggleDock(false)}>
+            Light a candle
+          </button>
+        )}
+        {dockOpen && (
+          <aside id="light-dock" className="light-dock" aria-label="Light your candle">
+            <button ref={dockToggle} type="button" className="x panel-x dock-x" aria-expanded="true" aria-controls="light-dock" aria-label="Hide the candle panel" title="Hide the candle panel" onClick={() => toggleDock(true)}>
+              <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path d="M6 3l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </button>
             {FIXTURE !== null && <p className="fixture fixture-bar" role="note">{FIXTURE_NOTE}</p>}
             <LightPanel onLit={(id, q) => { if (id) lit(id, q); }} />
           </aside>

@@ -17,7 +17,18 @@ export const CASTLE_W = 1100;
 /** vista units per art pixel */
 const VS = 4;
 
-export interface Vista { layers: HTMLCanvasElement[]; castle: HTMLCanvasElement; castleAfter: number }
+export interface Vista { layers: HTMLCanvasElement[]; castle: HTMLCanvasElement; castleAfter: number; moon: HTMLCanvasElement }
+/** Moon sprite: core radius and its default centre in castle-image pixels (upper left of the castle). */
+export const MOON_R = 11, MOON_PAD = 6, MOON_AT = { x: 0.36, y: 0.3 };
+/**
+ * Castle silhouette the moon keeps clear of, as stepped boxes in castle-image pixels around cx = 0.55 of the image:
+ * inner towers and keep. The low outer towers may overlap the moon's rim (they are drawn over it, as in the reference).
+ */
+const CCX = (CASTLE_W / VS) * 0.55, CHILL = (VISTA_H / VS) * 0.5;
+export const CASTLE_BOXES = [
+  { l: CCX - 35, r: CCX + 35, t: CHILL - 38 },
+  { l: CCX - 13, r: CCX + 13, t: CHILL - 47 },
+];
 
 const B4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 const dither = (x: number, y: number, t: number) => B4[(y & 3) * 4 + (x & 3)] / 16 < t;
@@ -87,12 +98,16 @@ export function makeVista(): Vista {
   // castle image: moon, hill and castle, drawn once
   const CW = CASTLE_W / VS;
   const C = pix(CW, H);
-  const mx = CW * 0.3, my = H * 0.16, mr = 11;
+  // the moon is its own sprite: the renderer places it in open sky, below the header and clear of the headline
+  const mr = MOON_R, MS = (MOON_R + MOON_PAD) * 2 + 1;
+  const M = pix(MS, MS);
+  const mx = MS >> 1, my = MS >> 1;
   for (let y = -mr - 6; y <= mr + 6; y++) for (let x = -mr - 6; x <= mr + 6; x++) {
     const d = Math.hypot(x, y);
-    if (d <= mr) C.set(mx + x, my + y, (x + 3) ** 2 + (y - 2) ** 2 < 9 || (x - 4) ** 2 + (y + 4) ** 2 < 4 ? "#d9d3b4" : d > mr - 1.2 ? "#e8e2c4" : "#fbf6dc");
-    else if (d <= mr + 4 && dither(x, y, 0.35)) C.set(mx + x, my + y, "#1c3a33");
+    if (d <= mr) M.set(mx + x, my + y, (x + 3) ** 2 + (y - 2) ** 2 < 9 || (x - 4) ** 2 + (y + 4) ** 2 < 4 ? "#d9d3b4" : d > mr - 1.2 ? "#e8e2c4" : "#fbf6dc");
+    else if (d <= mr + 4 && dither(x, y, 0.35)) M.set(mx + x, my + y, "#1c3a33");
   }
+  M.done();
   const cx = CW * 0.55, hillTop = H * 0.5;
   for (let x = 0; x < CW; x++) {
     const t = (x - cx) / (CW * 0.32);
@@ -117,5 +132,5 @@ export function makeVista(): Vista {
     C.set(wx, wy, "#cdbf9c"); C.set(wx, wy + 1, "#8f8b74");
   }
   C.done();
-  return { layers, castle: C.c, castleAfter: 1 };
+  return { layers, castle: C.c, castleAfter: 1, moon: M.c };
 }

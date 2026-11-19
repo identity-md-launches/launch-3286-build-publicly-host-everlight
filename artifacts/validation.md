@@ -273,3 +273,42 @@ Environment: Ubuntu 24.04 worker, Node 24.21, Playwright 1 with Chromium headles
 ### Limitations (revision 6)
 - The approved cinematic perspective artwork was not produced, because no image, illustration or 3D tool was available. The tree sprites (three variants) and the top-down terraced map are unchanged.
 - Performance was not re-measured; the scenery change adds per-cell drawing only when a cell is cached.
+
+## Revision 7 (2026-11-19): review findings
+
+Environment: Ubuntu 24.04 worker, Node 24.21, Playwright 1.56 driving Chromium headless shell 1248 (software rendering). Missing system libraries and a font were unpacked from Ubuntu noble packages into /tmp; nothing was installed system-wide. The export was served from `dist/` by a local static server on 127.0.0.1.
+
+Reproduction on the previous `dist/` (before any change):
+- f7808a72 (Treasury Retry): reproduced. `Panels.tsx:306` rendered only the `.bad` sentence; no button.
+- 26e97d45 (dock collapse): reproduced at 1440×900. `#/garden` had no control that hides the dock (`getByRole("button", { name: "Hide the candle panel" })` count 0).
+- 42f8395f (partial scan "none yet"): reproduced by reading `hooks.ts:152-163` (`complete: ... || out.length === 0`, and the panel never read `complete`). After the fix it was checked with mocked RPC (head = deploy + 100,000, empty logs).
+- 2126b59e (moon under header): reproduced. Screenshot `artifacts/screens/rev7-before-garden-1440.jpg` shows a dull disc at about (608, 27) behind the header.
+- a08a9397 (headline) and 108a48ec (brand dot): reproduced. h1 "A wish, a flame, a place forever"; brand text "EVERLIGHT GARDEN\n · on IMD".
+
+Checks after the last source change (`artifacts/rev7-browser-checks.txt`):
+
+| Check | Result |
+|---|---|
+| brand at 1440 | "EVERLIGHT GARDEN on IMD" (no dot); 390 shows the name only, as designed |
+| h1 at 390 and 1440 | "Every wish leaves a light." |
+| horizontal overflow at 390 and 1440 | none |
+| hide control in dock | present, 44×44 at (1367, 97) |
+| after hide | dock removed; "Light a candle" tab at (1268, 72), 156×44, focused |
+| after show | dock back; hide button focused |
+| `#/light` after hiding | dock shown |
+| Treasury, getLogs forced to HTTP 403 (mock) | "Recent events could not be read. … Try again" |
+| click Try again with getLogs answering [] (mock, head = deploy + 100,000) | error gone; "No activity in the last 40,000 blocks (since block 26493360). Older blocks were not scanned here; see the full event history on Etherscan." |
+| head = deploy + 1,000 (mock), empty logs | "No purchases, claims or burn jobs yet." |
+| page errors / crashes | none |
+
+Moon placement screenshots at the opening view: 320 (`rev7-after-sky-320.jpg`), 390 (`rev7-after-garden-390.jpg`), 1180 (`rev7-after-sky-1180.jpg`, right of the castle because the headline fills the left), 1440 (`rev7-after-garden-1440.jpg`), 1440 with the dock hidden (`rev7-after-garden-1440-collapsed.jpg`).
+
+Commands: `npm run build` (tsc --noEmit + vite build) exit 0; `npx vitest run` 90/90; `node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste` 16/16 (`artifacts/taste-probe.json`).
+
+### Better Interface review of the changed surfaces
+- Accessibility: the hide button has a text label, `aria-expanded` and `aria-controls`; the tab has `aria-expanded="false"`; focus moves to whichever control replaces the one pressed. Both are 44 px tall. The activity error is `role="alert"`, and its Try again is a real `<button>` that is disabled while fetching.
+- Layout: the hide button's negative margin keeps the dock heading centred, and the tab sits where the dock's top edge was. With the dock hidden the headline and toasts widen, and the castle and moon re-centre.
+- Writing: the partial-scan message states the range actually read and where to see the rest; it no longer claims there is none.
+- Typography and colours: no new sizes or colours; the tab reuses `.cta`, and the hide button reuses `.x panel-x`.
+- UI: one toggle, one state, no new pattern.
+- Not done: no screen-reader session and no physical device.

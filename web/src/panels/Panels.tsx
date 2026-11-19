@@ -303,8 +303,18 @@ export function TreasuryPanel() {
       </ul>
       <h3>Recent activity</h3>
       {a.isLoading && <p role="status">Reading recent events…</p>}
-      {a.isError && <p className="bad">Recent events could not be read. The balances above are unaffected.</p>}
-      {a.data && a.data.items.length === 0 && <p>No purchases, claims or burn jobs yet.</p>}
+      {a.isError && (
+        <p className="bad" role="alert">
+          Recent events could not be read. The balances above are unaffected. <button className="link" onClick={() => a.refetch()} disabled={a.isFetching}>{a.isFetching ? "Retrying…" : "Try again"}</button>
+        </p>
+      )}
+      {a.data && a.data.items.length === 0 && a.data.complete && <p>No purchases, claims or burn jobs yet.</p>}
+      {a.data && a.data.items.length === 0 && !a.data.complete && (
+        <p>
+          No activity in the last {a.data.scannedBlocks.toLocaleString("en-US")} blocks (since block {a.data.scannedFrom.toString()}). Older blocks were not scanned here; see the{" "}
+          <a href={`${ETHERSCAN}/address/${GARDEN}#events`} target="_blank" rel="noreferrer">full event history on Etherscan</a>.
+        </p>
+      )}
       {a.data && a.data.items.length > 0 && (
         <ul className="list">
           {a.data.items.map((it) => (

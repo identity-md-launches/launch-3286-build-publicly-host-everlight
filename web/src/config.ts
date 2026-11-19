@@ -51,6 +51,11 @@ export const config = createConfig({
 });
 
 export const ethClient = createPublicClient({ chain: mainnet, transport: ethTransport, batch: { multicall: true } });
+/** One client per Ethereum host, no transport retries: the activity scan picks hosts and narrows ranges itself. */
+export const ETH_LOG_CLIENTS = ETH_RPCS.map((u) => ({
+  name: new URL(u).host,
+  client: createPublicClient({ chain: mainnet, transport: http(u, { timeout: 10_000, retryCount: 0 }) }),
+}));
 export const baseClient = createPublicClient({
   chain: base,
   transport: fallback(BASE_RPCS.map((u) => http(u, { timeout: 12_000, retryCount: 1 }))),

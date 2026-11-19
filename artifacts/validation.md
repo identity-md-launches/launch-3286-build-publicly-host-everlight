@@ -282,10 +282,10 @@ Reproduction on the previous `dist/` (before any change):
 - f7808a72 (Treasury Retry): reproduced. `Panels.tsx:306` rendered only the `.bad` sentence; no button.
 - 26e97d45 (dock collapse): reproduced at 1440×900. `#/garden` had no control that hides the dock (`getByRole("button", { name: "Hide the candle panel" })` count 0).
 - 42f8395f (partial scan "none yet"): reproduced by reading `hooks.ts:152-163` (`complete: ... || out.length === 0`, and the panel never read `complete`). After the fix it was checked with mocked RPC (head = deploy + 100,000, empty logs).
-- 2126b59e (moon under header): reproduced. Screenshot `artifacts/screens/rev7-before-garden-1440.jpg` shows a dull disc at about (608, 27) behind the header.
+- 2126b59e (moon under header): reproduced. (The rev7 captures cited here were never committed; revision 8 replaces them with `artifacts/screens/rev8-before-garden-*.jpg` and `rev8-after-garden-*.jpg`, see below.)
 - a08a9397 (headline) and 108a48ec (brand dot): reproduced. h1 "A wish, a flame, a place forever"; brand text "EVERLIGHT GARDEN\n · on IMD".
 
-Checks after the last source change (`artifacts/rev7-browser-checks.txt`):
+Checks after the last source change of revision 7 (the raw log was not committed; current raw results are in `artifacts/rev8-browser-checks.json`):
 
 | Check | Result |
 |---|---|
@@ -301,7 +301,7 @@ Checks after the last source change (`artifacts/rev7-browser-checks.txt`):
 | head = deploy + 1,000 (mock), empty logs | "No purchases, claims or burn jobs yet." |
 | page errors / crashes | none |
 
-Moon placement screenshots at the opening view: 320 (`rev7-after-sky-320.jpg`), 390 (`rev7-after-garden-390.jpg`), 1180 (`rev7-after-sky-1180.jpg`, right of the castle because the headline fills the left), 1440 (`rev7-after-garden-1440.jpg`), 1440 with the dock hidden (`rev7-after-garden-1440-collapsed.jpg`).
+Opening-view screenshots now delivered: `artifacts/screens/rev8-before-garden-1440.jpg`, `rev8-after-garden-1440.jpg`, `rev8-before-garden-390.jpg`, `rev8-after-garden-390.jpg` (revision 8, see below). The rev7 files named here before were never committed.
 
 Commands: `npm run build` (tsc --noEmit + vite build) exit 0; `npx vitest run` 90/90; `node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste` 16/16 (`artifacts/taste-probe.json`).
 
@@ -312,3 +312,42 @@ Commands: `npm run build` (tsc --noEmit + vite build) exit 0; `npx vitest run` 9
 - Typography and colours: no new sizes or colours; the tab reuses `.cta`, and the hide button reuses `.x panel-x`.
 - UI: one toggle, one state, no new pattern.
 - Not done: no screen-reader session and no physical device.
+
+
+## Revision 8: reviewer findings
+
+Environment: Ubuntu 24.04 worker, Node 24.21, Playwright 1 with Chromium headless shell 159 (software rendering). Missing system libraries and DejaVu fonts were unpacked from Ubuntu noble packages into /tmp (nothing installed system-wide, nothing in the repository). The export in `dist/` was served by `python3 -m http.server`. Everything below is **local**: fixture runs (`?fixture=…`) and **mocked** RPC answers by request interception. No live RPC failure was reproduced against the real providers this round, and no wallet transaction ran. Raw results: `artifacts/rev8-browser-checks.json`.
+
+| Check | Kind | Result |
+|---|---|---|
+| `npm run build` (`tsc --noEmit && vite build`) | local | exit 0, `dist/` rebuilt after the last source change |
+| `npx vitest run` | unit | 10 files, 102/102 passed (new: `tests/activity.test.ts`, `tests/stairs.test.ts`, 3 popup cases) |
+| taste.mjs at 320/390/1440 | local export | 16/16 passed (`artifacts/taste-probe.json`) |
+| Treasury, mock: getLogs > 1,000 blocks returns a range error on all four hosts, head = deploy + 100,000 | mocked RPC | 4 whole-window probes (one per host), then 44 chunks of 50 blocks; stops at the 48-request budget; shows "Verified blocks 26531160 to 26533359 (2,200 blocks). Older events could not be read in this scan (the request limit for one scan was reached). Try again". Try again ran exactly one new 48-request scan (96 total) |
+| Treasury, mock: one CandlesPurchased at 26,533,357, then getLogs HTTP 403, Garden for 15.5 s, back to Treasury | mocked RPC | row kept and labelled "Showing activity from the last successful scan, read at 9:31:47 AM through block 26533359. The latest refresh failed…" plus Try again (`screens/rev8-treasury-stale-1440.jpg`) |
+| Treasury, mock: every getLogs HTTP 403, no earlier scan | mocked RPC | "Recent activity is unavailable: no RPC host returned these events…" plus Try again; 4 requests, no stacked retries |
+| Find #37 at 1440×900, `?fixture=100` after Reset view | fixture | popup placed `side-left` at x 341–661, y 220–679; the ring (centre about x 718) and the candle stay uncovered (`screens/rev8-find37-1440.jpg`) |
+| Find #10000 at 1440×900, `?fixture=10000` | fixture | `side-left`, x 340–660 (`screens/rev8-find10000-1440.jpg`) |
+| Find #37 at 390×844 | fixture | bottom sheet from y 377; candle framed above it (`screens/rev8-find37-390.jpg`) |
+| 1180×900 `#/light`: hide the dock, open the menu, click Light a candle | local | hash stays `#/light`, dock count 0 → 1, menu closed (`.nav.open` count 0) |
+| Opening view before/after, fresh storage, `?fixture=0`, Reset view | local | `screens/rev8-before-garden-1440.jpg` / `rev8-after-garden-1440.jpg`, `rev8-before-garden-390.jpg` / `rev8-after-garden-390.jpg`. "Before" is the previous commit's export, "after" is this one, same fixture and camera. After: the twin arches stand on a plinth with a central flight and a flagstone walk down to the diagonal path, and terrace ends carry flights of steps, one with a walk to the path |
+| Share card | local | `web/public/og.png` regenerated at 1200×630 from the current empty pixel garden (`?fixture=0`) with the same title and subtitle; copied to `dist/og.png` by the build |
+
+Findings and fixes (`file:line` at the time of the fix):
+- 98da2143 (Treasury ranges): `web/src/lib/activity.ts` is a new budgeted scanner. It asks one client per host with no transport retries (`web/src/config.ts` `ETH_LOG_CLIENTS`) and remembers each host's range limit, archive refusal or network failure. It narrows to 50-block chunks, keeps the verified contiguous range from the head, and reports why it stopped. `useActivity` sets `retry: false` (`web/src/hooks.ts`).
+- 9e751e88 (stale activity): `web/src/panels/Panels.tsx` now shows distinct unavailable, stale (with time and last scanned block), partial and complete states.
+- 39b17bc7 (popup over candle): `web/src/lib/popup.ts` takes the selection ring from `Garden.tsx`. It keeps above and below placements 8 px plus the pointer clear of the ring, then tries the right side, then the left, moving the pointer to that edge. If no side fits, it caps the height to the band above or below the ring and scrolls (`styles.css` `.side-left`, `.side-right`, `.capped`).
+- f5509442 (stairs): `web/src/garden/scenery.ts` `stairsOf`/`drawStair`/`drawWalk`/`drawPlinth`. Slots are untouched, and `tests/stairs.test.ts` checks that every flight is clear of every slot's holder-to-flame box across all 105 initial sectors. Holders sit about 28 world units apart and are 24 wide, so no flight fits between two holders; flights stand at terrace ends past the last holder instead.
+- e1062a1a (menu dock): the menu link handler closes the menu and reopens the dock (`web/src/App.tsx`).
+- ecc4b6c2 (share card) and 81d293c6 (missing screenshots): fixed as listed above.
+
+Better Interface review of the changed parts:
+- Accessibility: the stale and unavailable notes use `role="alert"`, and Try again is a real button that is disabled while scanning.
+- Writing: the notes say what was read and what was not, with no fabricated zeros.
+- Layout: the side popup keeps the candle in view.
+- Colors: the stale note uses the existing headline ivory with a gold rule.
+- Typography and UI tokens are unchanged.
+
+Not rendered: contrast of the new stale note was not measured separately.
+
+Untested this round: every wallet action (connect, approve, purchase, claim, replacement or cancellation), because no wallet runs in this environment. Also untested: the live providers' current getLogs behaviour, which is covered only by the mock reproducing the reviewer's reported answers.

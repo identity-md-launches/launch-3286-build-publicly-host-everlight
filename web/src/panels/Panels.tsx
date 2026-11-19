@@ -6,7 +6,7 @@ import { useAccount } from "wagmi";
 import { simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
 import { useQueryClient } from "@tanstack/react-query";
 import { wishGardenAbi } from "../abi/WishGarden";
-import { BASESCAN, BASE_IMD, BASE_RECEIVER, ETHERSCAN, GARDEN, IMD, OWNER, SOURCE_REPO, config } from "../config";
+import { BASESCAN, BASE_IMD, BASE_RECEIVER, ETHERSCAN, GARDEN, GARDEN_DEPLOY_BLOCK, IMD, OWNER, SOURCE_REPO, config } from "../config";
 import { STYLE_NAMES, date, imd, short, safeChecksum } from "../lib/format";
 import { explainError } from "../lib/errors";
 import { FIXTURE_MESSAGE, pendingStore, reconcileSent } from "../lib/purchase";
@@ -238,6 +238,8 @@ export function RewardsPanel() {
 export function TreasuryPanel() {
   const t = useTreasury();
   const a = useActivity();
+  // Try again always starts a new scan; it never repeats a failed request plan inside the old one
+  const retry = <button className="link" onClick={() => a.refetch()} disabled={a.isFetching}>{a.isFetching ? "Scanning…" : "Try again"}</button>;
   const e = t.data?.eth;
   const b = t.data?.base;
   const row = (label: string, v: bigint | undefined, note?: string) => (
@@ -303,18 +305,26 @@ export function TreasuryPanel() {
       </ul>
       <h3>Recent activity</h3>
       {a.isLoading && <p role="status">Reading recent events…</p>}
-      {a.isError && (
+      {a.isError && !a.data && (
         <p className="bad" role="alert">
-          Recent events could not be read. The balances above are unaffected. <button className="link" onClick={() => a.refetch()} disabled={a.isFetching}>{a.isFetching ? "Retrying…" : "Try again"}</button>
+          Recent activity is unavailable: no RPC host returned these events. The balances above are unaffected. {retry}
         </p>
       )}
-      {a.data && a.data.items.length === 0 && a.data.complete && <p>No purchases, claims or burn jobs yet.</p>}
-      {a.data && a.data.items.length === 0 && !a.data.complete && (
-        <p>
-          No activity in the last {a.data.scannedBlocks.toLocaleString("en-US")} blocks (since block {a.data.scannedFrom.toString()}). Older blocks were not scanned here; see the{" "}
-          <a href={`${ETHERSCAN}/address/${GARDEN}#events`} target="_blank" rel="noreferrer">full event history on Etherscan</a>.
+      {a.isError && a.data && (
+        <p className="stale-note" role="alert">
+          Showing activity from the last successful scan, read at {new Date(a.dataUpdatedAt).toLocaleTimeString("en-US")} through block {a.data.head.toString()}. The latest refresh failed, so newer events may be missing. {retry}
         </p>
       )}
+      {a.data && (
+        <p className="fine">
+          {a.data.complete
+            ? `Every block from the garden's deployment (${GARDEN_DEPLOY_BLOCK.toString()}) to ${a.data.head.toString()} was read.`
+            : `Verified blocks ${a.data.scannedFrom.toString()} to ${a.data.head.toString()} (${a.data.scannedBlocks.toLocaleString("en-US")} blocks).`}
+          {a.data.stopped && <> Older events could not be read in this scan ({a.data.stopped.reason === "budget" ? "the request limit for one scan was reached" : "the RPC hosts refused older blocks"}). {!a.isError && retry}</>}
+          {!a.data.complete && <> See the <a href={`${ETHERSCAN}/address/${GARDEN}#events`} target="_blank" rel="noreferrer">full event history on Etherscan</a>.</>}
+        </p>
+      )}
+      {a.data && a.data.items.length === 0 && (a.data.complete ? <p>No purchases, claims or burn jobs yet.</p> : <p>No activity in the verified blocks.</p>)}
       {a.data && a.data.items.length > 0 && (
         <ul className="list">
           {a.data.items.map((it) => (

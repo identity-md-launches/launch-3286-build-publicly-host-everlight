@@ -119,7 +119,7 @@ export default function App() {
   const [findBusy, setFindBusy] = useState<number | null>(null);
   const [extra, setExtra] = useState<Candle | null>(null); // a record read by Find before its page streamed in
   const [menu, setMenu] = useState(false);
-  const [anchor, setAnchor] = useState<{ x: number; y: number } | null>(null);
+  const [anchor, setAnchor] = useState<{ x: number; y: number; ring: { x: number; y: number; r: number } } | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [stats, setStats] = useState<{ fps: number; ms: number; drawn: number; lod: number; missing: number } | null>(null);
   const garden = useRef<GardenHandle | null>(null);
@@ -163,8 +163,11 @@ export default function App() {
     const strip = document.querySelector(".strip")?.getBoundingClientRect().top ?? innerHeight;
     const intro = document.querySelector(".intro")?.getBoundingClientRect() ?? null;
     const base = (el.offsetParent as HTMLElement | null)?.getBoundingClientRect().top ?? 0;
-    const p = placePopup(anchor, { w: el.offsetWidth, h: el.offsetHeight }, { w: document.querySelector(".light-dock")?.getBoundingClientRect().left ?? innerWidth, top: header, bottom: strip }, intro && intro.height > 0 ? intro : null);
-    setPlace((old) => (old && old.left === p.left && old.top === p.top && old.hidden === p.hidden && old.below === p.below && old.overlapsAvoid === p.overlapsAvoid && old.base === base ? old : { ...p, base }));
+    // natural height, not the scroll-capped one, so a capped popup does not flip back on the next measure
+    const body = el.querySelector<HTMLElement>(".detail");
+    const h = body ? el.offsetHeight - body.clientHeight + body.scrollHeight : el.offsetHeight;
+    const p = placePopup(anchor, { w: el.offsetWidth, h }, { w: document.querySelector(".light-dock")?.getBoundingClientRect().left ?? innerWidth, top: header, bottom: strip }, intro && intro.height > 0 ? intro : null, 8, anchor.ring);
+    setPlace((old) => (old && old.left === p.left && old.top === p.top && old.hidden === p.hidden && old.below === p.below && old.overlapsAvoid === p.overlapsAvoid && old.side === p.side && old.pointerY === p.pointerY && old.maxH === p.maxH && old.base === base ? old : { ...p, base }));
   });
 
   const push = (t: Toast) => setToasts((l) => [...l.filter((x) => x.id !== t.id), t].slice(-3));
@@ -256,7 +259,13 @@ export default function App() {
         </a>
         <nav aria-label="Main" className={menu ? "nav open" : "nav"}>
           {(menu ? ROUTES : NAV).map(([k, label]) => (
-            <a key={k} href={`#/${k}`} aria-current={route === k ? "page" : undefined}>{label}</a>
+            <a
+              key={k}
+              href={`#/${k}`}
+              aria-current={route === k ? "page" : undefined}
+              // the hash may already be this route (no hashchange): close the menu and reopen the dock here
+              onClick={() => { setMenu(false); if (k === "light") setDockHidden(false); }}
+            >{label}</a>
           ))}
         </nav>
         <div className="top-end">
@@ -358,8 +367,8 @@ export default function App() {
         {sel && detailRoute(route) && (
           <div
             ref={popRef}
-            className={anchored ? `detail-wrap anchored${place?.below ? " below" : ""}` : "detail-wrap"}
-            style={anchored ? (place ? { left: place.left, top: place.top - place.base, visibility: place.hidden ? "hidden" : undefined } : { visibility: "hidden" }) : undefined}
+            className={anchored ? `detail-wrap anchored${place?.side ? ` side-${place.side}` : place?.below ? " below" : ""}${place?.maxH ? " capped" : ""}` : "detail-wrap"}
+            style={anchored ? (place ? ({ left: place.left, top: place.top - place.base, visibility: place.hidden ? "hidden" : undefined, "--pop-max": place.maxH ? `${place.maxH}px` : undefined, "--pointer-y": place.pointerY !== null ? `${place.pointerY}px` : undefined } as React.CSSProperties) : { visibility: "hidden" }) : undefined}
           >
             <CandleDetail c={sel} mine={mine.has(sel.id)} onClose={() => setSelected(null)} />
           </div>

@@ -213,3 +213,11 @@ Positions depend only on a candle's position (id − 1), so they are stable acro
 - *Share card* (`web/public/og.png`, 1200×630): the empty moonlit garden from the live renderer, a left-to-right near-black scrim, the favicon at 72px, "EVERLIGHT GARDEN" in the serif at 68px (`#f3dca0`), and one 28px line of description.
 
 **Responsive behaviour.** The header changes are in the table above (≤360, <1280, 1280–1439). Below 900px, tapping a candle on the canvas uses the same framing as Find: the candle is centred in the band between the header and the measured sheet.
+
+
+## Revision 8 additions
+
+- **Stairs and walks (garden scenery).** Flights of steps are built from the path tile (treads, with a `#c4bb98` nosing) and the wall tile (risers), with `#2f322b` stone cheeks and a moss cap. Each sits at a terrace end past the last holder and widens by one art pixel every two steps toward the viewer. Flagstone walks (path tile, `#24402b` moss edges, joints every 8 art px) join stair feet to the row path. The twin arches stand on a paved plinth with a mossy wall front and a central flight. Everything is drawn at the single 2-world-unit art pixel.
+- **Anchored candle popup.** It sits above or below the flame, kept 8 px plus the pointer clear of the selection ring. When neither fits it goes beside the ring (right, then left) with the pointer on the facing edge (`.side-right`, `.side-left`, `--pointer-y`). If no side fits, it takes the band above or below with a scrolling body (`.capped`, `--pop-max`).
+- **Treasury activity states.** Reading, Unavailable (`.bad`), Stale ("Showing activity from the last successful scan…", `.stale-note`: headline ivory with a 3 px `--gold-500` rule and `--space-2` inset), and the verified range line (`.fine`). Older-blocks and Try again appear only when the scan stopped early.
+- **Share card.** `og.png` is 1200×630, taken from the empty pixel garden with the DejaVu Serif title in `#f3dc9a` and the subtitle in ivory over a left-hand dark gradient.

@@ -4,7 +4,7 @@
    "name": "render",
    "passed": true,
    "exitCode": 0,
-   "durationMs": 14024,
+   "durationMs": 15400,
    "output": "renders, no script errors or missing local files\nexternal hosts: ethereum-rpc.publicnode.com"
   },
   {
@@ -32,7 +32,7 @@
    "name": "casing",
    "passed": true,
    "exitCode": 0,
-   "durationMs": 1,
+   "durationMs": 0,
    "output": "no all-caps text in content\n1 more in header, nav or footer (brand chrome, not counted)"
   },
   {
@@ -53,14 +53,14 @@
    "name": "type-sizes",
    "passed": true,
    "exitCode": 0,
-   "durationMs": 0,
-   "output": "390: 2 sizes in use, 4 with one-offs (13px×2, 15px×4, 17px×1, 28px×1)\n1440: 3 sizes in use, 6 with one-offs (13px×9, 15px×6, 17px×17, 20px×1, 28px×1, 44px×1)\nbar: 6 sizes used more than once, 8 counting one-offs, per width"
+   "durationMs": 1,
+   "output": "390: 2 sizes in use, 4 with one-offs (13px\u00d72, 15px\u00d74, 17px\u00d71, 28px\u00d71)\n1440: 3 sizes in use, 6 with one-offs (13px\u00d79, 15px\u00d76, 17px\u00d717, 20px\u00d71, 28px\u00d71, 44px\u00d71)\nbar: 6 sizes used more than once, 8 counting one-offs, per width"
   },
   {
    "name": "type-faces",
    "passed": true,
    "exitCode": 0,
-   "durationMs": 1,
+   "durationMs": 0,
    "output": "families (2): iowan old style, system-ui\nweights (2): 400, 600"
   },
   {
@@ -109,12 +109,12 @@
    "name": "share",
    "passed": true,
    "exitCode": 0,
-   "durationMs": 0,
+   "durationMs": 1,
    "output": "title \"Everlight Garden: light a permanent candle\", favicon, og:title, og:image, description"
   }
  ],
  "target": "dist",
- "at": "2026-11-19T08:42:14.476Z",
+ "at": "2026-11-19T09:34:31.104Z",
  "bar": {
   "sizes": 6,
   "strays": 8,
@@ -182,7 +182,7 @@
      "h": 44,
      "cx": 86,
      "cy": 746,
-     "label": "−"
+     "label": "\u2212"
     },
     {
      "sel": "div.app > div.map-tools:nth-of-type(2) > div.zoom > button.icon-btn:nth-of-type(3)",
@@ -198,7 +198,7 @@
      "h": 44,
      "cx": 122.1796875,
      "cy": 229.1875,
-     "label": "Light a candle · 1 IMD"
+     "label": "Light a candle\u00a0\u00b7 1\u00a0IMD"
     },
     {
      "sel": "#find",
@@ -214,7 +214,7 @@
      "h": 44,
      "cx": 215.1484375,
      "cy": 812.5,
-     "label": "Find my candle"
+     "label": "Find\u00a0my candle"
     },
     {
      "sel": "#main > div.strip:nth-of-type(2) > details.split > summary",
@@ -323,7 +323,7 @@
      "h": 44,
      "cx": 46,
      "cy": 726,
-     "label": "−"
+     "label": "\u2212"
     },
     {
      "sel": "div.app > div.map-tools:nth-of-type(2) > div.zoom > button.icon-btn:nth-of-type(3)",
@@ -347,7 +347,7 @@
      "h": 44,
      "cx": 235,
      "cy": 862.5,
-     "label": "Find my candle"
+     "label": "Find\u00a0my candle"
     },
     {
      "sel": "#light-dock > button.x.panel-x",
@@ -539,7 +539,7 @@
   },
   {
    "sel": "#main > div.intro:nth-of-type(1) > a.cta.intro-cta",
-   "text": "Light a candle · 1 IMD",
+   "text": "Light a candle \u00b7 1 IMD",
    "words": 5,
    "tag": "a",
    "size": 15,
@@ -565,7 +565,7 @@
   },
   {
    "sel": "#main > div.intro:nth-of-type(1) > p.status-line:nth-of-type(2)",
-   "text": "Sales closed until activation · 0 lit",
+   "text": "Sales closed until activation \u00b7 0 lit",
    "words": 6,
    "tag": "p",
    "size": 13,
@@ -931,7 +931,7 @@
   },
   {
    "sel": "#main > div.intro:nth-of-type(1) > p.status-line:nth-of-type(2)",
-   "text": "Sales closed until activation · 0 lit",
+   "text": "Sales closed until activation \u00b7 0 lit",
    "words": 6,
    "tag": "p",
    "size": 13,
@@ -1373,7 +1373,7 @@
   },
   {
    "sel": "#wish-all-count",
-   "text": "0 /280 characters · 0 /1120 bytes",
+   "text": "0 /280 characters \u00b7 0 /1120 bytes",
    "words": 6,
    "tag": "span",
    "size": 13,

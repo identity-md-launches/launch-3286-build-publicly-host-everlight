@@ -75,6 +75,7 @@ button, input, textarea { font: inherit; color: inherit; }
 .skip:focus { top: var(--space-2); }
 .muted { color: var(--color-text-secondary); }
 .bad { color: var(--color-danger); }
+.stale-note { color: var(--color-headline); border-left: 3px solid var(--gold-500); padding-left: var(--space-2); }
 .num { font-variant-numeric: tabular-nums; color: var(--color-accent-strong); min-width: 4.5ch; }
 
 /* controls: rest, hover, pressed, focus-visible, disabled */
@@ -363,6 +364,12 @@ textarea:focus-visible, .custom input:focus-visible, .find input:focus-visible {
 .detail-wrap.anchored { bottom: auto; width: 320px; transform: translateX(-50%); }
 .detail-wrap.anchored.below::after { bottom: auto; top: -9px; transform: translateX(-50%) rotate(225deg); }
 .intro-yield { visibility: hidden; }
+/* beside the ring (Find on a short band): the pointer moves to the edge that faces the candle */
+.detail-wrap.anchored.side-right::after { left: -9px; bottom: auto; top: var(--pointer-y, 50%); transform: translateY(-50%) rotate(135deg); }
+.detail-wrap.anchored.side-left::after { left: auto; right: -9px; bottom: auto; top: var(--pointer-y, 50%); transform: translateY(-50%) rotate(-45deg); }
+/* taller than the band: the details scroll inside the popup instead of covering the candle */
+.detail-wrap.anchored.capped { display: flex; flex-direction: column; max-height: var(--pop-max); }
+.detail-wrap.anchored.capped .detail { overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
 .detail-wrap.anchored::after { content: ""; position: absolute; left: 50%; bottom: -9px; width: 16px; height: 16px; transform: translateX(-50%) rotate(45deg); background: rgb(5 12 9); border-right: 1px solid var(--color-line); border-bottom: 1px solid var(--color-line); }
 .detail { background: linear-gradient(180deg, rgb(8 18 13 / 0.97), rgb(4 9 7 / 0.97)); border-color: var(--color-line); border-radius: 10px; }
 .detail h2 { color: var(--color-headline); font-size: var(--text-lg); }

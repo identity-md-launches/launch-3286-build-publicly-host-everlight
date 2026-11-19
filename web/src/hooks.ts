@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { erc20Abi, parseAbiItem, type Address } from "viem";
 import { wishGardenAbi } from "./abi/WishGarden";
 import { burnReceiverAbi } from "./abi/EverlightBurnReceiver";
-import { BASE_RECEIVER, GARDEN, GARDEN_DEPLOY_BLOCK, IMD, baseClient, ethClient } from "./config";
+import { BASE_RECEIVER, ETH_LOG_CLIENTS, GARDEN, GARDEN_DEPLOY_BLOCK, IMD, baseClient, ethClient } from "./config";
+import { scanActivity } from "./lib/activity";
 import { CandleStore, fixtureSource, liveSource, type Candle } from "./lib/candles";
 import { findCandleTx, knownTx, rememberTx } from "./lib/txhash";
 
@@ -141,29 +142,29 @@ const EVENTS = [
   parseAbiItem("event BucketWithdrawn(uint8 indexed bucket, address indexed caller, address indexed destination, uint256 amount)"),
 ];
 
-/** Recent treasury activity: bounded getLogs windows (5,000 blocks, at most 8 windows back from head). */
+/**
+ * Recent treasury activity: a budgeted, newest-first scan (lib/activity.ts). Windows of 5,000 blocks narrow to
+ * 50-block chunks on a range-limit answer; a later failure keeps the verified range. Try again runs a new scan;
+ * the query itself never retries, so retries are not stacked on the scan's own per-window plan.
+ */
 export function useActivity() {
   return useQuery({
     queryKey: ["activity"],
     refetchInterval: 120_000,
+    retry: false,
     queryFn: async () => {
       const head = await ethClient.getBlockNumber();
-      const out: { name: string; block: bigint; tx: string; args: any }[] = [];
-      let to = head;
-      let reachedDeploy = false;
-      for (let i = 0; i < 8 && to >= GARDEN_DEPLOY_BLOCK && out.length < 50; i++) {
-        const from = to - 4_999n > GARDEN_DEPLOY_BLOCK ? to - 4_999n : GARDEN_DEPLOY_BLOCK;
-        const logs = await ethClient.getLogs({ address: GARDEN, events: EVENTS, fromBlock: from, toBlock: to });
-        for (const l of logs.reverse()) {
-          out.push({ name: l.eventName, block: l.blockNumber!, tx: l.transactionHash!, args: l.args });
-          if (l.eventName === "CandlesPurchased" && l.transactionHash) rememberTx(Number((l.args as any).firstCandleId), Number((l.args as any).quantity), l.transactionHash);
-        }
-        if (from === GARDEN_DEPLOY_BLOCK) { reachedDeploy = true; break; }
-        to = from - 1n;
-      }
+      const readers = ETH_LOG_CLIENTS.map(({ name, client }) => ({
+        name,
+        getLogs: (fromBlock: bigint, toBlock: bigint) => client.getLogs({ address: GARDEN, events: EVENTS, fromBlock, toBlock }),
+      }));
+      const scan = await scanActivity({ head, deployBlock: GARDEN_DEPLOY_BLOCK, readers });
+      const items = scan.logs.slice(0, 50).map((l) => {
+        if (l.eventName === "CandlesPurchased" && l.transactionHash) rememberTx(Number((l.args as any).firstCandleId), Number((l.args as any).quantity), l.transactionHash);
+        return { name: l.eventName as string, block: l.blockNumber!, tx: l.transactionHash!, args: l.args as any };
+      });
       // complete only when every block back to the garden's deployment was read; an empty partial scan is not "no activity"
-      const scannedFrom = reachedDeploy ? GARDEN_DEPLOY_BLOCK : to + 1n;
-      return { items: out.slice(0, 50), complete: reachedDeploy, scannedFrom, scannedBlocks: head - scannedFrom + 1n, head };
+      return { items, complete: scan.complete, scannedFrom: scan.scannedFrom, scannedBlocks: scan.scannedBlocks, head, stopped: scan.stopped, at: Date.now() };
     },
   });
 }

@@ -38,3 +38,32 @@ describe("anchored popup placement", () => {
     expect(placePopup({ x: 1439, y: 700 }, size, view, null).left).toBe(1440 - 168);
   });
 });
+
+describe("popup keeps the selection ring visible (Find on a short band)", () => {
+  const clear = (p: ReturnType<typeof placePopup>, ring: { x: number; y: number; r: number }, w: number, h: number) => {
+    const hh = p.maxH ?? h;
+    const l = p.left - w / 2, r = p.left + w / 2, t = p.top, b = p.top + hh;
+    // distance from the ring's bounding box to the popup box is at least 8 px on some axis
+    return l >= ring.x + ring.r + 8 || r <= ring.x - ring.r - 8 || t >= ring.y + ring.r + 8 || b <= ring.y - ring.r - 8;
+  };
+  it("goes beside the ring when neither above nor below fits (1440x900, #37 centred)", () => {
+    const ring = { x: 720, y: 449, r: 39 };
+    const p = placePopup({ x: 720, y: 437 }, { w: 320, h: 459 }, { w: 1080, top: 56, bottom: 830 }, intro, 8, ring);
+    expect(p.side).not.toBeNull();
+    expect(clear(p, ring, 320, 459)).toBe(true);
+    expect(p.pointerY).toBeGreaterThan(0);
+  });
+  it("scrolls in the roomier band when no side fits", () => {
+    const ring = { x: 200, y: 300, r: 39 };
+    const p = placePopup({ x: 200, y: 288 }, { w: 320, h: 600 }, { w: 420, top: 56, bottom: 700 }, null, 8, ring);
+    expect(p.side).toBeNull();
+    expect(p.maxH).not.toBeNull();
+    expect(clear(p, ring, 320, 600)).toBe(true);
+    expect(p.top + p.maxH!).toBeLessThanOrEqual(700 - 8);
+  });
+  it("above and below keep clear of the ring when they fit", () => {
+    const ring = { x: 900, y: 712, r: 39 };
+    const p = placePopup({ x: 900, y: 700 }, { w: 320, h: 300 }, { w: 1440, top: 56, bottom: 824 }, null, 8, ring);
+    expect(clear(p, ring, 320, 300)).toBe(true);
+  });
+});

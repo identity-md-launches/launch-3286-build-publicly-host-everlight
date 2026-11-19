@@ -198,6 +198,18 @@ What changed:
 - **Moon in open sky** (`web/src/garden/vista.ts:20-30, 92-101`, `web/src/garden/renderer.ts:226-276`): the moon is now its own sprite. It is placed upper left of the castle, below the header and clear of the headline and the castle keep. At 1180 px the headline leaves no room there, so it moves to the right of the castle.
 - **Copy**: the headline is now "Every wish leaves a light." (the reference's line, `App.tsx:290`), and the brand reads "Everlight Garden on IMD" with no middle dot (`App.tsx:255`).
 
-Validation (worker-side, after the last source change): `npm run build` (runs `tsc --noEmit`) exit 0 and built `dist/`; `npx vitest run` 8 files, 90/90 passed. Design-critic `taste.mjs` passed 16/16 at 320/390/1440 (`artifacts/taste-probe.json`). The 390 screenshot shows the moon, the headline and "Light a candle · 1 IMD" on the first screen. A Playwright pass in Chromium headless shell (software rendering, system libraries unpacked into a temp directory) ran 21/21 checks with no page errors (`artifacts/rev7-browser-checks.txt`, screenshots `artifacts/screens/rev7-*.jpg`). Those checks covered the brand and headline at 390 and 1440, horizontal overflow, dock hide and show with focus, reopening via `#/light`, Treasury with getLogs forced to HTTP 403 (Try again shown, recovery after clicking), the partial-range message, and the complete-range message. The getLogs and blockNumber responses in that Treasury check were **mocked** by request interception; no live RPC failure was waited for and no transaction ran.
+Validation (worker-side, after the last source change): `npm run build` (runs `tsc --noEmit`) exit 0 and built `dist/`; `npx vitest run` 8 files, 90/90 passed. Design-critic `taste.mjs` passed 16/16 at 320/390/1440 (`artifacts/taste-probe.json`). The 390 screenshot shows the moon, the headline and "Light a candle · 1 IMD" on the first screen. A Playwright pass in Chromium headless shell (software rendering, system libraries unpacked into a temp directory) ran 21/21 checks with no page errors (revision 7's raw log and screenshots were not committed; see revision 8). Those checks covered the brand and headline at 390 and 1440, horizontal overflow, dock hide and show with focus, reopening via `#/light`, Treasury with getLogs forced to HTTP 403 (Try again shown, recovery after clicking), the partial-range message, and the complete-range message. The getLogs and blockNumber responses in that Treasury check were **mocked** by request interception; no live RPC failure was waited for and no transaction ran.
 
 **Limitations (revision 7).** The moon placement was checked at 320, 390, 1180, 1440 and 1920 at the opening view only, not at every zoom level. The Etherscan event link is the fallback for history older than the 40,000-block window; the site does not page further back itself. The art limits recorded for revision 6 still apply.
+
+
+### Revision 8 validation
+
+`npm run build` exit 0; `npx vitest run` 10 files, 102/102 passed; taste.mjs 16/16 passed. Playwright checks of the local export, using fixtures and a mocked RPC, are listed in `artifacts/validation.md` ("Revision 8") with raw results in `artifacts/rev8-browser-checks.json`. They cover:
+
+- Treasury range narrowing, the stale and unavailable states, and Try again
+- Find #37 and #10000 at 1440 and 390
+- The menu reopening the dock
+- Before/after opening-view screenshots
+
+Wallet actions remain untested.

@@ -29,7 +29,7 @@ interface Props {
   /** A sheet or panel covers the map: zoom, reset and minimap are hidden so they never sit over a form. */
   toolsHidden?: boolean;
   /** Screen position of the selected candle's flame, for the anchored popup (null when off screen). */
-  onAnchor?: (a: { x: number; y: number } | null) => void;
+  onAnchor?: (a: { x: number; y: number; ring: { x: number; y: number; r: number } } | null) => void;
 }
 
 /** The canvas garden: pan by drag or arrow keys, zoom by wheel, pinch or +/-, click a candle to read it. */
@@ -75,13 +75,16 @@ export function Garden(p: Props) {
       r.clamp(Math.max(inp.total, inp.known));
       r.draw(inp, t);
       if (inp.onAnchor) {
-        let a: { x: number; y: number } | null = null;
+        let a: { x: number; y: number; ring: { x: number; y: number; r: number } } | null = null;
         if (inp.selected) {
           const pos = positionOf(inp.selected - 1);
           const sp = r.toScreen(pos.x, pos.y - 56 * pos.scale);
-          if (sp.x >= 0 && sp.x <= r.w && sp.y >= 0 && sp.y <= r.h) a = { x: Math.round(sp.x), y: Math.round(sp.y) };
+          // the selection ring, as drawRings() draws it, so the popup can keep clear of it
+          const rc = r.toScreen(pos.x, pos.y - 44 * pos.scale);
+          const rr = Math.max(30 * Math.max(pos.scale, 0.7), 14 / r.cam.z) * r.cam.z;
+          if (sp.x >= 0 && sp.x <= r.w && sp.y >= 0 && sp.y <= r.h) a = { x: Math.round(sp.x), y: Math.round(sp.y), ring: { x: Math.round(rc.x), y: Math.round(rc.y), r: Math.ceil(rr + 2) } };
         }
-        const k = a ? `${a.x},${a.y}` : "";
+        const k = a ? `${a.x},${a.y},${a.ring.r}` : "";
         if (k !== anchorKey) { anchorKey = k; inp.onAnchor(a); }
       }
       if (miniRef.current) r.drawMinimap(miniRef.current, inp);

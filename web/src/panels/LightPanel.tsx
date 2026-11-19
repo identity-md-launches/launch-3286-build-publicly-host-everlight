@@ -13,12 +13,13 @@ import { readReceipt } from "../lib/receipt";
 import { minedTx, NONCE_UNVERIFIED, sentTx, settleBuyReceipt, submissionMeta } from "../lib/chain";
 import { rememberTx } from "../lib/txhash";
 import { parseQuantity } from "../lib/quantity";
+import { DRAFT_KEY, consumeSavedDraft, planBatches } from "../lib/split";
 import { ConnectButton } from "../components/ConnectSheet";
 import { WrongNetwork } from "../components/WrongNetwork";
 
 import { FIXTURE, store, useGasPrice, useStatus, useWallet } from "../hooks";
 
-export const DRAFT_KEY = "everlight:draft";
+export { DRAFT_KEY };
 /** A confirmed purchase ends the saved draft, even when it confirms while this panel is closed. */
 export function clearDraft() {
   try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* private mode */ }
@@ -29,7 +30,11 @@ let inFlight = false;
 /** Recover a purchase sent before a reload: the form stays locked on it until its receipt settles. */
 export function recoverBuy(tx: PendingTx): Promise<Step> {
   const onStep = (s: Step) => {
-    if (s.name === "done") clearDraft();
+    // a confirmed purchase removes exactly its candles from the saved draft; a split draft keeps the rest
+    if (s.name === "done") {
+      if (tx.styles && tx.wishes) consumeSavedDraft(tx.styles, tx.wishes);
+      else clearDraft();
+    }
     purchaseFlow.set(s);
   };
   onStep({ name: "buy-pending", hash: tx.hash });
@@ -119,8 +124,14 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
   useEffect(() => {
     if (step?.name !== "done" || seenDone.current === step.hash) return;
     seenDone.current = step.hash;
-    setWish(""); setRows([]); setAck(false);
-    clearDraft();
+    // the confirmed purchase was already removed from the saved draft; show what is left (nothing, or the next
+    // purchases of a split draft, which keep their wishes and acknowledgement)
+    let d: { preset?: number; custom?: string; mode?: "same" | "each"; style?: number; wish?: string; rows?: { style: number; wish: string }[] } = {};
+    try { d = JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? "{}"); } catch { /* private mode */ }
+    if (!d || typeof d.custom !== "string") { setWish(""); setRows([]); setAck(false); setCustom(""); clearDraft(); return; }
+    setCustom(d.custom); setMode(d.mode === "each" ? "each" : "same");
+    if (typeof d.style === "number") setStyle(d.style);
+    setWish(typeof d.wish === "string" ? d.wish : ""); setRows(Array.isArray(d.rows) ? d.rows : []);
   }, [step]);
 
   // One effective mode drives both the editor that is shown and the items that are validated and
@@ -133,12 +144,17 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
   const checks = items.map((it) => checkWish(it.wish));
   const wishBytes = checks.reduce((a, c) => a + c.bytes, 0);
   const hasWish = items.some((it) => it.wish.length > 0);
-  const bound = gasBound(qty, wishBytes);
-  const needApproval = !wallet.data || wallet.data.allowance < BigInt(qty) * 10n ** 18n;
+  // ordered purchases that each fit one transaction's gas; the next one is what the button sends
+  const plan = useMemo(() => (qtyValid && checks.every((c) => c.ok) ? planBatches(items) : []), [items, qtyValid, checks.every((c) => c.ok)]);
+  const next = plan[0];
+  const nextQty = next ? next.items.length : qty;
+  const split = plan.length > 1;
+  const bound = next ? next.bound : gasBound(qty, wishBytes);
+  const needApproval = !wallet.data || wallet.data.allowance < BigInt(nextQty) * 10n ** 18n;
   // A gas quote is current only while the query has fresh data; a failed refetch withdraws it.
   const gasOk = gas.data !== undefined && !gas.isError;
   const gasEth = gasOk ? (bound + (needApproval ? 60_000n : 0n)) * gas.data! : undefined;
-  const total = BigInt(qty) * 10n ** 18n;
+  const total = BigInt(nextQty) * 10n ** 18n;
 
   const open = status.data?.open === true;
   const problems: string[] = [];
@@ -150,11 +166,10 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
   if (!isConnected) problems.push("Connect a wallet to light candles.");
   else if (chainId !== 1) problems.push("Switch your wallet to Ethereum.");
   if (checks.some((c) => !c.ok)) problems.push("Fix the wish marked above.");
-  if (bound > TX_GAS_CAP) problems.push("This batch is too large for one Ethereum transaction. Buy fewer candles or shorten the wishes, and split it into several purchases.");
   if (hasWish && !ack) problems.push("Confirm that your wish will be public and permanent.");
   if (gas.isError) problems.push("The ETH gas estimate could not be read. Retry it before approving.");
   else if (!gasOk) problems.push("Reading the current gas price for the ETH estimate…");
-  if (wallet.data && wallet.data.balance < total) problems.push(`You hold ${imd(wallet.data.balance)} IMD; this needs ${qty}.`);
+  if (wallet.data && wallet.data.balance < total) problems.push(`You hold ${imd(wallet.data.balance)} IMD; ${split ? "the next purchase" : "this"} needs ${nextQty}.`);
   const running = isRunning(step) || pendingBuy !== null;
   const disabled = problems.length > 0 || running;
 
@@ -163,6 +178,8 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
     if (inFlight || isRunning(purchaseFlow.get()) || pendingStore.list().some((t) => t.kind === "buy")) return; // duplicate-send guard
     inFlight = true;
     const account = address!;
+    if (!next) return;
+    const batch = next.items;
     try {
       await runPurchase(
         {
@@ -192,18 +209,23 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
             const { request } = await simulateContract(config, {
               address: GARDEN, abi: wishGardenAbi, functionName: "buyCandles", args: [styles, wishes], account, chainId: 1,
             });
-            return request;
+            // estimate this exact purchase against the contract; it must fit one transaction's gas cap
+            const est = await ethClient.estimateContractGas({ address: GARDEN, abi: wishGardenAbi, functionName: "buyCandles", args: [styles, wishes], account });
+            if (est > TX_GAS_CAP) throw new Error(`GAS_TOO_HIGH:${est}`);
+            const withRoom = (est * 120n) / 100n;
+            return { ...request, gas: withRoom > TX_GAS_CAP ? TX_GAS_CAP : withRoom };
           },
           buy: (request) => writeContract(config, request as any),
           explain: explainError,
         },
-        items.map((i) => i.style),
-        items.map((i) => i.wish),
+        batch.map((i) => i.style),
+        batch.map((i) => i.wish),
         (s) => {
-          if (s.name === "done") clearDraft(); // a confirmed purchase ends the draft; errors and replacements keep it
+          // a confirmed purchase removes its candles from the draft; errors and replacements keep every item
+          if (s.name === "done") consumeSavedDraft(batch.map((i) => i.style), batch.map((i) => i.wish));
           setStep(s);
           if (s.name === "done") {
-            store.sync().then(() => onLit(s.firstId, s.quantity ?? items.length));
+            store.sync().then(() => onLit(s.firstId, s.quantity ?? batch.length));
             qc.invalidateQueries();
           }
         },
@@ -284,8 +306,21 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
       </fieldset>
 
       <p className="total"><span>Total</span> <strong>{qtyValid ? `${qty} IMD` : "—"}</strong></p>
+      {split && (
+        <div className="split-plan" role="status">
+          <p>These wishes are too long for one Ethereum transaction, so this draft is lit in {plan.length} purchases, in order. Each one needs its own confirmation; unsent candles stay in the form.</p>
+          <ol>
+            {plan.map((b, i) => (
+              <li key={b.start} className={i === 0 ? "next" : ""}>
+                <span>Purchase {i + 1}: candles {b.start + 1}–{b.start + b.items.length}</span>
+                <span>{b.items.length} IMD · ≤ {b.bound.toLocaleString("en-US")} gas{gasOk ? ` (≤ ${eth(b.bound * gas.data!)} ETH)` : ""}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
       <ol className="stages" aria-label="Purchase stages">
-        <li className={stageClass(step, "approve", needApproval)}>{needApproval ? `Approve exactly ${qtyValid ? qty : "…"} IMD` : "Approval covered"}</li>
+        <li className={stageClass(step, "approve", needApproval)}>{needApproval ? `Approve exactly ${qtyValid ? nextQty : "…"} IMD` : "Approval covered"}</li>
         <li className={stageClass(step, "buy", needApproval)}>Confirm the purchase</li>
         <li className={stageClass(step, "done", needApproval)}>Receipt verified, candles lit</li>
       </ol>
@@ -302,7 +337,8 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
       )}
       {isConnected && (
         <button type="button" className="cta wide" disabled={disabled} aria-disabled={disabled} onClick={submit}>
-          {pendingBuy && !isRunning(step) ? "Waiting for the earlier purchase" : running ? "Working…" : !qtyValid ? "Enter 1 to 50 candles" : needApproval && address ? `Approve and light ${qty} candle${qty > 1 ? "s" : ""}` : `Light ${qty} candle${qty > 1 ? "s" : ""}`}
+          {pendingBuy && !isRunning(step) ? "Waiting for the earlier purchase" : running ? "Working…" : !qtyValid ? "Enter 1 to 50 candles"
+            : `${needApproval && address ? "Approve and light" : "Light"} ${nextQty} candle${nextQty > 1 ? "s" : ""}${split ? ` (purchase 1 of ${plan.length})` : ""}`}
         </button>
       )}
       <p className="net-line">Ethereum · gas paid separately</p>
@@ -341,10 +377,10 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
           <div><dt>Candles</dt><dd>{qtyValid ? qty : "—"}</dd></div>
           <div><dt>Total</dt><dd>{qtyValid ? `${qty} IMD` : "—"}</dd></div>
           <div><dt>Your balance</dt><dd>{address ? (wallet.data ? `${imd(wallet.data.balance)} IMD` : "…") : "Not connected"}</dd></div>
-          <div><dt>Approval</dt><dd>{!qtyValid ? "—" : address && wallet.data ? (needApproval ? `Needed: exactly ${qty} IMD` : "Already covered") : "Checked when you connect"}</dd></div>
+          <div><dt>Approval</dt><dd>{!qtyValid ? "—" : address && wallet.data ? (needApproval ? `Needed: exactly ${nextQty} IMD` : "Already covered") : "Checked when you connect"}</dd></div>
           <div><dt>Estimated gas</dt><dd>{gasEth !== undefined ? `≤ ${eth(gasEth)} ETH` : gas.isError ? "Unavailable" : "Reading…"}</dd></div>
         </dl>
-        <p className="fine">Gas is an upper bound from the contract docs ({bound.toLocaleString("en-US")} gas for this batch{needApproval ? " plus about 60,000 for the approval" : ""}) at the current gas price. All seven styles cost the same and carry the same rights. Candles appear in the garden only after the purchase receipt is verified.</p>
+        <p className="fine">Gas is an upper bound from the contract docs ({bound.toLocaleString("en-US")} gas for {split ? "the next purchase" : "this batch"}{needApproval ? " plus about 60,000 for the approval" : ""}) at the current gas price. All seven styles cost the same and carry the same rights. Before each purchase is sent, the site also estimates its exact gas with the contract. Candles appear in the garden only after the purchase receipt is verified.</p>
       </details>
       <details className="costs">
         <summary>Where your 1 IMD goes</summary>

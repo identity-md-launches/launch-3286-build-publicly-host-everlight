@@ -132,18 +132,37 @@ export function Pager({ page, pages, setPage }: { page: number; pages: number; s
 }
 
 /** Every candle stays discoverable without the canvas: a paged register in id order. */
-export function Register({ candles, onJump }: { candles: Candle[]; onJump: (id: number) => void }) {
+/** What the register knows about the live count: an empty list is a verified empty garden only when total is 0. */
+export interface RegisterInfo { total: number | null; loading: boolean; error: string | null; updatedAt: number | null }
+
+export function Register({ candles, info, onRetry, onJump }: { candles: Candle[]; info: RegisterInfo; onRetry: () => void; onJump: (id: number) => void }) {
   const [page, setPage] = useState(0);
   const per = 25;
   const pages = Math.max(1, Math.ceil(candles.length / per));
   const shown = candles.slice(page * per, page * per + per);
+  const { total, loading, error, updatedAt } = info;
+  const partial = total !== null && candles.length < total;
+  const when = updatedAt ? new Date(updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : null;
   return (
     <section aria-labelledby="reg-title">
       <h2 id="reg-title">Candle register</h2>
-      {candles.length === 0 ? (
-        <p>No candle has been lit yet. Every holder in the garden is empty and waiting.</p>
-      ) : (
+      {error && (
+        <p className="bad" role="alert">
+          {candles.length > 0
+            ? `The latest candles could not be read (${when ? `last updated ${when}` : "showing cached records"}). The list may be incomplete. `
+            : "Unavailable: the candle count could not be read from Ethereum. This does not mean the garden is empty. "}
+          <button type="button" className="link" onClick={onRetry} disabled={loading}>{loading ? "Trying…" : "Try again"}</button>
+        </p>
+      )}
+      {!error && total === null && candles.length === 0 && <p role="status">Reading the candle register from Ethereum…</p>}
+      {total === 0 && candles.length === 0 && !error && <p>No candle has been lit yet. Every holder in the garden is empty and waiting.</p>}
+      {candles.length > 0 && (
         <>
+          {(partial || total === null) && (
+            <p className="fine" role="status">
+              {total === null ? `Showing ${candles.length} saved candles; the current total is not confirmed yet.` : `Showing ${candles.length} of ${total} candles${loading ? ", loading the rest…" : "."}`}
+            </p>
+          )}
           <ul className="list">
             {shown.map((c) => (
               <li key={c.id}>

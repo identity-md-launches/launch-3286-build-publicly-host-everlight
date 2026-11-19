@@ -118,6 +118,21 @@ export class GardenRenderer {
     const hero = positionOf(0);
     // skyline about a quarter of the way down, the founding pedestal in the near left third
     this.cam = { x: hero.x + (mobile ? 0.12 : 0.2) * (this.w / z), y: HORIZON_CUT + (mobile ? 0.16 : 0.18) * (this.h / z), z };
+    if (mobile) {
+      // phones: widen the opening view just enough to keep the nearest stream's moving water in frame beside the
+      // founding pedestal (never below zoom 0.42, so holders stay readable)
+      const top = this.cam.y, bottom = this.cam.y + this.h / (2 * z);
+      let sx = Infinity;
+      for (const gx of [Math.floor(hero.x / SECTOR_W), Math.floor(hero.x / SECTOR_W) + 1])
+        for (let y = Math.max(top, springY(gx) + 40); y <= bottom; y += 30) {
+          const x = streamX(gx, y);
+          if (x > hero.x && x - hero.x < Math.abs(sx - hero.x)) sx = x;
+        }
+      if (isFinite(sx)) {
+        const z2 = Math.max(0.42, Math.min(z, this.w / (sx - hero.x + 220)));
+        this.cam = { x: (hero.x - 90 + sx + 130) / 2, y: HORIZON_CUT + 0.16 * (this.h / z2), z: z2 };
+      }
+    }
   }
 
   toWorld(sx: number, sy: number) {
@@ -185,6 +200,21 @@ export class GardenRenderer {
       const y = Math.round(horizonY(x + step / 2) / PX) * PX + PX * 2;
       ctx.fillRect(x, y, step, br.y + 50 - y);
     }
+  }
+
+  /** True when part of a stream's flowing water is on screen at a zoom the ripples are drawn at. */
+  waterInView(): boolean {
+    if (this.cam.z < 0.3 || this.w === 0) return false;
+    const tl = this.toWorld(0, 0), br = this.toWorld(this.w, this.h);
+    const gx0 = Math.floor(tl.x / SECTOR_W) - 1, gx1 = Math.floor(br.x / SECTOR_W) + 1;
+    for (let gx = gx0; gx <= gx1; gx++) {
+      const y0 = Math.max(tl.y, springY(gx) + 8);
+      for (let y = y0; y <= br.y; y += 40) {
+        const x = streamX(gx, y), hw = streamHalf(y);
+        if (x + hw >= tl.x && x - hw <= br.x) return true;
+      }
+    }
+    return false;
   }
 
   /** Flowing water: bright pixel ripples drifting downstream on every stream in view (static when motion is reduced). */

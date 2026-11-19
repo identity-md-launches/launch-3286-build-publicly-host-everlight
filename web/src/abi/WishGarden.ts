@@ -1724,7 +1724,7 @@ export const wishGardenAbi = [
     "internalType": "uint256"
    },
    {
-    "name": "fallbackToEcosystem",
+    "name": "fallbackToBurn",
     "type": "bool",
     "indexed": false,
     "internalType": "bool"

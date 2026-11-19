@@ -123,7 +123,10 @@ export function drawSectorUpright(g: CanvasRenderingContext2D, index: number, sh
   const items: Item[] = [];
   const stairs = wild ? { terraces: [], gazebo: null } : stairsOf(plan);
   // ground first: flagstone walks from stair feet to the path
-  for (const st of stairs.terraces) if (st.walk) drawWalk(g, st.walk, pathPat);
+  for (const st of stairs.terraces) {
+    if (st.walk) drawWalk(g, st.walk, pathPat);
+    for (const l of st.links ?? []) drawWalk(g, l, pathPat);
+  }
   if (stairs.gazebo?.stair?.walk) drawWalk(g, stairs.gazebo.stair.walk, pathPat);
   if (stairs.gazebo?.back) drawWalk(g, stairs.gazebo.back, pathPat);
   const stairOf = new Map(stairs.terraces.map((st) => [st.terrace, st] as const));
@@ -132,12 +135,13 @@ export function drawSectorUpright(g: CanvasRenderingContext2D, index: number, sh
     const all = stairs.gazebo?.stair ? [...stairs.terraces, stairs.gazebo.stair] : stairs.terraces;
     for (const st of all) {
       if (Math.abs(x - st.x) < st.halfW + rad * 0.5 + 8 && y > st.yTop - 6 && y - rad * 0.9 < st.yTop + st.drop + 6) return true;
-      for (const w of [st.walk, st === stairs.gazebo?.stair ? stairs.gazebo.back : null]) {
+      for (const w of [st.walk, st === stairs.gazebo?.stair ? stairs.gazebo.back : null, ...(st.links ?? [])]) {
         if (!w) continue;
-        const [x0, y0, x1, y1] = w, lo = Math.min(y0, y1), hi = Math.max(y0, y1);
-        if (y > lo - 4 && y - rad * 0.9 < hi + 4) {
-          const k = hi === lo ? 0 : (y - y0) / (y1 - y0), wx = x0 + (x1 - x0) * Math.max(0, Math.min(1, k));
-          if (Math.abs(x - wx) < WALK_HALF + rad * 0.5 + 6) return true;
+        // distance from the item's foot (and a point up its height) to the walk's centre line
+        const [x0, y0, x1, y1] = w, L2 = (x1 - x0) ** 2 + (y1 - y0) ** 2;
+        for (const py of [y, y - rad * 0.6]) {
+          const k = L2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - x0) * (x1 - x0) + (py - y0) * (y1 - y0)) / L2));
+          if (Math.hypot(x - (x0 + (x1 - x0) * k), py - (y0 + (y1 - y0) * k)) < WALK_HALF + rad * 0.5 + 6) return true;
         }
       }
     }
@@ -268,7 +272,14 @@ function drawTerrace(
 
 
 /** A flight of steps standing in front of a retaining wall or plinth: coping at yTop, foot at yTop + drop. */
-export interface Stair { x: number; yTop: number; drop: number; halfW: number; walk: [number, number, number, number] | null; terrace: number; pad: number; end: 0 | 1 }
+export interface Stair {
+  x: number; yTop: number; drop: number; halfW: number; walk: [number, number, number, number] | null; terrace: number; pad: number; end: 0 | 1;
+  /** Fallback route when no straight walk reaches the path: one or two flagstone legs to the path or to the foot of a
+   * neighbouring terrace's steps that is already connected. */
+  links?: [number, number, number, number][];
+  /** True when this flight's foot reaches the main path, directly or through other terraces. */
+  connected?: boolean;
+}
 
 const STAIR_HALF = 10;
 const WALK_HALF = 12;
@@ -283,12 +294,26 @@ function wet(plan: SectorPlan, x: number, y: number, half: number) {
   return false;
 }
 
-/** A flagstone walk from (x0, y0) to (x1, y1) that touches no slot box and no water. */
-function walkClear(plan: SectorPlan, x0: number, y0: number, x1: number, y1: number) {
+/** Is (x, y) on a raised terrace's lawn or retaining wall (other than those in `skip`)? */
+function onTerrace(plan: SectorPlan, x: number, y: number, skip: number[]) {
+  for (let i = 0; i < plan.terraces.length; i++) {
+    const t = plan.terraces[i];
+    if (t.rx <= 0 || skip.includes(i)) continue;
+    const R = t.rx + 16 * t.scale, depth = 46 * t.scale;
+    const dx = x - t.cx, dy = (y - t.cy) / TILT, r = Math.hypot(dx, dy), a = Math.atan2(dy, dx);
+    if (a < t.a0 - 0.25 || a > t.a1 + 0.25) continue;
+    if (r > R - depth - 8 && r < R + 8 + t.wall / TILT) return true;
+  }
+  return false;
+}
+
+/** A flagstone walk from (x0, y0) to (x1, y1) that touches no slot box, no water and no other terrace. */
+function walkClear(plan: SectorPlan, x0: number, y0: number, x1: number, y1: number, skip: number[] | null = null) {
   const n = Math.max(2, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 8));
   for (let i = 0; i <= n; i++) {
     const x = x0 + ((x1 - x0) * i) / n, y = y0 + ((y1 - y0) * i) / n;
     if (i > 1 && i < n - 1 && wet(plan, x, y, WALK_HALF)) return false;
+    if (skip && i > 1 && i < n - 1 && onTerrace(plan, x, y, skip)) return false;
     const box = { l: x - WALK_HALF - 4, r: x + WALK_HALF + 4, t: y - 6, b: y + 6 };
     for (const s of plan.slots) if (boxHit(box, slotBox(s))) return false;
   }
@@ -312,6 +337,8 @@ function walkToPath(plan: SectorPlan, x: number, y: number, reach: number, side 
   return null;
 }
 
+/** Diagnostic: why raised terraces got no flight (counted once per terrace, read by tests). */
+export const WHY: Record<string, number> = {};
 const stairCache = new Map<number, { terraces: Stair[]; gazebo: { stair: Stair | null; back: [number, number, number, number] | null } | null }>();
 
 /**
@@ -325,25 +352,37 @@ export function stairsOf(plan: SectorPlan) {
   if (hit) return hit;
   const terraces: Stair[] = [];
   plan.terraces.forEach((t, ti) => {
-    if (t.rx <= 0 || t.count < 4) return;
+    if (t.rx <= 0 || t.count < 1) return;
     const R = t.rx + 16 * t.scale, step = (32 * t.scale) / t.rx, halfW = Math.round(STAIR_HALF * Math.max(0.9, t.scale));
     const wall = snap(t.wall), depth = 12;
-    const ends = ([[1, t.a1 + 0.5 * step], [0, t.a0 - 0.5 * step]] as const)
-      .map(([end, a]) => ({ end, a }))
-      .sort((p, q) => Math.abs(p.a - Math.PI / 2) - Math.abs(q.a - Math.PI / 2));
-    for (const { end, a } of ends) {
-      if (Math.abs(a - Math.PI / 2) > 0.8) continue;
+    // the original placement first (an end facing the viewer, just past the last holder), then ends further round
+    // the wall and one more step clear of the holders, so every raised terrace can carry a flight
+    const ends = ([[1, t.a1 + 0.5 * step, 0.8], [0, t.a0 - 0.5 * step, 0.8], [1, t.a1 + 0.5 * step, 1.3], [0, t.a0 - 0.5 * step, 1.3], [1, t.a1 + 1.2 * step, 1.3], [0, t.a0 - 1.2 * step, 1.3], [1, t.a1 + 2 * step, 1.45], [0, t.a0 - 2 * step, 1.45]] as const)
+      .map(([end, a, tol], k) => ({ end, a, tol, k }))
+      .sort((p, q) => (p.tol - q.tol) || (Math.abs(p.a - Math.PI / 2) - Math.abs(q.a - Math.PI / 2)) || p.k - q.k);
+    let why = "angle";
+    for (const { end, a, tol } of ends) {
+      if (Math.abs(a - Math.PI / 2) > tol) continue;
       const x = t.cx + Math.cos(a) * R, yTop = t.cy + Math.sin(a) * R * TILT;
       const drop = wall + depth;
-      const box = { l: x - halfW - 10, r: x + halfW + 10, t: yTop - 6, b: yTop + drop + 4 };
-      if (plan.slots.some((s) => boxHit(box, slotBox(s)))) continue;
-      if (wet(plan, x, yTop + drop, halfW) || x < plan.ox - 20 || x > plan.ox + SECTOR_W + 20) continue;
-      if (Math.abs(yTop + drop / 2 - pathY(plan.gy, x)) < 24) continue; // never a flight standing in the path
-      if (plan.gazebo && Math.hypot(plan.gazebo.x - x, (plan.gazebo.y - yTop) / TILT) < 150) continue;
-      const pad = 0.5 * step + (halfW + 12) / R;
-      terraces.push({ x, yTop, drop, halfW, walk: walkToPath(plan, x, yTop + drop, 220, x >= t.cx ? 1 : -1, halfW), terrace: ti, pad, end });
-      break;
+      for (const hw of [halfW, Math.max(7, halfW - 3)]) {
+        const box = { l: x - hw - 10, r: x + hw + 10, t: yTop - 6, b: yTop + drop + 4 };
+        if (plan.slots.some((s) => boxHit(box, slotBox(s)))) { why = "slot"; continue; }
+        if (wet(plan, x, yTop + drop, hw) || x < plan.ox - 20 || x > plan.ox + SECTOR_W + 20) { why = "wet/edge"; continue; }
+        const py = pathY(plan.gy, x);
+        // a flight whose foot lands on the path is joined to it directly; one with the path across its upper steps is not
+        const footOnPath = py > yTop + drop * 0.6 && py < yTop + drop + 26;
+        if (!footOnPath && Math.abs(yTop + drop / 2 - py) < 24) { why = "path"; continue; }
+        if (plan.gazebo && Math.hypot(plan.gazebo.x - x, (plan.gazebo.y - yTop) / TILT) < 150) { why = "gazebo"; continue; }
+        const pad = Math.abs(a - (end ? t.a1 : t.a0)) + (hw + 12) / R;
+        const walk: Stair["walk"] = footOnPath ? [x, yTop + drop, x, Math.max(yTop + drop, py)] : walkToPath(plan, x, yTop + drop, 220, x >= t.cx ? 1 : -1, hw);
+        terraces.push({ x, yTop, drop, halfW: hw, walk, terrace: ti, pad, end });
+        why = "";
+        break;
+      }
+      if (!why) break;
     }
+    if (why) WHY[why] = (WHY[why] ?? 0) + 1;
   });
   let gazebo: { stair: Stair | null; back: [number, number, number, number] | null } | null = null;
   if (plan.gazebo) {
@@ -362,9 +401,64 @@ export function stairsOf(plan: SectorPlan) {
     }
     gazebo = { stair, back };
   }
+  connect(plan, terraces, gazebo);
   const out = { terraces, gazebo };
   stairCache.set(plan.index, out);
   return out;
+}
+
+/**
+ * Join every flight to the main path. A flight whose straight walk reached the path is connected; others try a
+ * longer or two-leg walk to the path, then a walk to the foot of a neighbouring flight that is already connected
+ * (repeating until nothing changes), so terraces form a network of steps and landings instead of islands.
+ */
+function connect(plan: SectorPlan, flights: Stair[], gazebo: { stair: Stair | null; back: [number, number, number, number] | null } | null) {
+  for (const f of flights) f.connected = f.walk !== null;
+  const routes = (f: Stair, tx: number, ty: number, skip: number[]): [number, number, number, number][] | null => {
+    const x0 = f.x, y0 = f.yTop + f.drop;
+    if (Math.hypot(tx - x0, ty - y0) < 8) return [];
+    if (walkClear(plan, x0, y0, tx, ty, skip)) return [[x0, y0, tx, ty]];
+    for (const [cx, cy] of [[x0, ty], [tx, y0]]) // an L: down then across, or across then down
+      if (walkClear(plan, x0, y0, cx, cy, skip) && walkClear(plan, cx, cy, tx, ty, skip)) return [[x0, y0, cx, cy], [cx, cy, tx, ty]];
+    return null;
+  };
+  // 1. to the path: wider and longer than the straight walk, in front of or behind the foot
+  for (const f of flights) {
+    if (f.connected) continue;
+    const x0 = f.x, y0 = f.yTop + f.drop;
+    for (const dx of [0, -40, 40, -90, 90, -150, 150, -220, 220]) {
+      const px = x0 + dx;
+      const py = pathY(plan.gy, px) + (pathY(plan.gy, px) > y0 ? -14 : 14);
+      if (Math.abs(py - y0) > 420 || px < plan.ox - 10 || px > plan.ox + SECTOR_W + 10) continue;
+      const r = routes(f, px, py, [f.terrace]);
+      if (r) { f.links = r; f.connected = true; break; }
+    }
+  }
+  // 2. through neighbours: to the foot of the nearest connected flight (or the arches' steps)
+  const hubs = () => {
+    const h: { x: number; y: number; t: number }[] = [];
+    for (const f of flights) {
+      if (!f.connected) continue;
+      h.push({ x: f.x, y: f.yTop + f.drop, t: f.terrace });
+      // points along its walk and legs are landings too: a route may join it midway
+      for (const w of [f.walk, ...(f.links ?? [])]) if (w) for (const k of [0.5, 1]) h.push({ x: w[0] + (w[2] - w[0]) * k, y: w[1] + (w[3] - w[1]) * k, t: f.terrace });
+    }
+    if (gazebo?.stair && (gazebo.stair.walk || gazebo.back)) h.push({ x: gazebo.stair.x, y: gazebo.stair.yTop + gazebo.stair.drop, t: -1 });
+    return h;
+  };
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const f of flights) {
+      if (f.connected) continue;
+      const y0 = f.yTop + f.drop;
+      const near = hubs().sort((a, b) => Math.hypot(a.x - f.x, a.y - y0) - Math.hypot(b.x - f.x, b.y - y0)).slice(0, 14);
+      for (const h of near) {
+        if (Math.hypot(h.x - f.x, h.y - y0) > 640) break;
+        const r = routes(f, h.x, h.y + 4, [f.terrace, h.t]);
+        if (r) { f.links = r; f.connected = true; changed = true; break; }
+      }
+    }
+  }
 }
 
 /** Steps in the garden's pixel style: path-tile treads with a pale nosing, wall-tile risers, stone cheeks. */

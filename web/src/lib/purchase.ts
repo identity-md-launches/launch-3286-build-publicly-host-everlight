@@ -29,24 +29,71 @@ const pendingSubs = new Set<() => void>();
 let pendingVersion = 0;
 const pendingChanged = () => { pendingVersion++; pendingSubs.forEach((f) => f()); };
 
+/**
+ * In-memory copy of every pending entry, per storage object. A hash is kept here the moment it is known, so even if
+ * the browser refuses to save it (quota, blocked storage) the page stays locked on it until its receipt settles.
+ */
+const memory = new WeakMap<object, PendingTx[]>();
+const NO_STORAGE = {};
+const memFor = (storage: Storage | null) => {
+  const k = storage ?? NO_STORAGE;
+  let l = memory.get(k);
+  if (!l) memory.set(k, (l = []));
+  return l;
+};
+function readStored(storage: Storage | null): PendingTx[] {
+  try {
+    const v = JSON.parse(storage?.getItem(PENDING_KEY) ?? "[]");
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
 /** Pending transaction hashes survive reloads so a closed tab can recover its receipt. */
 export const pendingStore = {
   list(storage: Storage | null = safeStorage()): PendingTx[] {
-    try {
-      const v = JSON.parse(storage?.getItem(PENDING_KEY) ?? "[]");
-      return Array.isArray(v) ? v : [];
-    } catch {
-      return [];
-    }
+    const stored = readStored(storage);
+    const extra = memFor(storage).filter((m) => !stored.some((t) => t.hash === m.hash));
+    return [...stored, ...extra];
   },
-  add(tx: PendingTx, storage: Storage | null = safeStorage()) {
-    const l = pendingStore.list(storage).filter((t) => t.hash !== tx.hash);
-    storage?.setItem(PENDING_KEY, JSON.stringify([...l, tx]));
+  /** Never throws: the entry is held in memory first, then saved; returns false when it could not be saved. */
+  add(tx: PendingTx, storage: Storage | null = safeStorage()): boolean {
+    const mem = memFor(storage);
+    const i = mem.findIndex((t) => t.hash === tx.hash);
+    if (i >= 0) mem[i] = tx; else mem.push(tx);
+    let saved = false;
+    try {
+      if (storage) {
+        storage.setItem(PENDING_KEY, JSON.stringify([...readStored(storage).filter((t) => t.hash !== tx.hash), tx]));
+        saved = true;
+      }
+    } catch { /* kept in memory: this page stays locked on it, but a reload cannot recover it */ }
     pendingChanged();
+    return saved;
   },
   remove(hash: string, storage: Storage | null = safeStorage()) {
-    storage?.setItem(PENDING_KEY, JSON.stringify(pendingStore.list(storage).filter((t) => t.hash !== hash)));
+    const mem = memFor(storage);
+    const i = mem.findIndex((t) => t.hash === hash);
+    if (i >= 0) mem.splice(i, 1);
+    try {
+      const rest = readStored(storage).filter((t) => t.hash !== hash);
+      if (rest.length) storage?.setItem(PENDING_KEY, JSON.stringify(rest));
+      else storage?.removeItem(PENDING_KEY);
+    } catch { /* nothing more to do */ }
     pendingChanged();
+  },
+  /** Can recovery data be saved right now? Checked before the wallet is asked to sign a purchase. */
+  writable(storage: Storage | null = safeStorage()): boolean {
+    if (!storage) return false;
+    try {
+      const k = `${PENDING_KEY}:probe`;
+      storage.setItem(k, "1");
+      storage.removeItem(k);
+      return true;
+    } catch {
+      return false;
+    }
   },
   /** For useSyncExternalStore: the list changes whenever a hash is added or removed. */
   subscribe(f: () => void) {
@@ -197,6 +244,7 @@ export async function runPurchase(
     return s;
   };
   if (deps.readOnly) return fail(FIXTURE_MESSAGE);
+  let sent: PendingTx | null = null;
   try {
     if (styles.length < 1 || styles.length > 50 || styles.length !== wishes.length) return fail("Choose between 1 and 50 candles.");
     if (deps.chainId() !== 1) return fail("Your wallet is on another network. Switch to Ethereum to continue.");
@@ -226,20 +274,41 @@ export async function runPurchase(
     } catch {
       return fail(META_MESSAGE);
     }
+    // the hash of a sent purchase must be recoverable after a reload, so storage is checked before signing
+    if (!pendingStore.writable(deps.storage === undefined ? undefined : deps.storage)) return fail(STORAGE_MESSAGE);
     onStep({ name: "buy-wallet" });
     const hash = await deps.buy(request);
-    const tx: PendingTx = {
+    // from here on the purchase is broadcast: no failure may unlock the draft as if nothing had been sent
+    sent = {
       hash, kind: "buy", account: deps.account, quantity: styles.length, createdAt: Date.now(),
       from: deps.account, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false, styles: [...styles], wishes: [...wishes],
     };
-    pendingStore.add(tx, deps.storage);
+    const saved = pendingStore.add(sent, deps.storage);
     onStep({ name: "buy-pending", hash });
-    const checked = await reconcileSent(deps, tx);
+    if (!saved) {
+      // held in memory only: this page stays locked on it and keeps waiting for its receipt
+      const checked = await reconcileSent(deps, sent).catch(() => sent!);
+      const s = await awaitBuy(deps, checked, onStep);
+      return s;
+    }
+    const checked = await reconcileSent(deps, sent);
     return await awaitBuy(deps, checked, onStep);
   } catch (e) {
+    if (sent) {
+      // a failure after broadcast (storage, RPC): keep the hash pending and the draft locked, never a plain error
+      pendingStore.add(sent, deps.storage);
+      const s: Step = { name: "buy-unknown", hash: sent.hash, message: SENT_UNKNOWN_MESSAGE };
+      onStep(s);
+      return s;
+    }
     return fail(deps.explain(e));
   }
 }
+
+export const STORAGE_MESSAGE =
+  "This browser is not letting the site save recovery data (storage is full or blocked), so a sent purchase could not be recovered after a reload. Nothing was sent and your draft is kept. Free some site storage or leave private mode, then try again.";
+export const SENT_UNKNOWN_MESSAGE =
+  "Your purchase was sent, but the page could not finish tracking it. It stays locked on this transaction so it is not sent twice; check its receipt below.";
 
 export const FIXTURE_MESSAGE = "Test fixture: simulated candles, transactions disabled. Open the garden without ?fixture to light real candles.";
 export const META_MESSAGE =

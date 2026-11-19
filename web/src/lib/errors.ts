@@ -2,6 +2,8 @@ import { BaseError, ContractFunctionRevertedError, UserRejectedRequestError } fr
 
 /** One plain sentence that says what happened and what to do next. */
 export function explainError(e: unknown): string {
+  if (e instanceof Error && e.message.startsWith("GAS_TOO_HIGH:"))
+    return `The contract estimates ${Number(e.message.slice(13)).toLocaleString("en-US")} gas for this purchase, more than one Ethereum transaction may use. Nothing was sent and your draft is kept; shorten the wishes in this purchase and try again.`;
   if (e instanceof BaseError) {
     if (e.walk((x) => x instanceof UserRejectedRequestError) || /rejected|denied|cancel/i.test(e.shortMessage))
       return "You cancelled the request in your wallet. Nothing was sent.";

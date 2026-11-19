@@ -8,7 +8,7 @@ below wherever they conflict (those describe the retired painted look and are ke
 | --- | --- | --- |
 | `--px-black` | #050a08 | page background, sprite keylines |
 | `--px-emerald-950/900/800` | #0b1712 / #12251b / #1c3a26 | surfaces, raised surfaces, hover |
-| `--px-green-600/500/400/300` | #2a5233 / #3f7a3c / #6aa84f / #a7d36a | frames, primary button, accent, active nav |
+| `--px-green-600/500/400/300` | #2a5233 / #3f7a3c / #6aa84f / #a7d36a | primary button fill (600; hover #356a3f, inset shadow #1c3824), frames and lines (500), accent (400), active nav and button rim (300) |
 | `--px-ivory`, `--px-ivory-dim` | #efe6cc / #cdbf9c | body text, secondary text |
 | `--px-gold`, `--px-gold-deep` | #f5c95a / #d79a32 | flames, IMD totals, focus ring |
 | `--radius-*` | 0 | everything is square |
@@ -29,18 +29,36 @@ controls, system sans for body. Focus: 3px gold outline, 2px offset, on every fo
   confirmed candles draw a style sprite (7 styles), one of four flame frames (frame 0 when motion is reduced
   or far away), a stepped gold halo and a ground glow pool. Overview LOD uses one cached light layer per
   sector. A warm screen lift grows with log10(lit count). Decorative lamps are green glass, never gold.
-- Water: drifting pixel ripples along every stream in view (static with reduced motion).
+- Water: drifting pixel ripples along every stream in view, on their own clock (`web/src/garden/motion.ts`). They run at
+  20 fps whenever a stream is on screen at zoom >= 0.3, with or without candles. Flames run at 30 fps at zoom >= 0.7 when
+  candles exist. Nothing animates in a hidden tab (`document.hidden`) or with `prefers-reduced-motion`. Dirty frames
+  (pan, zoom, new data) draw at once.
+- Terraces and paths: every raised terrace tries to carry a flight of steps at one end of its retaining wall. The first
+  choice is an end facing the viewer just past the last holder. Failing that, ends further round the wall, or one more
+  step clear, with a narrower flight if needed. A flight whose foot lands on the row's path joins it directly. Otherwise
+  a flagstone walk leads to the path: straight, longer, or two-leg (L-shaped). If no walk reaches the path, the walk
+  goes to the foot of a neighbouring flight that is already connected (`stairsOf` + `connect` in `scenery.ts`). Walks
+  keep off holders, water and other terraces. Decoration keeps off every walk leg.
 
 ## Components
 Header, garden canvas, right purchase dock, minimap/zoom/Find cluster, allocation strip, sheets and modals keep
-their structure from the previous revision (below); this revision restyles them with the tokens above. The
+their structure from the previous revision (below); this revision restyles them with the tokens above.
+- **Split purchase plan** (`.split-plan`, `everlight.css`). It appears under Total when a draft needs more than one
+  transaction. A short explanation sits above an ordered list, one row per purchase: "Purchase N: candles a-b" on the
+  left, IMD and gas bound (plus ETH when the gas price is known) on the right. The next purchase has a 3px gold left
+  rule. The rows wrap at narrow widths. The primary button names the next purchase ("Light 30 candles (purchase 1 of 2)").
+- **Candle register states** (`Register`, `Panels.tsx`). "Reading the candle register…" while the total is unknown. An
+  alert "Unavailable … Try again" when it could not be read. "Showing N of M candles" for a partial list. The empty-garden
+  sentence appears only after a verified total of 0. The
 purchase preview is now a pixel composition (arch, hero pedestal, chosen candle sprite, 4 flame frames at 3x)
 in `LightPanel.tsx` `CandlePreview`. Style picker and My Candles use the pixel candle sprites (`img.px`,
 `image-rendering: pixelated`).
 
 ## Responsive behaviour
 Unchanged breakpoints: at 900px and below the dock becomes a dismissible bottom sheet with a persistent
-"Light a candle" action; the garden stays full-bleed and pannable at every width.
+"Light a candle" action; the garden stays full-bleed and pannable at every width. Under 640px the opening camera
+(`renderer.ts` `home()`) widens from zoom 0.62 down to no less than 0.42, just enough to keep the nearest stream in
+frame to the right of the founding pedestal, so moving water is visible on the first screen.
 
 ---
 
@@ -142,7 +160,7 @@ Contrast: the design probe measured all first-screen text at 320, 390 and 1440 w
 - **Bottom strip** (`.strip`):
   - Find my candle: a crosshair icon, a numeric input and a button. It searches any id, including ids not loaded yet.
   - A slot for the minimap (220×72 canvas, click to move).
-  - The economics as a `<details>` list: 30% Burn, 30% Previous paid candles, 30% Ecosystem, 5% Operations, 5% Founder. It is open on desktop and collapsed to a "Split of 1 IMD" sheet under 900px; its open state is tracked (`splitOpen` in `App.tsx`) and, under 900px, opening it hides the map tools so all five rows stay readable and tappable.
+  - The economics as a `<details>` list: 30% Burn, 60% Previous paid candles, 5% Operations, 5% Founder, plus a note that the first-ever candle sends 90% to burn (no ecosystem row). It is open on desktop and collapsed to a "Split of 1 IMD" sheet under 900px; its open state is tracked (`splitOpen` in `App.tsx`) and, under 900px, opening it hides the map tools so all five rows stay readable and tappable.
 - **Map tools** (`.map-tools`): round + / − / reset-view buttons at the left above the strip, and the minimap. The minimap draws the actual world: sky, wild woodland, garden cells, every stream, lit candles, the selected candle and the camera rectangle; click moves the camera. The whole group carries `hidden` whenever a panel or the menu is open, and on screens under 900px while a candle sheet or the split sheet is open, so it never sits over an input, wish, price, validation message or primary action. Keyboard: arrows pan, + / − zoom, 0 resets.
 - **Camera bounds** (`clamp()`): zoom from the level where the whole garden plus a 900-unit ring of woodland fits, up to `MAX_ZOOM` = 1.8× (the 1.0× cache tier keeps scenery at most 1.8× stretched); the view centre stays over land and the skyline never drops below 45% of the screen.
 - **Candle popup** (`.detail-wrap.anchored`): 320px, with a pointer notch. `placePopup()` (`web/src/lib/popup.ts`) puts it above the flame when it fits between the header and the strip, otherwise below the flame (`.below`, notch on top), preferring the side that keeps clear of the intro; if it still overlaps the intro, the intro is hidden (`.intro-yield`) so text never sits over text. On desktop it always uses this anchored placement: it is hidden while its flame is under the header or the strip or off the map, keeps the selection, and returns beside the flame when the candle comes back into view (it is never shown detached). It shows the id, owner (explorer link), style, date, position, the transaction that lit it (`useCandleTx()`: Etherscan `/tx/` link, "Looking up…", or "Transaction unavailable"), the public wish (italic serif, rendered as text), the full owner address with a Copy address button, and links to the contract read (`getCandle`), the owner on Etherscan and the owner's garden transactions. It stays anchored to the flame while the map pans and zooms. Under 900px it becomes a sheet above the strip whose height is capped (`max-height: min(60vh, max(176px, 100dvh − header − strip − 230px))`, scrolling inside) so a selected candle always has room above it. Escape or × closes it.

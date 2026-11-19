@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { motionPlan, shouldDraw } from "./motion";
 import type { Candle } from "../lib/candles";
 import { GardenRenderer, MAX_ZOOM } from "./renderer";
 import { hitTest, positionOf } from "./layout";
@@ -66,11 +67,18 @@ export function Garden(p: Props) {
     let last = performance.now();
     let saveAt = 0;
     let anchorKey = "";
+    let lastDraw = -Infinity;
+    const onVis = () => { dirty.current = true; };
+    document.addEventListener("visibilitychange", onVis);
     const loop = (t: number) => {
       raf = requestAnimationFrame(loop);
       const inp = inputRef.current;
-      const animate = (!inp.reducedMotion && r.cam.z >= 0.7 && inp.candles.length > 0) || igniting();
-      if (!animate && !dirty.current && !r.pending) return;
+      // hidden tabs never draw; water ripples run on their own capped clock, independent of candles (motion.ts)
+      const hidden = typeof document !== "undefined" && document.hidden;
+      if (hidden) return;
+      const plan = motionPlan({ reducedMotion: inp.reducedMotion, hidden, zoom: r.cam.z, candles: inp.candles.length, waterInView: r.waterInView(), igniting: igniting() });
+      if (!shouldDraw(plan, dirty.current || r.pending, t, lastDraw)) return;
+      lastDraw = t;
       dirty.current = false;
       r.clamp(Math.max(inp.total, inp.known));
       r.draw(inp, t);
@@ -103,6 +111,7 @@ export function Garden(p: Props) {
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      document.removeEventListener("visibilitychange", onVis);
     };
   }, []);
 

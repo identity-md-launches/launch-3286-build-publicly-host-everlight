@@ -359,7 +359,7 @@ export default function App() {
               {route === "rewards" && <RewardsPanel />}
               {route === "treasury" && <TreasuryPanel />}
               {route === "how" && <HowPanel />}
-              {(route === "mine" || route === "how") && <Register candles={cs.candles} onJump={jump} />}
+              {(route === "mine" || route === "how") && <Register candles={cs.candles} info={cs} onRetry={() => { store.sync(); }} onJump={jump} />}
             </div>
           </aside>
         )}

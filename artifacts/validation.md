@@ -1,3 +1,52 @@
+# Validation: review fixes for job 12f1426d (2026-11-19)
+
+All results are worker-side, on this machine, against the final `dist/` built by `vite build` after the last source change. The verifier checks paths and bytes only.
+
+## Toolchain
+`npm ci` and `tsc --noEmit` exit 0, `npx vitest run` 11 files 112/112 passed, `npm run build` ok. The npm registry, GitHub raw files and the task RPC were all reachable this time.
+
+## Browser checks (Playwright 1.64 alpha, Chromium headless shell r1248, SwiftShader, local static server)
+Raw: `artifacts/rev7-browser-checks.json`. "Before" is the export committed at the start of this job (`git archive HEAD dist`); "after" is this build. Every page used `?fixture=N` with transactions disabled, or the live build with **every non-local request blocked**. Everything here is **mocked**: no fork, no live RPC read, no transaction.
+
+| Check | 1600×1000 | 390×844 (touch) |
+|---|---|---|
+| 6 routes at `?fixture=100`: renders, fixture label shown, no horizontal overflow, no page errors, no local 404s, no "Ecosystem (30%)" | pass | pass |
+| Fixtures 0 / 3000 / 10000 render without overflow | pass | pass |
+| Find 37 opens Candle #37 with the owner address | pass | pass |
+| Water at 0 candles (canvas pixels that changed in 700 ms), **before** | 0 | 0 |
+| Water at 0 candles, **after** | 1469 | 625 |
+| Default view at 100 candles, after | 171412 | 56527 |
+| Reduced motion, 0 candles, after | 0 (still) | 0 (still) |
+| 50 candles with 280 × "a": split plan | 2 purchases (1–30, 31–50); bounds 16,320,000 and 10,980,000 gas | same |
+| Same draft after reload | qty 50, wish 280 chars, plan kept | same |
+| Live build with RPCs blocked, `#/how` register | "Unavailable … This does not mean the garden is empty. Try again" | same |
+| Header Connect button colours | bg rgb(42,82,51), ivory text, 15px (7.17:1 computed from these colours) | same |
+
+Console errors on these pages are all `net::ERR_FAILED`. They come from the harness deliberately blocking the public RPCs.
+
+Screenshots (`artifacts/screens/`), at both `d1600` and `m390`:
+- After: `rev7-after-<vp>-<route>.jpg` for garden, mine, rewards, treasury, light and how; `rev7-after-<vp>-fixture{0,3000,10000}.jpg`; `rev7-after-<vp>-find37.jpg`; `rev7-after-<vp>-split-plan.jpg`; `rev7-after-<vp>-register-rpc-blocked.jpg`.
+- Before: `rev7-before-<vp>-{garden,light,how,fixture0}.jpg`.
+
+## Design probe and Better Interface review
+`taste.mjs` passed 16/16 at 320/390/1440 (`artifacts/rev7-taste-probe.json`). The 390 view shows the headline, the garden and "Light a candle · 1 IMD" on the first screen.
+
+Better Interface pass over what changed:
+- **Accessibility**: the split plan is `role="status"` with an ordered list. Register states use `role="status"`/`role="alert"`, and Try again is a real button. CTA contrast was fixed (`web/src/pixel.css:47-54`).
+- **Writing**: plain sentences. Unknown is never shown as zero (`Panels.tsx` Register).
+- **Layout**: the split rows wrap (`everlight.css`, `.split-plan li`). No overflow was found at either width.
+- **Typography and colours**: existing tokens only.
+- **UI**: one button that always names the next purchase ("purchase 1 of 2").
+- Contrast was measured by taste.mjs's own check. The ratios quoted above are computed from colour values.
+
+## Not done / limitations
+- **Terraces**: 255 of 1,665 raised terraces still have no flight, because both ends of their wall are crowded by holders. A further 135 flights have no route that avoids holders and water. Those terraces stay raised without steps.
+- **Hosting**: HTTPS and a fresh load of https://everlight.imd.site/ were not checked from this machine. Publishing is done by the plane from the committed `dist/`.
+- **Live**: no live reads were made by the browser harness. No purchase, claim, approval or fork test ran. Split purchases and storage failure are covered by unit tests on labelled mocks only (`web/tests/revision7.test.ts`).
+- The previous round's report (below) cites `artifacts/rev6-browser-checks.json` and `artifacts/screens/rev6-*`. Those files were never committed. This round's evidence replaces them.
+
+---
+
 # Revision 6: live revised garden, new economics and help (job 12f1426d)
 
 ## What changed

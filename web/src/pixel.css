@@ -45,14 +45,15 @@ img.px, .style-opt img, .px { image-rendering: pixelated; image-rendering: crisp
 }
 button, .btn, .cta, input, textarea, select, .style-opt, .nav a, .q-btn, .chip { border-radius: 0 !important; }
 .cta, .btn.primary, button.primary {
-  background: var(--px-green-500) !important;
+  /* ivory on #2a5233 is 7.17:1, on the #356a3f hover 5.13:1 (WCAG AA for 15px text) */
+  background: var(--px-green-600) !important;
   border: 2px solid var(--px-green-300) !important;
   color: var(--px-ivory) !important;
-  box-shadow: 0 2px 0 var(--px-black), inset 0 -3px 0 var(--px-green-600) !important;
+  box-shadow: 0 2px 0 var(--px-black), inset 0 -3px 0 #1c3824 !important;
   text-shadow: 0 2px 0 rgb(5 10 8 / 0.6);
 }
-.cta:hover, .btn.primary:hover, button.primary:hover { background: #4c8f47 !important; }
-.cta:active, .btn.primary:active { transform: translateY(2px); box-shadow: inset 0 -1px 0 var(--px-green-600) !important; }
+.cta:hover, .btn.primary:hover, button.primary:hover { background: #356a3f !important; }
+.cta:active, .btn.primary:active { transform: translateY(2px); box-shadow: inset 0 -1px 0 #1c3824 !important; }
 .nav a[aria-current="page"], .nav a.on { color: var(--px-green-300); border-color: transparent; box-shadow: inset 0 -3px 0 var(--px-green-400); }
 .style-opt.on, .q-btn.on, [aria-pressed="true"].q-btn { outline: 2px solid var(--px-green-300); outline-offset: 0; background: var(--px-emerald-800); }
 :focus-visible { outline: 3px solid var(--px-gold) !important; outline-offset: 2px; }

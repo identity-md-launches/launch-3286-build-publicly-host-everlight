@@ -19,6 +19,7 @@ export const P = {
   V: "#efe6cc", V2: "#cdbf9c", FL: "#f4f1e4", FC: "#e8c34a",
   R1: "#1f4d1e", R2: "#3e8a2f", R3: "#6cc04a", EW: "#f0efe6", LP: "#a8463a",
   B1: "#3a2414", B2: "#6a4424", B3: "#9a6a3a", C1: "#1d2c55", C2: "#34508f", H1: "#4a3a26", H2: "#6e5838",
+  PK: "#d98aa8", PK2: "#f2c4d2", LV: "#9a86c8", LV2: "#c9bdf0",
   T1: "#9a7a32", T2: "#c9a24a", T3: "#e8c870", L1: "#7dffb0", L2: "#c8ffe0", I1: "#1a1f1c", O1: "#a8501e", O2: "#f0a14a",
 };
 const rgb = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
@@ -257,6 +258,75 @@ function frogHead(p, x, y, flip = false) {
   const p = new Pix(16, 14); p.rect(1, 10, 14, 4, "S3"); p.rect(1, 10, 14, 1, "S4");
   frogHead(p, 2, 1); p.oval(8, 8, 5, 3, "R2"); p.rect(4, 9, 2, 2, "R1"); p.rect(10, 9, 2, 2, "R1"); p.rect(6, 7, 4, 3, "LP");
   p.outline(); save("frog-sitter", p);
+}
+
+// ---------- revision 10: flowered arches, willow clusters, river banks, frog vignettes ----------
+{ // flower garland laid over the arch sprite (same 36x44 frame): leafy swag on the outer curve, pink, lavender and
+  // white blossoms, trailing strands, and a small green-glass lantern hung from the keystone on a chain
+  const p = new Pix(36, 44); seed = 41;
+  for (let i = 0; i < 150; i++) {
+    const a = rnd() * Math.PI, r = 14.5 + rnd() * 4.5; const x = 18 - Math.cos(a) * r, y = 13 - Math.sin(a) * r * 0.85;
+    p.set(x, y, rnd() < 0.45 ? "G3" : rnd() < 0.6 ? "G4" : "G2");
+    const v = rnd(); if (v < 0.16) p.set(x, y - 1, "PK"); else if (v < 0.26) p.set(x, y - 1, "PK2"); else if (v < 0.34) p.set(x, y - 1, "LV2"); else if (v < 0.4) p.set(x, y - 1, "FL");
+  }
+  for (let i = 0; i < 26; i++) { // 2x2 blossoms along the swag, pink and lavender with a gold heart
+    const a = 0.1 + rnd() * (Math.PI - 0.2), r = 16 + rnd() * 2.5; const x = Math.round(18 - Math.cos(a) * r), y = Math.round(13 - Math.sin(a) * r * 0.85);
+    const [c1, c2] = i % 3 === 0 ? ["LV", "LV2"] : i % 3 === 1 ? ["PK", "PK2"] : ["PK2", "FL"];
+    p.set(x, y - 1, c2); p.set(x + 1, y - 1, c1); p.set(x, y, c1); p.set(x + 1, y, "FC");
+  }
+  for (let i = 0; i < 14; i++) { // trailing strands down the piers, flowering at their tips
+    const side = i % 2 ? 1 : -1, x = 18 + side * (12 + Math.round(rnd() * 5)), y0 = 10 + Math.round(rnd() * 8), len = 4 + Math.round(rnd() * 14);
+    for (let k = 0; k < len; k++) p.set(x + (k % 5 === 4 ? side : 0), y0 + k, k % 3 ? "G3" : "G2");
+    p.set(x, y0 + len, rnd() < 0.5 ? "PK" : "LV");
+  }
+  p.rect(18, 0, 1, 9, "I1"); // chain from the keystone
+  p.rect(16, 9, 5, 1, "I1"); p.rect(16, 10, 1, 4, "I1"); p.rect(20, 10, 1, 4, "I1"); p.rect(17, 10, 3, 4, "L1"); p.set(18, 11, "L2"); p.rect(16, 14, 5, 1, "I1"); p.set(18, 15, "I1");
+  p.outline(); save("garland", p);
+}
+function willowOf(name, w, h, trunkX, canopy, strands, sd, tone) {
+  const p = new Pix(w, h); seed = sd;
+  const [cx, cy, rx, ry] = canopy;
+  p.rect(trunkX, cy + ry - 2, 3, h - (cy + ry) + 1, "B1"); p.rect(trunkX + 1, cy + ry - 2, 1, h - (cy + ry), "B2"); p.rect(trunkX - 3, h - 2, 9, 2, "B1");
+  foliage(p, cx, cy, rx, ry, ...tone);
+  for (let i = 0; i < strands; i++) { const x = Math.round(cx - rx + 2 + rnd() * (rx * 2 - 4)), y0 = Math.round(cy - ry * 0.3 + rnd() * ry), len = Math.round(ry * 0.8 + rnd() * ry * 1.9); for (let k = 0; k < len && y0 + k < h - 3; k++) p.set(x, y0 + k, k > len - 3 ? tone[3] : (x + k) % 4 ? tone[2] : tone[1]); }
+  p.outline("D1"); save(name, p);
+}
+willowOf("willow-s", 30, 38, 13, [15, 12, 12, 9], 26, 61, ["G1", "G2", "G3", "G4"]);
+willowOf("willow-l", 60, 66, 28, [30, 21, 26, 17], 70, 77, ["D2", "G1", "G2", "G3"]);
+{ // reeds and cattails for the river banks, 12x16
+  const p = new Pix(12, 16); seed = 91;
+  for (let i = 0; i < 7; i++) { const x = 1 + i * 1.6, top = 2 + Math.round(rnd() * 6); for (let y = top; y < 16; y++) p.set(x + (y < top + 3 && i % 2 ? 1 : 0), y, y % 4 ? "G3" : "G2"); }
+  p.rect(3, 3, 2, 4, "B2"); p.set(3, 3, "B3"); p.rect(8, 5, 2, 4, "B2"); p.set(8, 5, "B3"); p.rect(1, 15, 10, 1, "G1");
+  save("reeds", p);
+}
+{ // a row of rounded bank stones half in the water, 18x7
+  const p = new Pix(18, 7);
+  for (const [cx, rx, ry] of [[3.5, 3.5, 2.6], [9, 3.2, 3], [14.5, 3.4, 2.4]]) p.oval(cx, 4, rx, ry, (dx, dy) => (dy < -0.45 ? (dx < 0 ? "G3" : "G2") : dx < -0.3 ? "S4" : dy > 0.4 ? "S2" : "S3"));
+  p.rect(0, 6, 18, 1, "W2"); p.outline(); save("bank-stones", p);
+}
+{ // fisher frog on a bank stone, rod over the water and a line with a float, 28x20
+  const p = new Pix(28, 20);
+  p.rect(1, 15, 13, 5, "S3"); p.rect(1, 15, 13, 1, "S4"); p.rect(2, 18, 11, 1, "S2");
+  frogHead(p, 2, 4); p.oval(8, 12, 5, 3, "R2"); p.rect(4, 13, 2, 2, "R1"); p.rect(10, 13, 2, 2, "R1"); p.rect(6, 11, 4, 3, "LP");
+  p.rect(1, 1, 12, 1, "T2"); p.rect(4, 0, 6, 1, "T3"); // straw brim
+  for (let i = 0; i < 14; i++) p.set(12 + i, 12 - Math.round(i * 0.75), "B2"); // rod
+  for (let y = 2; y < 17; y++) p.set(26, y, "S5"); p.set(26, 17, "LP"); p.set(26, 18, "FL"); // line and float
+  p.rect(11, 11, 2, 2, "R2"); p.outline(); save("frog-fisher", p);
+}
+{ // frog resting on a flowering lily pad, 20x11
+  const p = new Pix(20, 11);
+  p.oval(9.5, 8, 9.5, 2.6, (dx, dy) => (dy < -0.3 ? "G4" : "G3")); p.set(9, 7, "G1"); p.set(10, 8, "G1");
+  p.oval(7, 4, 4.5, 2.6, "R2"); p.rect(4, 2, 2, 2, "EW"); p.rect(8, 2, 2, 2, "EW"); p.set(5, 3, "K"); p.set(9, 3, "K"); p.rect(5, 5, 4, 1, "LP");
+  p.rect(3, 6, 2, 1, "R1"); p.rect(9, 6, 2, 1, "R1");
+  p.rect(15, 4, 2, 2, "PK2"); p.set(14, 5, "PK"); p.set(17, 5, "PK"); p.set(15, 6, "FC");
+  p.outline(); save("frog-lily", p);
+}
+{ // frog sweeping fallen petals with a broom, 18x22
+  const p = new Pix(18, 22);
+  frogHead(p, 1, 2); p.rect(2, 9, 9, 9, "C2"); p.rect(2, 9, 2, 9, "C1"); p.rect(2, 18, 3, 2, "R1"); p.rect(8, 18, 3, 2, "R1");
+  for (let y = 4; y < 18; y++) p.set(13 + Math.round((y - 4) * 0.12), y, "B2"); p.rect(12, 18, 5, 3, "T2"); p.rect(12, 20, 5, 1, "T1");
+  p.rect(11, 11, 2, 2, "R2"); p.set(5, 21, "PK2"); p.set(8, 21, "PK"); p.set(1, 21, "PK2");
+  p.outline(); save("frog-sweeper", p);
 }
 writeFileSync(join(OUT, "manifest.json"), JSON.stringify({ unit: "1 image pixel = 1 art pixel = 2 world units", palette: P, candles: CANDLES, files }, null, 1));
 const sheetAt = process.argv.indexOf("--sheet");

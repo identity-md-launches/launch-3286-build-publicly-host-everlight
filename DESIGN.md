@@ -270,3 +270,15 @@ Positions depend only on a candle's position (id − 1), so they are stable acro
 - **Light** (`web/src/garden/renderer.ts`): per-candle halo alpha 0.17 (radius 38·scale) and ground pool 0.15 (68×20·scale); overview light layer 0.2. Flicker stays bounded (0.88–1.0) and is fixed under reduced motion.
 - **Components** (`web/src/everlight.css`, end of file): `.approved-box` (gold left rule, 6% gold tint), `.recovery`, `.reconcile` (monospace hash input, 44 px min height, gold focus ring), `.confirm-release` (coral border), `.btn.danger`, `.status-line .lit-count` (gold, 600) and `.loaded-count`.
 - **Responsive**: the new boxes are single-column grids that fit the 390 px purchase sheet and the docked 1600 px panel; the hash row is a flex row whose input shrinks (`min-width: 0`). Tokens, type scale (13/15/17/20/28/44 px, Iowan Old Style + system-ui) and breakpoints are unchanged from the sections above.
+
+## Revision 10 additions (final source)
+
+- Purchase recovery is scoped per account: one saved intent per account (`intentHash("buy", account)`), saved exclusively under a Web Lock. The recovery panel shows and releases only the connected account's purchase.
+- Fixture label: one per screen. It sits in the docked panel's `role=note` bar when that panel is open, and in the hero otherwise (mobile, or panel collapsed).
+- Garden components (web/src/garden/scenery.ts, sprites in web/public/art/px, CC0):
+  - Arches: stone `arch` with a `garland` overlay (pink #d98aa8/#f2c4d2, lavender #9a86c8/#c9bdf0, ivory blossoms, green-glass lantern on a chain).
+  - Trees: willow clusters of 2-4 trunks mixing `willow-s` (30x38), `willow` (44x52) and `willow-l` (60x66), each depth-sorted on its own foot. Oaks and cypresses stand singly.
+  - Terraces: earth bank behind the lawn (#132a1c/#183622) and a dithered contact shadow under the wall. Four arrangements are chosen per sector by `terraceArrangement(gx, gy)`: 0 hedge, 1 flower border, 2 lantern walk, 3 old ruin.
+  - River: depth gradient water without a tiled texture, dark bank reflections, sparse glints, animated ripples (frozen under reduced motion), `reeds`, `bank-stones` and lily pads on the banks. The bridge has an arched deck (12 world-unit crown), a voussoir ring, a shadowed opening and a mirrored reflection.
+  - Frog vignettes: `frog-fisher` on the bank below the bridge, `frog-lily` on a pool, `frog-sweeper` on the path, plus the earlier reader, gardener, wanderer and sitter.
+- Pixel scale: 1 sprite pixel = 2 world units for all new art. Responsive behaviour is unchanged.

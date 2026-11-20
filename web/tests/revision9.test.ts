@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { encodeFunctionData, type Hash } from "viem";
 import { wishGardenAbi } from "../src/abi/WishGarden";
 import { GARDEN } from "../src/config";
-import { AMBIGUOUS_MESSAGE, APPROVED_NOT_SENT, DUPLICATE_MESSAGE, INTENT_HASH, pendingStore, runPurchase, type PendingTx, type PurchaseDeps, type Step } from "../src/lib/purchase";
+import { AMBIGUOUS_MESSAGE, APPROVED_NOT_SENT, DUPLICATE_MESSAGE, INTENT_HASH, pendingStore, removeBuyIntent, runPurchase, type PendingTx, type PurchaseDeps, type Step } from "../src/lib/purchase";
 import { intentHash, isProvenRejection, matchesIntent, resolveIntent, type IntentClient, type SeenTx } from "../src/lib/intent";
 import { attachHash } from "../src/lib/chain";
 import { CLAIM_BUSY_MESSAGE, CLAIM_STORAGE_MESSAGE, runClaim, type ClaimDeps, type ClaimStep } from "../src/lib/claim";
@@ -58,7 +58,7 @@ describe("finding 1: an ambiguous wallet failure keeps a durable purchase intent
     const reload = new FakeStorage(map);
     const list = pendingStore.list(reload);
     expect(list).toHaveLength(1);
-    expect(list[0]).toMatchObject({ hash: INTENT_HASH, intent: true, kind: "buy", account: ME, nonce: 7, block: "100", styles: [1], wishes: ["hi"] });
+    expect(list[0]).toMatchObject({ hash: intentHash("buy", ME), intent: true, kind: "buy", account: ME, nonce: 7, block: "100", styles: [1], wishes: ["hi"] });
     // reconnect and try again: no second wallet request
     const again = await runPurchase(baseDeps(reload, { buy: async () => { asked++; return H("b"); } }), [1], ["hi"], () => {});
     expect(again).toMatchObject({ name: "error", message: DUPLICATE_MESSAGE });
@@ -123,6 +123,57 @@ describe("finding 1: an ambiguous wallet failure keeps a durable purchase intent
     expect(ok.ok).toBe(true);
     expect(saved(st).map((x) => [x.hash, x.intent, x.nonceChecked])).toEqual([[H("a"), undefined, true]]);
     expect(matchesIntent({ ...intent, kind: "claim" }, tx(H("a"), 7, { input: encodeFunctionData({ abi: wishGardenAbi, functionName: "claimRewards" }) })).ok).toBe(true);
+  });
+});
+
+describe("review a103c521 / 658d1824: purchase intents are exclusive across tabs and scoped per account", () => {
+  it("two tabs: both start a purchase at once; the wallet is asked once and tab B is refused", async () => {
+    const map = new Map<string, string>();
+    const tabA = new FakeStorage(map), tabB = new FakeStorage(map);
+    let asked = 0;
+    let open!: () => void;
+    const gate = new Promise<void>((r) => (open = r));
+    const buy = async () => { asked++; await gate; throw providerError(4900, "The provider is disconnected from all chains."); };
+    const a = runPurchase(baseDeps(tabA, { buy }), [1], ["a"], () => {});
+    const b = runPurchase(baseDeps(tabB, { buy }), [1], ["b"], () => {});
+    const rb = await b;
+    open();
+    const ra = await a;
+    expect(asked).toBe(1);
+    expect(rb).toMatchObject({ name: "error", message: DUPLICATE_MESSAGE });
+    expect(ra.name).toBe("buy-unknown");
+    // tab A's possibly-broadcast draft is the one kept, so it can still be resolved by its calldata
+    const left = saved(tabA);
+    expect(left).toHaveLength(1);
+    expect(left[0]).toMatchObject({ hash: intentHash("buy", ME), intent: true, wishes: ["a"] });
+  });
+
+  it("a held Web Lock (another tab saving) refuses before the wallet is asked", async () => {
+    const st = new FakeStorage();
+    let asked = 0;
+    const s = await runPurchase(baseDeps(st, { buy: async () => { asked++; return H("a"); }, withLock: async () => "busy" as const }), [1], ["x"], () => {});
+    expect(s).toMatchObject({ name: "error", message: DUPLICATE_MESSAGE });
+    expect(asked).toBe(0);
+    expect(saved(st)).toHaveLength(0);
+  });
+
+  it("an uncertain purchase by account A does not lock account B, and releasing B leaves A's intent", async () => {
+    const st = new FakeStorage();
+    const a = await runPurchase(baseDeps(st, { buy: async () => { throw providerError(4900, "disconnected"); } }), [1], ["a"], () => {});
+    expect(a.name).toBe("buy-unknown");
+    let bAsked = 0;
+    const b = await runPurchase(baseDeps(st, { account: OTHER, buy: async () => { bAsked++; throw providerError(4900, "disconnected"); } }), [2], ["b"], () => {});
+    expect(b.name).toBe("buy-unknown");
+    expect(bAsked).toBe(1);
+    expect(saved(st).map((t) => t.hash).sort()).toEqual([intentHash("buy", ME), intentHash("buy", OTHER)].sort());
+    removeBuyIntent(OTHER, st);
+    expect(saved(st).map((t) => t.account)).toEqual([ME]);
+    // a legacy shared intent belongs to whoever wrote it: releasing another account leaves it
+    pendingStore.persist({ hash: INTENT_HASH, kind: "buy", intent: true, account: OTHER, createdAt: 0 }, st);
+    removeBuyIntent(ME, st);
+    expect(saved(st).map((t) => [t.hash, t.account])).toEqual([[INTENT_HASH, OTHER]]);
+    removeBuyIntent(OTHER, st);
+    expect(saved(st)).toHaveLength(0);
   });
 });
 

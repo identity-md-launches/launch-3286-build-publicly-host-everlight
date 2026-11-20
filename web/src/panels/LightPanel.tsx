@@ -8,11 +8,12 @@ import { ETHERSCAN, GARDEN, IMD, MAX_BATCH, TX_GAS_CAP, config, ethClient } from
 import { checkWish, gasBound } from "../lib/wish";
 import { STYLE_NAMES, eth, imd } from "../lib/format";
 import { explainError, isGasCapError } from "../lib/errors";
-import { FIXTURE_MESSAGE, INTENT_HASH, INTENT_PENDING_MESSAGE, awaitBuy, isRunning, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step } from "../lib/purchase";
+import { FIXTURE_MESSAGE, INTENT_PENDING_MESSAGE, buyConflict, removeBuyIntent, awaitBuy, isRunning, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step } from "../lib/purchase";
 import { readReceipt } from "../lib/receipt";
 import { attachHash, minedTx, NONCE_UNVERIFIED, sentTx, settleBuyReceipt, submissionMeta } from "../lib/chain";
 import { APPROVED_NOT_SENT } from "../lib/purchase";
 import { rememberTx } from "../lib/txhash";
+import { webLock } from "../lib/claim";
 import { parseQuantity } from "../lib/quantity";
 import { DRAFT_KEY, consumeSavedDraft, fittingPrefix, planBatches } from "../lib/split";
 import { ConnectButton } from "../components/ConnectSheet";
@@ -52,7 +53,7 @@ export function recoverBuy(tx: PendingTx): Promise<Step> {
     onStep,
   ).then((s) => {
     // the purchase behind a saved intent is settled: the intent itself is no longer needed
-    if (s.name !== "buy-unknown") pendingStore.remove(INTENT_HASH);
+    if (s.name !== "buy-unknown") removeBuyIntent(tx.account);
     return s;
   });
 }
@@ -123,7 +124,8 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
   const setStep = purchaseFlow.set;
   const pendingVersion = useSyncExternalStore(pendingStore.subscribe, pendingStore.version);
   // a purchase sent earlier (this session or before a reload) that has no settled receipt yet
-  const pendingBuy = useMemo(() => pendingStore.list().filter((t) => t.kind === "buy").at(-1) ?? null, [pendingVersion]);
+  // scoped to the connected account: another account's unresolved purchase neither locks nor is released from here
+  const pendingBuy = useMemo(() => (address ? pendingStore.list().filter(buyConflict(address)).at(-1) ?? null : null), [pendingVersion, address]);
   // clear the visible draft when a purchase confirms while this form is open (not for one confirmed before it opened)
   const seenDone = useRef(step?.name === "done" ? step.hash : null);
   useEffect(() => {
@@ -187,7 +189,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
 
   async function submit() {
     if (FIXTURE !== null) return setStep({ name: "error", message: FIXTURE_MESSAGE }); // fixture pages never reach the wallet
-    if (inFlight || isRunning(purchaseFlow.get()) || pendingStore.list().some((t) => t.kind === "buy")) return; // duplicate-send guard
+    if (inFlight || isRunning(purchaseFlow.get()) || !address || pendingStore.list().some(buyConflict(address))) return; // duplicate-send guard
     inFlight = true;
     const account = address!;
     if (!next) return;
@@ -217,6 +219,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
           submission: () => submissionMeta(account),
           sentTx,
           readOnly: FIXTURE !== null,
+          withLock: webLock,
           remember: rememberTx,
           simulate: async (styles, wishes) => {
             // estimate this exact purchase against the contract first; it must fit one transaction's gas cap. An
@@ -407,7 +410,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
                 : <a href={`${ETHERSCAN}/tx/${pendingBuy.hash}`} target="_blank" rel="noreferrer">View pending transaction</a>}
             </p>
             <IntentRecovery tx={pendingBuy} what="purchase" onCheck={() => recoverBuy(pendingBuy)}
-              onRelease={() => { pendingStore.remove(pendingBuy.hash); pendingStore.remove(INTENT_HASH); setStep(null); }} />
+              onRelease={() => { pendingStore.remove(pendingBuy.hash); removeBuyIntent(pendingBuy.account); setStep(null); }} />
           </div>
         )}
       </div>

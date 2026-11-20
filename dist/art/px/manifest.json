@@ -41,6 +41,10 @@
   "C2": "#34508f",
   "H1": "#4a3a26",
   "H2": "#6e5838",
+  "PK": "#d98aa8",
+  "PK2": "#f2c4d2",
+  "LV": "#9a86c8",
+  "LV2": "#c9bdf0",
   "T1": "#9a7a32",
   "T2": "#c9a24a",
   "T3": "#e8c870",
@@ -125,6 +129,14 @@
   "frog-reader.png 30x24",
   "frog-wanderer.png 16x24",
   "frog-gardener.png 22x20",
-  "frog-sitter.png 16x14"
+  "frog-sitter.png 16x14",
+  "garland.png 36x44",
+  "willow-s.png 30x38",
+  "willow-l.png 60x66",
+  "reeds.png 12x16",
+  "bank-stones.png 18x7",
+  "frog-fisher.png 28x20",
+  "frog-lily.png 20x11",
+  "frog-sweeper.png 18x22"
  ]
 }

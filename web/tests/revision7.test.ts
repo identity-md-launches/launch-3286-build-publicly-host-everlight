@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { TX_GAS_CAP } from "../src/config";
 import { consumeDraft, planBatches } from "../src/lib/split";
 import { motionPlan, shouldDraw } from "../src/garden/motion";
-import { pendingStore, runPurchase, STORAGE_MESSAGE, type PurchaseDeps, type Step } from "../src/lib/purchase";
+import { buyIntentHash, pendingStore, runPurchase, STORAGE_MESSAGE, type PurchaseDeps, type Step } from "../src/lib/purchase";
 import { CandleStore, type CandleSource } from "../src/lib/candles";
 import { MIN_SECTORS, sectorPlan } from "../src/garden/layout";
 import { stairsOf } from "../src/garden/scenery";
@@ -95,7 +95,7 @@ describe("storage failures around a purchase (finding 1adfd347)", () => {
     expect(r.name).toBe("buy-unknown");
     expect(steps.some((s) => s.name === "buy-pending")).toBe(true);
     // the saved intent plus the sent hash held in memory: the UI guard sees both
-    expect(pendingStore.list(st as unknown as Storage).map((t) => t.hash)).toEqual([`0x${"0".repeat(64)}`, "0xb7"]);
+    expect(pendingStore.list(st as unknown as Storage).map((t) => t.hash)).toEqual([buyIntentHash("0xabc"), "0xb7"]);
   });
 });
 

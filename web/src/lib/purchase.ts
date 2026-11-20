@@ -1,6 +1,6 @@
 import type { Hash } from "viem";
 import { GARDEN } from "../config";
-import { isProvenRejection } from "./intent";
+import { intentHash, isProvenRejection } from "./intent";
 
 export type TxKind = "approve" | "buy" | "claim";
 
@@ -30,8 +30,23 @@ export interface PendingTx {
   intent?: boolean;
 }
 
-/** Placeholder hash of a recovery intent (no transaction has this hash). */
+/**
+ * Legacy placeholder hash of a recovery intent saved by earlier builds under one key for every account. New intents
+ * are saved per account under intentHash("buy", account); a legacy entry is still honoured (and released) only for
+ * the account that wrote it.
+ */
 export const INTENT_HASH = `0x${"0".repeat(64)}` as Hash;
+
+const sameAddr = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+/** A saved purchase or purchase intent of this account: the duplicate guard and the exclusive save match exactly these. */
+export const buyConflict = (account: string) => (t: PendingTx) => t.kind === "buy" && sameAddr(t.account, account);
+/** The placeholder hash this account's purchase intent is saved under. */
+export const buyIntentHash = (account: string) => intentHash("buy", account);
+/** Remove this account's purchase intent (and a legacy shared intent only when this account wrote it). */
+export function removeBuyIntent(account: string, storage: Storage | null = safeStorage()) {
+  pendingStore.remove(buyIntentHash(account), storage);
+  if (pendingStore.list(storage).some((t) => t.hash === INTENT_HASH && sameAddr(t.account, account))) pendingStore.remove(INTENT_HASH, storage);
+}
 
 // v2: scoped to the live garden, so a transaction sent to an earlier contract is never re-attached here
 const PENDING_KEY = "everlight:v2:pending:0x33a514c5e2028f1affd70b82f170e8193df030a5";
@@ -297,6 +312,8 @@ export interface PurchaseDeps {
   readOnly?: boolean;
   explain: (e: unknown) => string;
   storage?: Storage | null;
+  /** Cross-tab mutual exclusion for saving the intent (Web Locks in the app); "busy" when another tab holds it. */
+  withLock?: <T>(name: string, f: () => Promise<T> | T) => Promise<T | "busy">;
 }
 
 /**
@@ -322,7 +339,9 @@ export async function runPurchase(
     if (styles.length < 1 || styles.length > 50 || styles.length !== wishes.length) return fail("Choose between 1 and 50 candles.");
     if (deps.chainId() !== 1) return fail("Your wallet is on another network. Switch to Ethereum to continue.");
     // a saved purchase or purchase intent (this tab, another tab, or before a reload/reconnect) blocks a second one
-    if (pendingStore.list(deps.storage === undefined ? undefined : deps.storage).some((t) => t.kind === "buy")) return fail(DUPLICATE_MESSAGE);
+    const conflict = buyConflict(deps.account);
+    const store = deps.storage === undefined ? undefined : deps.storage;
+    if (pendingStore.list(store).some(conflict)) return fail(DUPLICATE_MESSAGE);
     onStep({ name: "checking" });
     if (!(await deps.salesOpen())) return fail("Sales are closed: the garden is not activated or purchases are paused.");
     const total = BigInt(styles.length) * 10n ** 18n;
@@ -355,24 +374,30 @@ export async function runPurchase(
     // the purchase must be recoverable after a reload, so its recovery intent (exact draft, sender, nonce and
     // submission block, with room for the hash) is saved before the wallet is asked to sign; if it cannot be saved,
     // nothing is sent
+    const ih = buyIntentHash(deps.account);
     const intent: PendingTx = {
-      hash: INTENT_HASH, kind: "buy", intent: true, account: deps.account, quantity: styles.length, createdAt: Date.now(),
+      hash: ih, kind: "buy", intent: true, account: deps.account, quantity: styles.length, createdAt: Date.now(),
       from: deps.account, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false, styles: [...styles], wishes: [...wishes],
     };
-    if (!pendingStore.persist(intent, deps.storage === undefined ? undefined : deps.storage)) return fail(STORAGE_MESSAGE);
+    // saved exclusively (under a per-account Web Lock, then read back): two tabs that both passed the first check
+    // cannot both reach the wallet, and neither overwrites the other's intent
+    const write = () => pendingStore.persistExclusive(intent, conflict, store);
+    const saved0 = deps.withLock ? await deps.withLock(`everlight-buy-${deps.account.toLowerCase()}`, write) : write();
+    if (saved0 === "busy" || saved0 === "conflict") return fail(DUPLICATE_MESSAGE);
+    if (saved0 !== "saved") return fail(STORAGE_MESSAGE);
     onStep({ name: "buy-wallet" });
     let hash: Hash;
     try {
       hash = await deps.buy(request);
     } catch (e) {
       if (isProvenRejection(e)) {
-        pendingStore.remove(INTENT_HASH, deps.storage); // proven: the wallet refused before signing, nothing to recover
+        pendingStore.remove(ih, deps.storage); // proven: the wallet refused before signing, nothing to recover
         throw e;
       }
       // a disconnect (4900/4901), a timeout or an unknown failure: the wallet may have broadcast the purchase and lost
       // its hash. The intent stays saved and the draft stays locked until the purchase is found, its hash is pasted
       // and validated, or the user confirms the cancellation.
-      const s: Step = { name: "buy-unknown", hash: INTENT_HASH, message: AMBIGUOUS_MESSAGE };
+      const s: Step = { name: "buy-unknown", hash: ih, message: AMBIGUOUS_MESSAGE };
       onStep(s);
       return s;
     }
@@ -381,17 +406,17 @@ export async function runPurchase(
       hash, kind: "buy", account: deps.account, quantity: styles.length, createdAt: Date.now(),
       from: deps.account, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false, styles: [...styles], wishes: [...wishes],
     };
-    const saved = pendingStore.replace(INTENT_HASH, sent, deps.storage);
+    const saved = pendingStore.replace(ih, sent, deps.storage);
     onStep({ name: "buy-pending", hash });
     const checked = saved ? await reconcileSent(deps, sent) : await reconcileSent(deps, sent).catch(() => sent!);
     const s = await awaitBuy(deps, checked, onStep);
     // settled: an intent that could not be overwritten with the hash is no longer needed
-    if (s.name !== "buy-unknown") pendingStore.remove(INTENT_HASH, deps.storage);
+    if (s.name !== "buy-unknown") pendingStore.remove(ih, deps.storage);
     return s;
   } catch (e) {
     if (sent) {
       // a failure after broadcast (storage, RPC): keep the hash pending and the draft locked, never a plain error
-      pendingStore.replace(INTENT_HASH, sent, deps.storage);
+      pendingStore.replace(buyIntentHash(deps.account), sent, deps.storage);
       const s: Step = { name: "buy-unknown", hash: sent.hash, message: SENT_UNKNOWN_MESSAGE };
       onStep(s);
       return s;

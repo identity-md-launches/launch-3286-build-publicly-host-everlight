@@ -1,0 +1,506 @@
+[
+  {
+    "name": "d-fixture0",
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "url": "?fixture=0#/garden",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Everlight Garden: light a permanent candle",
+    "lit": "0 lit",
+    "loaded": null,
+    "h1": "Every wish leaves a light.",
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {
+      "canvasChangedOver700ms": true
+    },
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "d-fixture0-reduced",
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "url": "?fixture=0#/garden",
+    "reducedMotion": true,
+    "overflowX": false,
+    "title": "Everlight Garden: light a permanent candle",
+    "lit": "0 lit",
+    "loaded": null,
+    "h1": "Every wish leaves a light.",
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {
+      "canvasChangedOver700ms": false
+    },
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "d-fixture100",
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "url": "?fixture=100#/garden",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Everlight Garden: light a permanent candle",
+    "lit": "100 lit",
+    "loaded": null,
+    "h1": "Every wish leaves a light.",
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {
+      "canvasChangedOver700ms": true
+    },
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "d-fixture3000",
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "url": "?fixture=3000#/garden",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Everlight Garden: light a permanent candle",
+    "lit": "3,000 lit",
+    "loaded": null,
+    "h1": "Every wish leaves a light.",
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {
+      "canvasChangedOver700ms": true
+    },
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "d-fixture10000",
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "url": "?fixture=10000#/garden",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Everlight Garden: light a permanent candle",
+    "lit": "10,000 lit",
+    "loaded": null,
+    "h1": "Every wish leaves a light.",
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {
+      "canvasChangedOver700ms": true
+    },
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "d-fixture100-find37",
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "url": "?fixture=100#/garden",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Everlight Garden: light a permanent candle",
+    "lit": "100 lit",
+    "loaded": null,
+    "h1": "Every wish leaves a light.",
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {
+      "detail": true
+    },
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "d-fixture100-panzoom",
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "url": "?fixture=100#/garden",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Everlight Garden: light a permanent candle",
+    "lit": "100 lit",
+    "loaded": null,
+    "h1": "Every wish leaves a light.",
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {},
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "d-light",
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "url": "?fixture=100#/light",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Light a candle · Everlight Garden",
+    "lit": "100 lit",
+    "loaded": null,
+    "h1": "Every wish leaves a light.",
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {},
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "d-mine",
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "url": "?fixture=100#/mine",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "My Candles · Everlight Garden",
+    "lit": null,
+    "loaded": null,
+    "h1": null,
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {},
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "d-rewards",
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "url": "?fixture=100#/rewards",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Rewards · Everlight Garden",
+    "lit": null,
+    "loaded": null,
+    "h1": null,
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {},
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "d-treasury",
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "url": "?fixture=100#/treasury",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Treasury · Everlight Garden",
+    "lit": null,
+    "loaded": null,
+    "h1": null,
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {},
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "d-how",
+    "viewport": {
+      "width": 1600,
+      "height": 1000
+    },
+    "url": "?fixture=100#/how",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "How it works · Everlight Garden",
+    "lit": null,
+    "loaded": null,
+    "h1": null,
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {},
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "m-fixture0",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "url": "?fixture=0#/garden",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Everlight Garden: light a permanent candle",
+    "lit": "0 lit",
+    "loaded": null,
+    "h1": "Every wish leaves a light.",
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {
+      "canvasChangedOver700ms": true
+    },
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "m-fixture0-reduced",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "url": "?fixture=0#/garden",
+    "reducedMotion": true,
+    "overflowX": false,
+    "title": "Everlight Garden: light a permanent candle",
+    "lit": "0 lit",
+    "loaded": null,
+    "h1": "Every wish leaves a light.",
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {
+      "canvasChangedOver700ms": false
+    },
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "m-fixture100",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "url": "?fixture=100#/garden",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Everlight Garden: light a permanent candle",
+    "lit": "100 lit",
+    "loaded": null,
+    "h1": "Every wish leaves a light.",
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {
+      "canvasChangedOver700ms": true
+    },
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "m-fixture3000",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "url": "?fixture=3000#/garden",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Everlight Garden: light a permanent candle",
+    "lit": "3,000 lit",
+    "loaded": null,
+    "h1": "Every wish leaves a light.",
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {
+      "canvasChangedOver700ms": true
+    },
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "m-fixture10000",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "url": "?fixture=10000#/garden",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Everlight Garden: light a permanent candle",
+    "lit": "10,000 lit",
+    "loaded": null,
+    "h1": "Every wish leaves a light.",
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {
+      "canvasChangedOver700ms": true
+    },
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "m-fixture100-find37",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "url": "?fixture=100#/garden",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Everlight Garden: light a permanent candle",
+    "lit": "100 lit",
+    "loaded": null,
+    "h1": "Every wish leaves a light.",
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {
+      "detail": true
+    },
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "m-fixture100-panzoom",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "url": "?fixture=100#/garden",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Everlight Garden: light a permanent candle",
+    "lit": "100 lit",
+    "loaded": null,
+    "h1": "Every wish leaves a light.",
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {},
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "m-light",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "url": "?fixture=100#/light",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Light a candle · Everlight Garden",
+    "lit": null,
+    "loaded": null,
+    "h1": null,
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {},
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "m-mine",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "url": "?fixture=100#/mine",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "My Candles · Everlight Garden",
+    "lit": null,
+    "loaded": null,
+    "h1": null,
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {},
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "m-rewards",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "url": "?fixture=100#/rewards",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Rewards · Everlight Garden",
+    "lit": null,
+    "loaded": null,
+    "h1": null,
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {},
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "m-treasury",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "url": "?fixture=100#/treasury",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "Treasury · Everlight Garden",
+    "lit": null,
+    "loaded": null,
+    "h1": null,
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {},
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  },
+  {
+    "name": "m-how",
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "url": "?fixture=100#/how",
+    "reducedMotion": false,
+    "overflowX": false,
+    "title": "How it works · Everlight Garden",
+    "lit": null,
+    "loaded": null,
+    "h1": null,
+    "fixtureNotes": 1,
+    "ctaVisible": true,
+    "note": {},
+    "errors": [
+      "requestfailed: http://127.0.0.1:42315/"
+    ]
+  }
+]

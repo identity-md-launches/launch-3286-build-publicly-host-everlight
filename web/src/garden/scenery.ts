@@ -71,8 +71,14 @@ export function drawSectorBase(g: CanvasRenderingContext2D, index: number, sheet
         // deep water: darker in the channel, lighter toward the banks, with sky reflections in long soft streaks
         const edge = hasStream && ds < hw ? ds / hw : Math.sqrt(Math.max(0, pool));
         const depth = 0.62 + 0.38 * edge;
-        const sheen = (Math.sin(y / 5.3 + Math.sin(x / 19) * 2) > 0.93 ? 1.18 : 1);
-        put(o, water, X + (Y >> 2), Y, [18, 105, 91], depth * sheen);
+        // quiet water (no sheared tile, which read as uniform diagonal stripes): a depth gradient, the banks' dark
+        // green reflection along each edge, and a few short horizontal glints that never line up into a pattern
+        const glint = hash2(X >> 2, Y, 31) > 0.985 && edge < 0.8;
+        const refl = edge > 0.72 ? 0.55 + 0.45 * ((1 - edge) / 0.28) : 1;
+        if (glint) { d[o] = 120; d[o + 1] = 205; d[o + 2] = 180; d[o + 3] = 255; continue; }
+        const wr = 12 + 10 * (1 - edge), wg = 52 + 44 * (1 - edge * 0.7), wb = 50 + 30 * (1 - edge * 0.7);
+        d[o] = wr * depth * (refl < 1 ? 0.9 : 1); d[o + 1] = wg * depth * refl + (refl < 1 ? 14 * (1 - refl) : 0); d[o + 2] = wb * depth * refl; d[o + 3] = 255;
+        void water;
         continue;
       }
       if (ds < hw + 2 || pool < 1.06) { put(o, null, X, Y, [16, 30, 24]); continue; } // wet edge line
@@ -136,7 +142,7 @@ export function drawSectorUpright(g: CanvasRenderingContext2D, index: number, sh
   if (gy === 0) {
     // home row: a tree line along the skyline, each tree whole
     for (let x = ox + 6 + r() * 20; x < ox + W - 6; x += 18 + r() * 26) {
-      const n = r() < 0.4 ? "cypress" : r() < 0.6 ? "willow" : "tree";
+      const v = r(), n = v < 0.3 ? "cypress" : v < 0.5 ? "willow" : v < 0.65 ? "willow-s" : v < 0.75 ? "willow-l" : "tree";
       put(n, x, oy + horizonY(x) + 12 + r() * 14, r() < 0.5);
     }
   }
@@ -151,7 +157,9 @@ export function drawSectorUpright(g: CanvasRenderingContext2D, index: number, sh
   if (stairs.gazebo?.back) drawWalk(g, stairs.gazebo.back, pathPat);
   const stairOf = new Map(stairs.terraces.map((st) => [st.terrace, st] as const));
   const flush = stairs.flush;
-  if (!wild) plan.terraces.forEach((t, ti) => items.push({ y: t.cy + t.rx * TILT, draw: () => drawTerrace(g, t, plan.slots, im, wallPat, lawnPat, pathPat, put, r, stairOf.get(ti), flush.has(ti)) }));
+  // one of four terrace arrangements per sector, from its grid seed (decoration only: slot coordinates never move)
+  const arrangement = terraceArrangement(gx, gy);
+  if (!wild) plan.terraces.forEach((t, ti) => items.push({ y: t.cy + t.rx * TILT, draw: () => drawTerrace(g, t, plan.slots, im, wallPat, lawnPat, pathPat, put, r, stairOf.get(ti), flush.has(ti), arrangement) }));
   const onStairs = (x: number, y: number, rad: number) => {
     const all = stairs.gazebo?.stair ? [...stairs.terraces, stairs.gazebo.stair] : stairs.terraces;
     for (const st of all) {
@@ -180,13 +188,19 @@ export function drawSectorUpright(g: CanvasRenderingContext2D, index: number, sh
   };
   for (let i = 0, placed = 0; i < (wild ? 700 : 260) && placed < (wild ? 70 : 22); i++) {
     const x = ox - 30 + r() * (W + 60), y = oy + r() * H;
-    const n = r() < 0.35 ? "willow" : r() < 0.55 ? "cypress" : "tree";
-    const h = hOf(n);
+    const v = r();
+    // a willow cluster: 2 to 4 trunks of mixed sizes around one spot, each depth-sorted on its own foot
+    const group: [string, number, number][] = v < 0.5
+      ? Array.from({ length: 2 + ((r() * 3) | 0) }, (_, k) => {
+          const sz = r();
+          return [sz < 0.35 ? "willow-s" : sz < 0.75 ? "willow" : "willow-l", x + (k === 0 ? 0 : (r() - 0.5) * 70), y + (k === 0 ? 0 : (r() - 0.5) * 26)] as [string, number, number];
+        })
+      : [[v < 0.72 ? "cypress" : "tree", x, y]];
     if (wild && y - oy < 120) continue; // low growth along a wild cell's north edge keeps the garden row behind visible
-    if (!fits(y + 6, h) || !clear(x, y, h * 0.4)) continue;
-    placed++;
-    const flip = r() < 0.5;
-    items.push({ y, draw: () => put(n, x, y + 4, flip) });
+    const ok = group.filter(([n, gx2, gy2]) => fits(gy2 + 6, hOf(n)) && clear(gx2, gy2, hOf(n) * 0.4));
+    if (ok.length < Math.min(2, group.length)) continue;
+    placed += ok.length > 1 ? 2 : 1;
+    for (const [n, gx2, gy2] of ok) { const flip = r() < 0.5; items.push({ y: gy2, draw: () => put(n, gx2, gy2 + 4, flip) }); }
   }
   for (let i = 0, placed = 0; i < (wild ? 900 : 400) && placed < (wild ? 160 : 90); i++) {
     const x = ox - 20 + r() * (W + 40), y = oy + r() * H;
@@ -201,6 +215,21 @@ export function drawSectorUpright(g: CanvasRenderingContext2D, index: number, sh
     const x = p.x + Math.cos(a) * p.rx * q, y = p.y + Math.sin(a) * p.rx * TILT * q;
     items.push({ y: y - 400, draw: () => put(r() < 0.4 ? "lilypad-flower" : "lilypad", x, y) });
   }
+  {
+    const spr = gy === 0 ? springY(gx) : -Infinity;
+    const rr = mulberry(9100 + index * 17);
+    for (let y = oy + 10; y < oy + H; y += 18 + rr() * 26) {
+      if (y < spr + 20 || Math.abs(y - pathY(gy, streamX(gx, y))) < 70) continue; // leave the bridge and its approaches open
+      for (const side of [-1, 1]) {
+        if (rr() < 0.35) continue;
+        const x = streamX(gx, y) + side * (streamHalf(y) + 6 + rr() * 6), n = rr() < 0.82 ? "reeds" : "bank-stones";
+        if (!wild && plan.slots.some((sl) => Math.abs(sl[0] - x) < 26 && Math.abs(sl[1] - y) < 40)) continue;
+        const yy = y, flip = rr() < 0.5;
+        items.push({ y: yy, draw: () => put(n, x, yy + 3, flip) });
+      }
+      if (rr() < 0.22) { const lx = streamX(gx, y) + (rr() - 0.5) * streamHalf(y), ly = y + 6; items.push({ y: ly - 400, draw: () => put(rr() < 0.4 ? "lilypad-flower" : "lilypad", lx, ly) }); }
+    }
+  }
   if (plan.gazebo && !wild) {
     // a ruined colonnade: two arches on a mossy plinth, draped with vines
     const { x, y } = plan.gazebo;
@@ -209,13 +238,14 @@ export function drawSectorUpright(g: CanvasRenderingContext2D, index: number, sh
     items.push({ y, draw: () => {
       drawPlinth(g, x, y, wallPat, pathPat);
       put("arch", x - 34, y + 4); put("arch", x + 34, y + 4, true); put("vine", x - 52, y - 54); put("vine", x + 18, y - 58);
+      put("garland", x - 34, y + 4); put("garland", x + 34, y + 4, true); // flower swags and a hung green lantern
       if (gs.stair) drawStair(g, gs.stair, wallPat, pathPat);
       put("flowers", x - 40, y + 26); put("flowers", x + 40, y + 26);
     } });
   }
   {
     const b = plan.bridge;
-    items.push({ y: b.y + 20, draw: () => drawBridge(g, b, gy, pathPat, wallPat, im, put, wild) });
+    items.push({ y: b.y + 20, draw: () => drawBridge(g, b, gy, pathPat, wallPat, im, put, wild, gx) });
   }
   // frogs: on the founding sector, a reader on a bench and a gardener near the first candle; elsewhere a few wanderers
   const frogs: [string, number, number][] = [];
@@ -226,24 +256,55 @@ export function drawSectorUpright(g: CanvasRenderingContext2D, index: number, sh
       if (clear(x, y, 30)) { frogs.push([hash2(gx, gy, 10) < 0.5 ? "frog-wanderer" : "frog-sitter", x, y]); break; }
     }
   }
-  frogs.forEach(([n, x, y], i) => items.push({ y, draw: () => put(n, x, y, i % 2 === 1) }));
+  if (!wild) {
+    // vignettes: a fisher on the bank below the bridge, a frog on a pool's lily pad, a sweeper on the path
+    const k = hash2(gx, gy, 23);
+    if (k < 0.6) {
+      const fy = plan.bridge.y + 90 + hash2(gx, gy, 24) * 80, side = k < 0.3 ? -1 : 1;
+      const fx = streamX(gx, fy) + side * (streamHalf(fy) + 16);
+      if (!plan.slots.some((sl) => Math.abs(sl[0] - fx) < 40 && Math.abs(sl[1] - fy) < 50) && fy < oy + H - 20) frogs.push(["frog-fisher", fx, fy]);
+    }
+    const pool = plan.pools[0];
+    if (pool && k > 0.25) frogs.push(["frog-lily", pool.x + pool.rx * 0.25, pool.y + 4]);
+    if (k > 0.45 && k < 0.85) for (let i = 0; i < 30; i++) {
+      const x = ox + 120 + r() * (W - 240), y = pathY(gy, x) + 6;
+      if (Math.abs(x - streamX(gx, y)) > 160 && !plan.slots.some((sl) => Math.abs(sl[0] - x) < 30 && Math.abs(sl[1] - y) < 40)) { frogs.push(["frog-sweeper", x, y]); break; }
+    }
+  }
+  frogs.forEach(([n, x, y], i) => items.push({ y, draw: () => put(n, x, y, n === "frog-fisher" ? x > streamX(gx, y) : i % 2 === 1) }));
   items.sort((a, b) => a.y - b.y).forEach((it) => it.draw());
   g.restore();
 }
 
 function drawBridge(
   g: CanvasRenderingContext2D, b: SectorPlan["bridge"], gy: number, pathPat: CanvasPattern | null, wallPat: CanvasPattern | null,
-  im: Sheet["img"], put: (n: string, x: number, y: number, flip?: boolean) => void, wild: boolean,
+  im: Sheet["img"], put: (n: string, x: number, y: number, flip?: boolean) => void, wild: boolean, gx: number,
 ) {
-  const half = 90, deck = 20;
+  const half = 90, deck = 20, rise = 12;
   for (let x = snap(b.x - half); x <= b.x + half; x += PX) {
-    const y = snap(pathY(gy, x)), dx = (x - b.x) / 58;
+    const y0 = snap(pathY(gy, x)), dx = (x - b.x) / 58;
+    // an arched deck: it climbs from the path at each head to a crown over the water
+    const lift = snap(rise * Math.max(0, 1 - ((x - b.x) / half) ** 2));
+    const y = y0 - lift;
+    // reflection under the span: the face and the arch's underside mirrored on the water, in broken rows
+    {
+      const water = y0 + deck + 34, open = Math.abs(dx) < 1 ? 26 * Math.sqrt(1 - dx * dx) : 0;
+      if (Math.abs(x - streamX(gx, water)) < streamHalf(water) - 2) {
+        for (let k = snap(open); k < 34 + lift; k += PX * 2) { g.fillStyle = k < open + 4 ? "rgba(196,187,152,0.22)" : "rgba(30,34,30,0.55)"; g.fillRect(x, water + k, PX, PX); }
+      }
+    }
+    g.fillStyle = wallPat ?? "#3f413a"; g.fillRect(x, y + deck, PX, lift); // the face grows with the arch
     // deck: flagstones continuous with the path
     g.fillStyle = pathPat ?? "#646453"; g.fillRect(x, y - deck, PX, deck * 2);
     // front face with a round arch opening over the water
-    const face = 34, open = Math.abs(dx) < 1 ? Math.round((26 * Math.sqrt(1 - dx * dx)) / PX) * PX : 0;
+    const face = 34 + lift, open = Math.abs(dx) < 1 ? Math.round((26 * Math.sqrt(1 - dx * dx)) / PX) * PX : 0;
     g.fillStyle = wallPat ?? "#3f413a"; g.fillRect(x, y + deck, PX, face - open);
-    g.fillStyle = "#262824"; if (open) g.fillRect(x, y + deck + face - open - PX, PX, PX);
+    if (open) { // voussoir ring and the shadow under the arch, so the opening reads over the water
+      const at = y + deck + face - open;
+      g.fillStyle = "#c4bb98"; g.fillRect(x, at - PX * 2, PX, PX); g.fillStyle = "#8f8b74"; g.fillRect(x, at - PX, PX, PX);
+      g.fillStyle = "rgba(5,10,8,0.6)"; g.fillRect(x, at, PX, PX * 3);
+    }
+    if (hash2(x, 5, 12) < 0.18) { g.fillStyle = "#3f7a3c"; g.fillRect(x, y + deck, PX, snap(2 + hash2(x, 6, 12) * 8)); } // moss down the face
     // parapets: rail with posts
     const post = Math.round((x - b.x) / PX) % 8 === 0;
     g.fillStyle = "#8f8b74"; g.fillRect(x, y + deck - (post ? 12 : 8), PX, post ? 12 : PX);
@@ -258,7 +319,7 @@ function drawBridge(
 function drawTerrace(
   g: CanvasRenderingContext2D, t: Terrace, slots: [number, number, number][], im: Sheet["img"],
   wallPat: CanvasPattern | null, lawnPat: CanvasPattern | null, pathPat: CanvasPattern | null,
-  put: (n: string, x: number, y: number, flip?: boolean) => void, r: () => number, stair?: Stair, flush = false,
+  put: (n: string, x: number, y: number, flip?: boolean) => void, r: () => number, stair?: Stair, flush = false, arrangement = 0,
 ) {
   if (t.rx > 0) {
     const pad = 0.16, depth = 46 * t.scale, R = t.rx + 16 * t.scale;
@@ -275,9 +336,13 @@ function drawTerrace(
     // raised platform, so the holders on it are reached from the surrounding ground
     const wall = flush ? PX * 2 : snap(t.wall);
     for (const [X, { yo, yi }] of cols) {
+      // the ground rises to the lawn behind (an earth bank), so the terrace is cut into a slope rather than floating
+      if (!flush) { g.fillStyle = "#132a1c"; g.fillRect(X, yi - PX * 3, PX, PX * 3); g.fillStyle = "#183622"; if (dither(X / PX, 1, 0.5)) g.fillRect(X, yi - PX * 4, PX, PX); }
       g.fillStyle = lawnPat ?? "#1c3a26"; g.fillRect(X, yi, PX, yo - yi);
       g.fillStyle = wallPat ?? "#3f413a"; g.fillRect(X, yo, PX, wall);
       g.fillStyle = "#050a08"; g.fillRect(X, yo + wall, PX, PX); // foot shadow line
+      // contact shadow on the ground in front of the wall, fading in dithered rows
+      for (let k = 1; k <= 4; k++) if (dither(X / PX, k, 0.8 - k * 0.18)) { g.fillStyle = "rgba(5,10,8,0.55)"; g.fillRect(X, yo + wall + k * PX, PX, PX); }
       g.fillStyle = (X / PX) % 7 === 0 ? "#a7d36a" : "#6aa84f"; g.fillRect(X, yo - PX, PX, PX); // mossy coping
       g.fillStyle = "#c4bb98"; g.fillRect(X, yo, PX, PX);
       if (!flush && hash2(X, yo, 3) < 0.09) { g.fillStyle = "#3f7a3c"; g.fillRect(X, yo + PX, PX, snap(4 + hash2(X, 1, 4) * (wall - 4))); } // hanging moss
@@ -286,6 +351,26 @@ function drawTerrace(
     const keys = [...cols.keys()];
     for (let k = 0; k < Math.max(1, t.count / 5); k++) { const X = keys[(r() * keys.length) | 0]; const c = cols.get(X)!; put("flowers", X, c.yo + wall + 8); }
     for (let k = 0; k < Math.max(1, t.count / 6); k++) { const X = keys[(r() * keys.length) | 0]; const c = cols.get(X)!; put(r() < 0.5 ? "bush" : "bush-flower", X, c.yi + 4, r() < 0.5); }
+    // arrangement detail along this terrace
+    const ends: [number, boolean][] = [[keys[0], stair?.end !== 0], [keys[keys.length - 1], stair?.end !== 1]];
+    if (arrangement === 0) { // clipped hedge along the back of the lawn
+      for (let k = 0; k < keys.length; k += 7) { const X = keys[k]; put("bush", X, cols.get(X)!.yi + 3, k % 2 === 0); }
+    } else if (arrangement === 1) { // flower border: blossoms along the coping and pink sprays on the wall face
+      for (let k = 3; k < keys.length; k += 9) { const X = keys[k]; put("flowers", X, cols.get(X)!.yo + PX); }
+      for (const X of keys) if (hash2(X, 2, 13) < 0.12) { const c = cols.get(X)!; g.fillStyle = hash2(X, 3, 13) < 0.5 ? "#d98aa8" : "#f2c4d2"; g.fillRect(X, c.yo + PX * 2, PX, PX); g.fillStyle = "#3f7a3c"; g.fillRect(X, c.yo + PX * 3, PX, PX * 2); }
+    } else if (arrangement === 2) { // lantern walk: green lamps at the free ends, vines on the wall
+      for (const [X, free] of ends) if (free && X !== undefined) put("lamp", X, cols.get(X)!.yo + 2);
+      for (let k = 5; k < keys.length; k += 13) { const X = keys[k]; put("vine", X, cols.get(X)!.yo + snap(wall * 0.8)); }
+    } else { // old ruin: broken pillar stubs at the free ends, boulders at the wall foot
+      for (const [X, free] of ends) if (free && X !== undefined) {
+        const c = cols.get(X)!, hgt = snap(16 + hash2(X, c.yo, 14) * 14);
+        g.fillStyle = wallPat ?? "#3f413a"; g.fillRect(X - PX * 3, c.yo + wall - hgt - wall, PX * 6, hgt + wall);
+        g.fillStyle = "#8f8b74"; g.fillRect(X - PX * 3, c.yo - hgt, PX * 2, hgt);
+        g.fillStyle = "#6aa84f"; g.fillRect(X - PX * 3, c.yo - hgt - PX, PX * 6, PX);
+        g.fillStyle = "#050a08"; g.fillRect(X - PX * 4, c.yo + wall, PX * 8, PX);
+      }
+      for (let k = 6; k < keys.length; k += 17) { const X = keys[k]; put("rock", X, cols.get(X)!.yo + wall + 10); }
+    }
     if (stair) drawStair(g, stair, wallPat, pathPat);
   }
   const mine = slots.slice(t.first, t.first + t.count).sort((a, b) => a[1] - b[1]);
@@ -293,6 +378,9 @@ function drawTerrace(
   void im;
 }
 
+
+/** Which of the four terrace arrangements a sector uses (hedge, flower border, lantern walk, old ruin). */
+export const terraceArrangement = (gx: number, gy: number) => Math.min(3, Math.floor(hash2(gx, gy, 21) * 4));
 
 /** A flight of steps standing in front of a retaining wall or plinth: coping at yTop, foot at yTop + drop. */
 export interface Stair {

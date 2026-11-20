@@ -1,0 +1,31 @@
+npm warn Unknown env config "store-dir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+npm warn Unknown env config "cache-dir". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+
+ RUN  v2.1.9 <repo>/web
+
+ ✓ tests/revision9.test.ts (15 tests) 66ms
+ ✓ tests/verify.test.ts (16 tests) 31ms
+ ✓ tests/logic.test.ts (44 tests) 3998ms
+   ✓ garden layout > is deterministic and unique per position 313ms
+   ✓ garden layout > fills every sector with holders that avoid the stream and path 331ms
+   ✓ purchase flow (labelled mock chain, no real funds) > keeps the preflight nonce and block when the sent transaction cannot be read yet 3005ms
+ ✓ tests/revision8.test.ts (7 tests) 1113ms
+   ✓ every raised terrace has a path connection (finding 7b461b68) > terraces without a connected flight are ground-level beds; holder coordinates are unchanged 775ms
+ ✓ tests/nonce.test.ts (4 tests) 3021ms
+   ✓ replacement recovery uses only a verified nonce (finding 139cd715) > does not attribute an unrelated nonce-9 self-transfer to a purchase whose nonce was never verified 3011ms
+ ✓ tests/activity.test.ts (6 tests) 21ms
+ ✓ tests/popup.test.ts (9 tests) 9ms
+ ✓ tests/txhash.test.ts (3 tests) 5ms
+ ✓ tests/receipt.test.ts (2 tests) 11ms
+ ✓ tests/revision7.test.ts (10 tests) 15389ms
+   ✓ terraces are joined to the paths (finding 2fd0db9a) > most raised terraces carry steps, and most flights reach the path directly or through neighbours 15374ms
+ ✓ tests/stairs.test.ts (3 tests) 1366ms
+   ✓ garden stairs > recur across the garden and stay clear of every slot 1363ms
+ ✓ tests/escape.test.ts (1 test) 37ms
+ ✓ tests/quantity.test.ts (14 tests) 6ms
+
+ Test Files  13 passed (13)
+      Tests  134 passed (134)
+   Start at  07:41:46
+   Duration  24.33s (transform 743ms, setup 0ms, collect 13.45s, tests 25.07s, environment 6.43s, prepare 1.03s)
+

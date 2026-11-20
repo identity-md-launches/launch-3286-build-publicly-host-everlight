@@ -19,7 +19,8 @@ class QuotaStorage {
   key() { return null; }
   get length() { return this.m.size; }
 }
-const INTENT = `0x${"0".repeat(64)}`;
+// purchase intents are saved per account (review 658d1824); this is account 0x…a1's key
+const INTENT = `0x${"0".repeat(62)}a1`;
 const HASH = `0x${"b7".repeat(32)}` as const;
 
 function mockDeps(storage: QuotaStorage, calls: string[], over: Partial<PurchaseDeps> = {}): PurchaseDeps {

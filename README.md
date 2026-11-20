@@ -298,3 +298,7 @@ Validation (worker-side, after the last source change): `npm run build` (runs `t
 - Before/after opening-view screenshots
 
 Wallet actions remain untested.
+
+## Revision 10 checks
+
+Run from `web/`: `npm ci`, `npx tsc --noEmit` (exit 0), `npx vitest run` (13 files, 134 tests passed), `npm run build` (writes `../dist`). The browser walkthrough (1600x1000 and 390x844, fixtures 0/100/3000/10000, Find, pan/zoom, water, reduced motion, all pages) and the design probe (16/16 passed) are recorded in `artifacts/rev10/validation.md`, with screenshots in `artifacts/rev10/screens/`. To regenerate the pixel art: `cd web && node art-src/pixel/build.mjs`.

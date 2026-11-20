@@ -23,7 +23,7 @@ export const ART_BASE = new URLSearchParams(location.search).has("noassets") ? "
 const CANDLE_ART = Array.from({ length: 7 }, (_, i) => `px/candle-${i}.png`);
 const FLAME_ART = Array.from({ length: 4 }, (_, i) => `px/flame-${i}.png`);
 const TILES = ["tile-grass", "tile-grass-dark", "tile-path", "tile-wall", "tile-moss-stone", "tile-water-0"];
-const PROPS = ["holder", "pedestal-hero", "lamp", "arch", "willow", "tree", "cypress", "bush", "bush-flower", "flowers", "lilypad", "lilypad-flower", "vine", "rock", "frog-reader", "frog-wanderer", "frog-gardener", "frog-sitter", "glow"];
+const PROPS = ["holder", "pedestal-hero", "lamp", "arch", "willow", "tree", "cypress", "bush", "bush-flower", "flowers", "lilypad", "lilypad-flower", "vine", "rock", "frog-reader", "frog-wanderer", "frog-gardener", "frog-sitter", "glow", "garland", "willow-s", "willow-l", "reeds", "bank-stones", "frog-fisher", "frog-lily", "frog-sweeper"];
 const LAYERS = [...TILES, ...PROPS].map((n) => `px/${n}.png`);
 
 /** Wick row per style in its 10x16 sprite (art pixels from the top), and glow tint. */

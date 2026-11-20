@@ -15,6 +15,7 @@ License: CC0 1.0 Universal (public domain dedication). Anyone may use, modify an
 | Flame frames, 7x10 | flame-0..3 (warm gold, cycled for lit candles only), glow (stepped halo) |
 | Props | lamp (decorative, green glass: never a purchased candle), arch, willow, tree, cypress, bush, bush-flower, flowers, lilypad, lilypad-flower, vine, rock |
 | Characters | frog-reader, frog-wanderer, frog-gardener, frog-sitter (original round-eyed garden frogs) |
+| Revision 10 (2026-11-20, same generator, same CC0 terms) | garland (flower swag with pink/lavender/white blossoms and a hung green-glass lantern, laid over `arch`), willow-s and willow-l (two more willow sizes for clusters), reeds (bank reeds and cattails), bank-stones; frog vignettes frog-fisher (fishing from a bank stone), frog-lily (on a flowering lily pad), frog-sweeper (sweeping petals) |
 
 The distant vista (sky, moon, ridges, castle) is painted in code at start-up by `web/src/garden/vista.ts`,
 under the same CC0 terms.

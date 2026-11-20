@@ -317,7 +317,8 @@ export default function App() {
                 <button type="button" className="link" onClick={() => store.sync()}>Retry</button>
               </p>
             )}
-            {FIXTURE !== null && <p className="fixture">{FIXTURE_NOTE}</p>}
+            {/* the open docked panel carries the same note beside its disabled action; shown here only without it */}
+            {FIXTURE !== null && !dockOpen && <p className="fixture">{FIXTURE_NOTE}</p>}
           </div>
         )}
 

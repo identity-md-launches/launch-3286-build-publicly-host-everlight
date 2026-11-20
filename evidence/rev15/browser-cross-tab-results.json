@@ -1,0 +1,444 @@
+{
+ "mocked": true,
+ "note": "Real Chromium tabs, mocked JSON-RPC and a labelled mock EIP-6963 wallet. Not live-chain transactions.",
+ "passed": 68,
+ "failed": 0,
+ "results": [
+  {
+   "scenario": "claim-390x844",
+   "name": "tab A shows Claim 9 IMD (mocked rewardState)",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "claim-390x844",
+   "name": "tab A: claim A sent, receipt delayed (mock returns null)",
+   "passed": true,
+   "detail": "Claim sent. Waiting for its receipt… View transaction"
+  },
+  {
+   "scenario": "claim-390x844",
+   "name": "tab B resolved claim A; tab A released it (resolved, link kept)",
+   "passed": true,
+   "detail": "That claim was settled in another tab or by its receipt, so this tab stopped waiting for it. Your rewards were re-read. View transaction"
+  },
+  {
+   "scenario": "claim-390x844",
+   "name": "tab A keeps claim A's link while resolved",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "claim-390x844",
+   "name": "tab A: Claim is available again",
+   "passed": true,
+   "detail": "Claim 9 IMD"
+  },
+  {
+   "scenario": "claim-390x844",
+   "name": "tab A: claim B completed and shows B's receipt (5 IMD)",
+   "passed": true,
+   "detail": "Claimed 5 IMD. View transaction"
+  },
+  {
+   "scenario": "claim-390x844",
+   "name": "A's delayed receipt was delivered to tab A",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "claim-390x844",
+   "name": "B remains the displayed result after A's delayed receipt",
+   "passed": true,
+   "detail": "Claimed 5 IMD. View transaction\n\nAn earlier claim also settled: 2 IMD claimed. View earlier claim"
+  },
+  {
+   "scenario": "claim-390x844",
+   "name": "displayed receipt link is B's, not A's",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "claim-390x844",
+   "name": "A's outcome kept as history beside B",
+   "passed": true,
+   "detail": "Claimed 5 IMD. View transaction\n\nAn earlier claim also settled: 2 IMD claimed. View earlier claim"
+  },
+  {
+   "scenario": "claim-390x844",
+   "name": "exactly two claim transactions were requested",
+   "passed": true,
+   "detail": "[\"0xaaaa\",\"0xbbbb\"]"
+  },
+  {
+   "scenario": "claim-390x844",
+   "name": "no page errors",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "claim-390x844",
+   "name": "no horizontal overflow",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "tab A offers 'Approve exactly 1 IMD and light 1 candle' (mocked open sales)",
+   "passed": true,
+   "detail": "Approve exactly 1 IMD and light 1 candle"
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "tab A: approval sent, hash known, receipt delayed (mock returns null)",
+   "passed": true,
+   "detail": "Approval sent. Waiting for its receipt… View transaction"
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "tab A: button shows Working… and is disabled while waiting",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "tab A released the approval-pending step (no longer 'Approval sent. Waiting…')",
+   "passed": true,
+   "detail": "That approval was settled in another tab, but its receipt could not be read from here yet, so its outcome is not shown as confirmed. Nothing else was sent. Check again in a moment. View approval\n\nCheck again"
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "tab A does not infer success from the record disappearing (unresolved while its receipt read is null)",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "tab A keeps the approval transaction link",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "tab A offers a usable recovery control (Check again)",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "form and run lock released; allowance re-read, so 'Light 1 candle' is offered (no second approval)",
+   "passed": true,
+   "detail": "Light 1 candle"
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "no purchase was requested automatically",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "A's delayed approval receipt was delivered to tab A",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "delayed callback did not relock the form",
+   "passed": true,
+   "detail": "Light 1 candle"
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "delayed callback did not send a purchase or resume the run",
+   "passed": true,
+   "detail": "That approval was settled in another tab, but its receipt could not be read from here yet, so its outcome is not shown as confirmed. Nothing else was sent. Check again in a moment. View approval\n\nCheck again"
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "delayed callback did not overwrite the shown state",
+   "passed": true,
+   "detail": "That approval was settled in another tab, but its receipt could not be read from here yet, so its outcome is not shown as confirmed. Nothing else was sent. Check again in a moment. View approval\n\nCheck again"
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "Check again: verified approval (receipt + calldata + allowance), purchase not sent",
+   "passed": true,
+   "detail": "Approval confirmed; candle purchase not sent. Your approval confirmed (settled in another tab). Review the purchase, then press the button to light it.\n\nApproval receipt\nView approval\nAllowance now\n1 IMD\nRevised total\n1 IMD\n\nYour allowance already covers the revised purchase: no second approval is requested. Review the revised purchase, then press the button to confirm it in your wallet."
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "verified state keeps the approval receipt link",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "verified state shows the re-read allowance (1 IMD)",
+   "passed": true,
+   "detail": "Approval confirmed; candle purchase not sent. Your approval confirmed (settled in another tab). Review the purchase, then press the button to light it.\n\nApproval receipt\nView approval\nAllowance now\n1 IMD\nRevised total\n1 IMD\n\nYour allowance already covers the revised purchase: no second approval is requested. Review the revised purchase, then press the button to confirm it in your wallet."
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "still no purchase requested",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "explicit click sends exactly one purchase request (buyCandles to the garden)",
+   "passed": true,
+   "detail": "[{\"kind\":\"approve\",\"to\":\"0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7\",\"selector\":\"0x095ea7b3\"},{\"kind\":\"buy\",\"to\":\"0x33a514c5e2028f1affd70b82f170e8193df030a5\",\"selector\":\"0xc7e3b783\"}]"
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "exactly one approval was requested in total",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "no page errors",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-390x844",
+   "name": "no horizontal overflow",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "claim-1280x800",
+   "name": "tab A shows Claim 9 IMD (mocked rewardState)",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "claim-1280x800",
+   "name": "tab A: claim A sent, receipt delayed (mock returns null)",
+   "passed": true,
+   "detail": "Claim sent. Waiting for its receipt… View transaction"
+  },
+  {
+   "scenario": "claim-1280x800",
+   "name": "tab B resolved claim A; tab A released it (resolved, link kept)",
+   "passed": true,
+   "detail": "That claim was settled in another tab or by its receipt, so this tab stopped waiting for it. Your rewards were re-read. View transaction"
+  },
+  {
+   "scenario": "claim-1280x800",
+   "name": "tab A keeps claim A's link while resolved",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "claim-1280x800",
+   "name": "tab A: Claim is available again",
+   "passed": true,
+   "detail": "Claim 9 IMD"
+  },
+  {
+   "scenario": "claim-1280x800",
+   "name": "tab A: claim B completed and shows B's receipt (5 IMD)",
+   "passed": true,
+   "detail": "Claimed 5 IMD. View transaction"
+  },
+  {
+   "scenario": "claim-1280x800",
+   "name": "A's delayed receipt was delivered to tab A",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "claim-1280x800",
+   "name": "B remains the displayed result after A's delayed receipt",
+   "passed": true,
+   "detail": "Claimed 5 IMD. View transaction\n\nAn earlier claim also settled: 2 IMD claimed. View earlier claim"
+  },
+  {
+   "scenario": "claim-1280x800",
+   "name": "displayed receipt link is B's, not A's",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "claim-1280x800",
+   "name": "A's outcome kept as history beside B",
+   "passed": true,
+   "detail": "Claimed 5 IMD. View transaction\n\nAn earlier claim also settled: 2 IMD claimed. View earlier claim"
+  },
+  {
+   "scenario": "claim-1280x800",
+   "name": "exactly two claim transactions were requested",
+   "passed": true,
+   "detail": "[\"0xaaaa\",\"0xbbbb\"]"
+  },
+  {
+   "scenario": "claim-1280x800",
+   "name": "no page errors",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "claim-1280x800",
+   "name": "no horizontal overflow",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "tab A offers 'Approve exactly 1 IMD and light 1 candle' (mocked open sales)",
+   "passed": true,
+   "detail": "Approve exactly 1 IMD and light 1 candle"
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "tab A: approval sent, hash known, receipt delayed (mock returns null)",
+   "passed": true,
+   "detail": "Approval sent. Waiting for its receipt… View transaction"
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "tab A: button shows Working… and is disabled while waiting",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "tab A released the approval-pending step (no longer 'Approval sent. Waiting…')",
+   "passed": true,
+   "detail": "That approval was settled in another tab, but its receipt could not be read from here yet, so its outcome is not shown as confirmed. Nothing else was sent. Check again in a moment. View approval\n\nCheck again"
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "tab A does not infer success from the record disappearing (unresolved while its receipt read is null)",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "tab A keeps the approval transaction link",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "tab A offers a usable recovery control (Check again)",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "form and run lock released; allowance re-read, so 'Light 1 candle' is offered (no second approval)",
+   "passed": true,
+   "detail": "Light 1 candle"
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "no purchase was requested automatically",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "A's delayed approval receipt was delivered to tab A",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "delayed callback did not relock the form",
+   "passed": true,
+   "detail": "Light 1 candle"
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "delayed callback did not send a purchase or resume the run",
+   "passed": true,
+   "detail": "That approval was settled in another tab, but its receipt could not be read from here yet, so its outcome is not shown as confirmed. Nothing else was sent. Check again in a moment. View approval\n\nCheck again"
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "delayed callback did not overwrite the shown state",
+   "passed": true,
+   "detail": "That approval was settled in another tab, but its receipt could not be read from here yet, so its outcome is not shown as confirmed. Nothing else was sent. Check again in a moment. View approval\n\nCheck again"
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "Check again: verified approval (receipt + calldata + allowance), purchase not sent",
+   "passed": true,
+   "detail": "Approval confirmed; candle purchase not sent. Your approval confirmed (settled in another tab). Review the purchase, then press the button to light it.\n\nApproval receipt\nView approval\nAllowance now\n1 IMD\nRevised total\n1 IMD\n\nYour allowance already covers the revised purchase: no second approval is requested. Review the revised purchase, then press the button to confirm it in your wallet."
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "verified state keeps the approval receipt link",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "verified state shows the re-read allowance (1 IMD)",
+   "passed": true,
+   "detail": "Approval confirmed; candle purchase not sent. Your approval confirmed (settled in another tab). Review the purchase, then press the button to light it.\n\nApproval receipt\nView approval\nAllowance now\n1 IMD\nRevised total\n1 IMD\n\nYour allowance already covers the revised purchase: no second approval is requested. Review the revised purchase, then press the button to confirm it in your wallet."
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "still no purchase requested",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "explicit click sends exactly one purchase request (buyCandles to the garden)",
+   "passed": true,
+   "detail": "[{\"kind\":\"approve\",\"to\":\"0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7\",\"selector\":\"0x095ea7b3\"},{\"kind\":\"buy\",\"to\":\"0x33a514c5e2028f1affd70b82f170e8193df030a5\",\"selector\":\"0xc7e3b783\"}]"
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "exactly one approval was requested in total",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "no page errors",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "approval-1280x800",
+   "name": "no horizontal overflow",
+   "passed": true,
+   "detail": ""
+  }
+ ],
+ "rpcLog": {
+  "claim-390x844": [
+   "tabB receipt 0xaaaaaaaa -> receipt",
+   "tabB receipt 0xaaaaaaaa -> receipt",
+   "tabA receipt 0xbbbbbbbb -> receipt",
+   "tabA receipt 0xaaaaaaaa -> receipt"
+  ],
+  "approval-390x844": [
+   "tabB receipt 0xeeeeeeee -> receipt",
+   "tabB receipt 0xeeeeeeee -> receipt",
+   "tabA receipt 0xeeeeeeee -> receipt",
+   "tabA receipt 0xeeeeeeee -> receipt",
+   "tabA receipt 0xeeeeeeee -> receipt"
+  ],
+  "claim-1280x800": [
+   "tabB receipt 0xaaaaaaaa -> receipt",
+   "tabB receipt 0xaaaaaaaa -> receipt",
+   "tabA receipt 0xbbbbbbbb -> receipt",
+   "tabA receipt 0xaaaaaaaa -> receipt"
+  ],
+  "approval-1280x800": [
+   "tabB receipt 0xeeeeeeee -> receipt",
+   "tabB receipt 0xeeeeeeee -> receipt",
+   "tabA receipt 0xeeeeeeee -> receipt",
+   "tabA receipt 0xeeeeeeee -> receipt",
+   "tabA receipt 0xeeeeeeee -> receipt"
+  ]
+ }
+}

@@ -1,0 +1,20 @@
+ ✓ tests/revision15.test.ts (12 tests) 111ms
+ ✓ tests/revision12.test.ts (16 tests) 104ms
+ ✓ tests/revision9.test.ts (15 tests) 42ms
+ ✓ tests/revision14.test.ts (9 tests) 72ms
+ ✓ tests/revision13.test.ts (16 tests) 446ms
+ ✓ tests/revision11.test.ts (15 tests) 186ms
+ ✓ tests/logic.test.ts (44 tests) 3603ms
+ ✓ tests/verify.test.ts (16 tests) 18ms
+ ✓ tests/revision8.test.ts (7 tests) 565ms
+ ✓ tests/activity.test.ts (6 tests) 7ms
+ ✓ tests/popup.test.ts (9 tests) 15ms
+ ✓ tests/txhash.test.ts (3 tests) 3ms
+ ✓ tests/nonce.test.ts (4 tests) 3029ms
+ ✓ tests/receipt.test.ts (2 tests) 9ms
+ ✓ tests/escape.test.ts (1 test) 19ms
+ ✓ tests/stairs.test.ts (3 tests) 802ms
+ ✓ tests/quantity.test.ts (14 tests) 3ms
+ ✓ tests/revision7.test.ts (10 tests) 8625ms
+ Test Files  18 passed (18)
+      Tests  202 passed (202)

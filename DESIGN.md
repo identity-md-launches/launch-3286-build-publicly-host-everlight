@@ -1,3 +1,20 @@
+# DESIGN: revision 15 changes (current source, 2026-11-20)
+
+This revision changes transaction state only. The tokens, typography, pixel-art garden, Pepes and responsive layout are unchanged from the sections below.
+
+## Components changed
+- **Approval settled elsewhere** (`web/src/panels/LightPanel.tsx`, the `approve-settled` step):
+  - It uses the existing `.pending-box` (`styles.css:458`: column flex, `--space-3` top margin, `--space-2` gap) with `role="status"` inside the `aria-live="polite"` `.steps` region.
+  - Text: "That approval was settled in another tab…", with a "View approval" link to the approval transaction.
+  - A `.pending-acts` row holds one `.btn` labelled "Check again". While it verifies, the button is disabled and reads "Checking…".
+  - The step does not count as running, so the main `.cta.wide` button returns to its normal label ("Light N candles" or "Approve exactly N IMD and light") instead of "Working…".
+  - Once the approval is verified, the existing `.approved-box` shows "Approval confirmed; candle purchase not sent.", the approval receipt and the allowance.
+- **Earlier claim history** (`web/src/panels/Panels.tsx`, Rewards): one `.fine` line (`--text-sm`, `--color-text-secondary`) under the current claim result, e.g. "An earlier claim also settled: 2 IMD claimed. View earlier claim". It never replaces the current result line.
+
+## Responsive behaviour
+- Both blocks wrap inside the panel at every width. `.pending-acts` already wraps.
+- Checked in Chromium at 390×844 and 1280×800 with no horizontal overflow. The taste probe passed 16/16 at 320, 390 and 1440 wide.
+
 # DESIGN: revision 13 changes (current source, 2026-11-20)
 
 These notes supersede the revision 12 frog notes below wherever they differ. Everything else is unchanged.

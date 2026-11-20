@@ -8,7 +8,7 @@ import { ETHERSCAN, GARDEN, IMD, MAX_BATCH, TX_GAS_CAP, config, ethClient } from
 import { checkWish, gasBound } from "../lib/wish";
 import { STYLE_NAMES, eth, imd } from "../lib/format";
 import { explainError, isGasCapError } from "../lib/errors";
-import { APPROVAL_SENT_UNKNOWN_MESSAGE, FIXTURE_MESSAGE, INTENT_PENDING_MESSAGE, attemptOf, buyConflict, awaitBuy, isRunning, latestAllowance, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step, type WalletState } from "../lib/purchase";
+import { APPROVAL_SENT_UNKNOWN_MESSAGE, FIXTURE_MESSAGE, INTENT_PENDING_MESSAGE, approvalOutcome, attemptOf, buyConflict, awaitBuy, isRunning, latestAllowance, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step, type WalletState } from "../lib/purchase";
 import { readReceipt } from "../lib/receipt";
 import { attachHash, minedTx, NONCE_UNVERIFIED, sentTx, settleBuyReceipt, settleReceipt, submissionMeta, verifyCancelled, type CancelCheck } from "../lib/chain";
 import { isGardenApproval } from "../lib/intent";
@@ -40,10 +40,34 @@ purchaseFlow.onRelease((account, attempt) => {
   if (inFlight.get(k)?.attempt === attempt) inFlight.delete(k);
 });
 
+/**
+ * Chain-backed verification of an approval another tab settled while this tab still waited for its receipt: its mined
+ * receipt (following a sped-up or cancelled replacement from the saved sender and nonce, short timeout), the mined
+ * transaction itself, then the live allowance. An unreadable receipt stays unresolved; it is never assumed confirmed.
+ */
+export async function verifySettledApprovalOnChain(tx: PendingTx): Promise<Step> {
+  let receipt: { status: "success" | "reverted"; transactionHash: Hash } | null = null;
+  let mined: { from: string; to: string | null; input: `0x${string}` } | null = null;
+  try {
+    const got = await settleReceipt(tx.hash, tx, 15_000);
+    receipt = got.receipt;
+    mined = got.mined;
+  } catch {
+    receipt = null;
+  }
+  const allowance = receipt && receipt.status === "success" && mined
+    ? await ethClient.readContract({ address: IMD, abi: erc20Abi, functionName: "allowance", args: [tx.account as Hash, GARDEN] }).catch(() => undefined)
+    : undefined;
+  return approvalOutcome(tx, { receipt: receipt ? { status: receipt.status, hash: receipt.transactionHash } : null, mined, allowance }, isGardenApproval);
+}
+purchaseFlow.setApprovalVerifier(verifySettledApprovalOnChain);
+
 /** Recover a purchase sent before a reload: the form stays locked on it until its receipt settles. */
 export function recoverBuy(tx: PendingTx): Promise<Step> {
   if (tx.kind === "approve") return recoverApproval(tx);
   const attempt = attemptOf(tx);
+  // an explicit check (or the reload recovery) of this saved attempt makes it the latest run, unless a live run is shown
+  purchaseFlow.begin(attempt);
   const onStep = (s: Step) => {
     // a confirmed purchase removes exactly its candles from the saved draft; a split draft keeps the rest
     if (s.name === "done") {
@@ -75,6 +99,7 @@ export function recoverBuy(tx: PendingTx): Promise<Step> {
  */
 export async function recoverApproval(tx: PendingTx): Promise<Step> {
   const attempt = attemptOf(tx);
+  purchaseFlow.begin(attempt);
   let s: Step;
   try {
     const { receipt, mined } = await settleReceipt(tx.hash, tx);
@@ -132,6 +157,7 @@ const STEP_TEXT: Record<Step["name"], string> = {
   "approve-wallet": "Confirm the exact IMD approval in your wallet.",
   "approve-pending": "Approval sent. Waiting for its receipt…",
   "approve-unknown": "",
+  "approve-settled": "",
   simulating: "Checking the purchase against the contract…",
   "buy-wallet": "Confirm the purchase in your wallet.",
   "buy-pending": "Purchase sent. Waiting for its receipt; this draft stays locked until it settles…",
@@ -166,6 +192,8 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
   const step = flowStep && purchaseFlow.for(address) === flowStep ? flowStep : null;
   const setStep = (s: Step | null) => purchaseFlow.set(s, address ?? null);
   const pendingVersion = useSyncExternalStore(pendingStore.subscribe, pendingStore.version);
+  // an attempt settled in another tab (released here) or its outcome verified here: re-read allowance and balances
+  useEffect(() => purchaseFlow.onSettled(() => { void qc.invalidateQueries(); }), [qc]);
   // a purchase sent earlier (this session or before a reload) that has no settled receipt yet
   // scoped to the connected account: another account's unresolved purchase neither locks nor is released from here
   const pendingBuy = useMemo(() => (address ? pendingStore.list().filter(buyConflict(address)).at(-1) ?? null : null), [pendingVersion, address]);
@@ -305,11 +333,12 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
         },
         batch.map((i) => i.style),
         batch.map((i) => i.wish),
-        (s, attempt) => {
-          run.attempt = attempt;
+        (s, attempt, runId) => {
+          // the attempt this step belongs to (the approval's own id during approval): releasing it releases this lock
+          if (inFlight.get(account.toLowerCase()) === run) run.attempt = attempt;
           // a confirmed purchase removes its candles from the draft; errors and replacements keep every item
           if (s.name === "done") consumeSavedDraft(batch.map((i) => i.style), batch.map((i) => i.wish));
-          if (!purchaseFlow.report(attempt, s, account)) return;
+          if (!purchaseFlow.report(attempt, s, account, runId)) return;
           if (s.name === "approve-pending" || (s.name === "error" && (s.approval || s.allowance))) qc.invalidateQueries();
           if (s.name === "done") {
             store.sync().then(() => onLit(s.firstId, s.quantity ?? batch.length));
@@ -433,11 +462,22 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
       )}
       <p className="net-line">Ethereum · gas paid separately</p>
       <div aria-live="polite" className="steps">
-        {step && step.name !== "error" && step.name !== "buy-unknown" && step.name !== "approve-unknown" && (
+        {step && step.name !== "error" && step.name !== "buy-unknown" && step.name !== "approve-unknown" && step.name !== "approve-settled" && (
           <p>
             {STEP_TEXT[step.name]}{" "}
             {"hash" in step && <a href={`${ETHERSCAN}/tx/${step.hash}`} target="_blank" rel="noreferrer">View transaction</a>}
           </p>
+        )}
+        {step?.name === "approve-settled" && (
+          <div className="pending-box" role="status">
+            <p>
+              {step.checking ? "That approval was settled in another tab. Checking its receipt and your allowance…" : step.message}{" "}
+              <a href={`${ETHERSCAN}/tx/${step.hash}`} target="_blank" rel="noreferrer">View approval</a>
+            </p>
+            <div className="pending-acts">
+              <button type="button" className="btn" disabled={step.checking} onClick={() => { void purchaseFlow.recheckApproval(); }}>{step.checking ? "Checking…" : "Check again"}</button>
+            </div>
+          </div>
         )}
         {step?.name === "error" && step.approval && (
           <div className="approved-box" role="alert">

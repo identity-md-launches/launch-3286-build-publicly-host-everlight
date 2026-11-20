@@ -434,9 +434,16 @@ export async function walletStillBound(account: string, read?: () => Promise<Wal
 export type Step =
   | { name: "checking" }
   | { name: "approve-wallet"; amount: bigint }
-  | { name: "approve-pending"; hash: Hash }
+  /** tx: the approval's own saved record (its attempt id, sender, nonce and exact amount), used to verify it if another tab settles it. */
+  | { name: "approve-pending"; hash: Hash; tx?: PendingTx }
   /** The approval may have been sent (no hash, or no readable receipt): its record stays saved and the form locked. */
-  | { name: "approve-unknown"; hash: Hash; message: string }
+  | { name: "approve-unknown"; hash: Hash; message: string; tx?: PendingTx }
+  /**
+   * A known-hash approval whose record another tab settled while this tab was still waiting for its receipt. Not
+   * running: the form and the run lock are released, the approval link is kept, and its receipt and the allowance are
+   * verified from here (checking) before anything is said about the outcome. Nothing is sent automatically from it.
+   */
+  | { name: "approve-settled"; hash: Hash; message: string; tx: PendingTx; checking: boolean }
   | { name: "simulating" }
   | { name: "buy-wallet" }
   | { name: "buy-pending"; hash: Hash }
@@ -521,11 +528,35 @@ export function settleBuy(r: Receipt, sent: Hash, account: string, quantity?: nu
  */
 let flowStep: Step | null = null;
 let flowAccount: string | null = null;
+/** The attempt the shown step belongs to (an approval step: the approval's own attempt, never its parent purchase's). */
 let flowAttempt: string | null = null;
+/** The run (the click, or one recovery) that produced the shown step. One purchase run may own an approval attempt. */
+let flowRun: string | null = null;
+/**
+ * The latest run this tab started or explicitly checked, tracked independently of whether the shown step is running
+ * or final. Any step of an earlier run is never shown over it (it goes to history instead), even after it completed.
+ */
+let latestRun: string | null = null;
+const seenRuns = new Set<string>();
 const flowSubs = new Set<() => void>();
 /** Attempts released because their record settled elsewhere; their still-running callbacks may not re-lock the UI. */
 const releasedAttempts = new Set<string>();
+/** Runs that own a released attempt: only that attempt's own final outcome may still be shown, never a continuation. */
+const releasedRuns = new Set<string>();
+/** Attempts this tab is settling itself (its own verified receipt): their record disappearing is not "settled elsewhere". */
+const settlingHere = new Set<string>();
 const releaseSubs = new Set<(account: string, attempt: string) => void>();
+const settledSubs = new Set<(account: string, attempt: string) => void>();
+/** Outcomes of earlier runs that arrived after a newer run took over: kept for reference, never shown as current. */
+export interface FlowHistoryItem { attempt: string; run: string; account: string | null; step: Step; at: number }
+let flowHistory: FlowHistoryItem[] = [];
+const keepHistory = (attempt: string, run: string, account: string | null, step: Step) => {
+  if (isRunning(step)) return;
+  flowHistory = [...flowHistory.filter((h) => h.attempt !== attempt), { attempt, run, account, step, at: Date.now() }].slice(-5);
+};
+/** Verifies an approval settled elsewhere from its receipt and the live allowance (the panel installs the chain reads). */
+export type ApprovalVerifier = (tx: PendingTx) => Promise<Step>;
+let approvalVerifier: ApprovalVerifier | null = null;
 const notifyFlow = () => flowSubs.forEach((f) => f());
 export const purchaseFlow = {
   get: () => flowStep,
@@ -538,21 +569,60 @@ export const purchaseFlow = {
     if (flowAccount === null) return flowStep;
     return account && sameAddr(account, flowAccount) ? flowStep : null;
   },
-  set(s: Step | null, account: string | null = null, attempt: string | null = null) {
+  /** The run the current step belongs to, and the latest run started or explicitly checked in this tab. */
+  run: () => flowRun,
+  latestRun: () => latestRun,
+  set(s: Step | null, account: string | null = null, attempt: string | null = null, run: string | null = attempt) {
     flowStep = s;
     flowAccount = s === null ? null : account;
     flowAttempt = s === null ? null : attempt;
+    flowRun = s === null ? null : run;
+    if (s !== null && run !== null) { seenRuns.add(run); latestRun = run; }
     notifyFlow();
   },
   /**
-   * A step reported by one attempt: applied only when the shown step is this attempt's, or no other attempt is
-   * running or uncertain. A delayed receipt or callback of an older attempt never overwrites a newer attempt.
+   * Make a run the latest one (a click starting it, or an explicit Check again of a saved attempt). Refused while
+   * another run's step is still running here, so a check can never take the display away from a live run.
    */
-  report(attempt: string, s: Step, account: string): boolean {
-    if (releasedAttempts.has(attempt) && isRunning(s)) return false;
-    if (flowAttempt !== null && flowAttempt !== attempt && isRunning(flowStep)) return false;
-    this.set(s, account, attempt);
+  begin(run: string): boolean {
+    if (flowRun !== null && flowRun !== run && isRunning(flowStep)) return false;
+    seenRuns.add(run);
+    latestRun = run;
     return true;
+  },
+  /**
+   * A step reported by one attempt of one run (run defaults to the attempt). Applied only for the latest run, whether
+   * the shown step is running or final: a delayed receipt or callback of an earlier run never overwrites a newer run's
+   * result, amount, link or error (a final one is kept in history instead). A released attempt cannot re-lock the form,
+   * and a run whose attempt was released can only show that attempt's own final outcome, never continue past it.
+   */
+  report(attempt: string, s: Step, account: string, run: string = attempt): boolean {
+    if (releasedAttempts.has(attempt) && isRunning(s)) return false;
+    if (releasedRuns.has(run) && !releasedAttempts.has(attempt)) return false;
+    const stale = (flowRun !== null && flowRun !== run && isRunning(flowStep)) || (seenRuns.has(run) && latestRun !== run);
+    if (stale) {
+      keepHistory(attempt, run, account, s);
+      return false;
+    }
+    this.set(s, account, attempt, run);
+    return true;
+  },
+  /** Outcomes of earlier runs that arrived late, oldest first (never the current step). */
+  history: (): readonly FlowHistoryItem[] => flowHistory,
+  /** This tab is about to remove this attempt's record itself (its own verified receipt): not a cross-tab settlement. */
+  settling(attempt: string) { settlingHere.add(attempt); },
+  /** The panel installs the chain-backed verifier for approvals settled elsewhere (tests install labelled mocks). */
+  setApprovalVerifier(v: ApprovalVerifier | null) { approvalVerifier = v; },
+  /** Re-verify the shown approval-settled-elsewhere step (an explicit Check again). Never sends anything. */
+  recheckApproval(): Promise<Step | null> {
+    const s = flowStep;
+    if (!s || s.name !== "approve-settled" || s.checking || !flowAttempt) return Promise.resolve(null);
+    return verifySettledApproval(flowAccount, flowAttempt, flowRun ?? flowAttempt, s);
+  },
+  /** Called with (account, attempt) after an attempt settled elsewhere was released or its outcome verified here. */
+  onSettled(f: (account: string, attempt: string) => void) {
+    settledSubs.add(f);
+    return () => { settledSubs.delete(f); };
   },
   /** Drop the step of this account only (a released intent); another account's step is left alone. */
   clear(account: string, attempt?: string) {
@@ -577,21 +647,98 @@ export const purchaseFlow = {
 };
 export const SETTLED_ELSEWHERE_MESSAGE =
   "That purchase was settled in another tab or by its receipt, so this tab stopped waiting for it. The garden and your balances were re-read; check the transaction below.";
+export const APPROVAL_SETTLED_CHECKING =
+  "That approval was settled in another tab, so this tab stopped waiting for it. Checking its receipt and your allowance now; nothing else is sent.";
+export const APPROVAL_SETTLED_UNVERIFIED =
+  "That approval was settled in another tab, but its receipt could not be read from here yet, so its outcome is not shown as confirmed. Nothing else was sent. Check again in a moment.";
+export const APPROVAL_SETTLED_OK =
+  "Your approval confirmed (settled in another tab). Review the purchase, then press the button to light it.";
+export const APPROVAL_SETTLED_LOW = (allowance: bigint, amount: bigint) =>
+  `Your approval confirmed (settled in another tab), but your IMD allowance is now ${imd(allowance)} IMD, below the ${imd(amount)} IMD it approved, so it may have been used or changed since. Nothing else was sent; check the purchase and approve again if needed.`;
+export const APPROVAL_SETTLED_NO_ALLOWANCE =
+  "Your approval confirmed (settled in another tab). Its allowance could not be re-read; press the button again to check it. Nothing else was sent.";
+export const APPROVAL_SETTLED_REVERTED = "That approval reverted onchain (settled in another tab): no allowance was set and no IMD was spent.";
+export const APPROVAL_SETTLED_REPLACED =
+  "That approval was cancelled or replaced in your wallet (settled in another tab), so no allowance was set. Press the button to approve again.";
+
+/** What a mined approval says (its own receipt, possibly a replacement's) and the allowance read after it. */
+export interface ApprovalEvidence {
+  receipt: { status: "success" | "reverted"; hash: Hash } | null;
+  /** The mined transaction (null: it could not be read). */
+  mined: { from: string; to: string | null; input: `0x${string}` } | null;
+  /** Live allowance for the garden; undefined when it could not be read. */
+  allowance?: bigint;
+}
+/**
+ * Outcome of an approval another tab settled, from verified evidence only (never from its record disappearing):
+ * success needs a successful receipt of this account's exact approve(garden, amount) on IMD, then the live allowance.
+ * Revert, cancellation/replacement and an unreadable receipt are each reported as they are; the link is always kept.
+ */
+export function approvalOutcome(tx: PendingTx, e: ApprovalEvidence, isApproval: (input: `0x${string}`, amount?: string) => boolean, at = Date.now()): Step {
+  const unresolved: Step = { name: "approve-settled", hash: tx.hash, message: APPROVAL_SETTLED_UNVERIFIED, tx, checking: false };
+  if (!e.receipt) return unresolved;
+  const link = e.receipt.hash ?? tx.hash;
+  if (e.receipt.status !== "success") return { name: "error", message: APPROVAL_SETTLED_REVERTED, hash: link };
+  if (!e.mined) return { ...unresolved, hash: link };
+  const ok = sameAddr(e.mined.from, tx.account) && (e.mined.to ?? "").toLowerCase() === (tx.token ?? IMD).toLowerCase() && isApproval(e.mined.input, tx.amount);
+  if (!ok) return { name: "error", message: APPROVAL_SETTLED_REPLACED, hash: link };
+  if (e.allowance === undefined) return { name: "error", message: APPROVAL_SETTLED_NO_ALLOWANCE, hash: link };
+  const amount = tx.amount !== undefined ? BigInt(tx.amount) : undefined;
+  if (amount !== undefined && e.allowance < amount) return { name: "error", message: APPROVAL_SETTLED_LOW(e.allowance, amount), hash: link, allowance: { allowance: e.allowance, at } };
+  return { name: "error", message: APPROVAL_SETTLED_OK, approval: { hash: link, allowance: e.allowance, at } };
+}
+
+/** Verify a released approval; its outcome is shown only while that approval's step is still the one shown. */
+async function verifySettledApproval(account: string | null, attempt: string, run: string, s: Extract<Step, { name: "approve-settled" }>): Promise<Step> {
+  const checking: Step = { ...s, checking: true };
+  purchaseFlow.set(checking, account, attempt, run);
+  let out: Step;
+  try {
+    out = approvalVerifier ? await approvalVerifier(s.tx) : { ...s, message: APPROVAL_SETTLED_UNVERIFIED, checking: false };
+  } catch {
+    out = { ...s, message: APPROVAL_SETTLED_UNVERIFIED, checking: false };
+  }
+  if (out.name === "approve-settled") out = { ...out, tx: s.tx, checking: false };
+  if (flowAttempt === attempt && flowStep === checking) purchaseFlow.set(out, account, attempt, run);
+  else keepHistory(attempt, run, account, out); // a newer run took over meanwhile: never overwrite it
+  settledSubs.forEach((f) => f(account ?? "", attempt));
+  return out;
+}
+
 // another tab settled this tab's uncertain or pending attempt (its saved record is gone): release only that attempt's
 // UI lock, keep its transaction link, and tell the panel so it can drop that run's in-flight lock. A delayed step from
-// the released attempt's still-running wait can no longer re-lock the form (see report).
+// the released attempt's still-running wait can no longer re-lock the form or continue its run (see report).
+// A known-hash approval (approve-pending, or approve-unknown with its sent hash) is then verified from its receipt and
+// the live allowance: success, revert, cancellation and an unreadable receipt are each shown as they are.
 pendingStore.subscribe(() => {
   const s = flowStep;
   const a = flowAttempt;
-  if (!a || !s || (s.name !== "buy-unknown" && s.name !== "approve-unknown" && s.name !== "buy-pending")) return;
+  if (!a || !s) return;
+  const knownApproval = s.name === "approve-pending" || (s.name === "approve-unknown" && !!s.tx && !s.tx.intent);
+  if (!knownApproval && s.name !== "buy-unknown" && s.name !== "approve-unknown" && s.name !== "buy-pending") return;
+  if (settlingHere.has(a)) return;
   if (pendingStore.get(a)) return;
   const account = flowAccount ?? "";
+  const run = flowRun ?? a;
   releasedAttempts.add(a);
-  if (s.name === "buy-pending") purchaseFlow.set({ name: "error", message: SETTLED_ELSEWHERE_MESSAGE, hash: s.hash }, flowAccount, a);
+  releasedRuns.add(run);
+  if (knownApproval) {
+    const tx: PendingTx = (s.name === "approve-pending" || s.name === "approve-unknown") && s.tx
+      ? s.tx
+      : { hash: s.hash, kind: "approve", account, createdAt: Date.now(), attempt: a };
+    const settled: Extract<Step, { name: "approve-settled" }> = { name: "approve-settled", hash: s.hash, message: APPROVAL_SETTLED_CHECKING, tx, checking: false };
+    purchaseFlow.set(settled, flowAccount, a, run);
+    releaseSubs.forEach((f) => f(account, a));
+    settledSubs.forEach((f) => f(account, a));
+    void verifySettledApproval(flowAccount, a, run, settled);
+    return;
+  }
+  if (s.name === "buy-pending") purchaseFlow.set({ name: "error", message: SETTLED_ELSEWHERE_MESSAGE, hash: s.hash }, flowAccount, a, run);
   else purchaseFlow.clear(account, a);
   releaseSubs.forEach((f) => f(account, a));
+  settledSubs.forEach((f) => f(account, a));
 });
-export const isRunning = (s: Step | null) => s !== null && s.name !== "done" && s.name !== "error";
+export const isRunning = (s: Step | null) => s !== null && s.name !== "done" && s.name !== "error" && s.name !== "approve-settled";
 
 /** Everything the purchase needs from a chain. The UI passes wagmi/viem; tests pass labelled mocks. */
 export interface PurchaseDeps {
@@ -625,6 +772,8 @@ export interface PurchaseDeps {
   walletState?: () => Promise<WalletState>;
   /** Attempt id factory (tests pass a fixed sequence). */
   newAttempt?: () => string;
+  /** Was this attempt released because another tab settled it? Defaults to the shared purchase flow's answer. */
+  released?: (attempt: string) => boolean;
   /** The initiating click's wallet binding: revision counter and connector (see WalletBinding). */
   binding?: WalletBinding;
   /**
@@ -643,10 +792,11 @@ export async function runPurchase(
   deps: PurchaseDeps,
   styles: number[],
   wishes: string[],
-  onStep: (s: Step, attempt: string) => void,
+  onStep: (s: Step, attempt: string, run: string) => void,
 ): Promise<Step> {
   const attempt = (deps.newAttempt ?? newAttemptId)();
-  const step = (s: Step) => onStep(s, attempt);
+  const step = (s: Step) => onStep(s, attempt, attempt);
+  const released = deps.released ?? purchaseFlow.released;
   let approval: ApprovalDone | undefined;
   const fail = (message: string): Step => {
     const s: Step = approval ? { name: "error", message: afterApproval(message), approval } : { name: "error", message };
@@ -684,6 +834,12 @@ export async function runPurchase(
       let asub: { nonce: number; block: bigint };
       try { asub = await deps.submission(); } catch { return fail(META_MESSAGE); }
       const approveAttempt = (deps.newAttempt ?? newAttemptId)();
+      // approval steps are bound to the approval's own attempt (run: this purchase), so another tab settling exactly
+      // this approval releases exactly this step and run lock
+      const astep = (s: Step) => onStep(s, approveAttempt, attempt);
+      // released: another tab settled this approval while this run still waited; its verified outcome is shown by the
+      // release path. This run stops here, silently: no step, no purchase, no relock (a fresh click is required).
+      const stopped = (): Step => purchaseFlow.for(deps.account) ?? { name: "error", message: APPROVAL_SETTLED_UNVERIFIED };
       const aIntent: PendingTx = {
         hash: intentHash("approve", deps.account), kind: "approve", intent: true, account: deps.account, quantity: styles.length,
         createdAt: Date.now(), from: deps.account, nonce: asub.nonce, block: asub.block.toString(), nonceChecked: false,
@@ -698,7 +854,7 @@ export async function runPurchase(
         pendingStore.removeAttempt(approveAttempt, deps.storage);
         return fail(WALLET_CHANGED_MESSAGE);
       }
-      step({ name: "approve-wallet", amount: total });
+      astep({ name: "approve-wallet", amount: total });
       let ah: Hash;
       try {
         ah = await deps.approve(total);
@@ -707,25 +863,30 @@ export async function runPurchase(
           pendingStore.removeAttempt(approveAttempt, deps.storage); // proven: nothing was signed; only this attempt
           throw e;
         }
-        const s: Step = { name: "approve-unknown", hash: aIntent.hash, message: APPROVAL_AMBIGUOUS_MESSAGE };
-        step(s);
+        const s: Step = { name: "approve-unknown", hash: aIntent.hash, message: APPROVAL_AMBIGUOUS_MESSAGE, tx: aIntent };
+        astep(s);
         return s;
       }
       const aSent: PendingTx = { ...aIntent, hash: ah, intent: undefined };
       await pendingStore.replace(approveAttempt, aSent, deps.storage);
-      step({ name: "approve-pending", hash: ah });
+      astep({ name: "approve-pending", hash: ah, tx: aSent });
       let r: Receipt;
       try {
         r = await deps.wait(ah, aSent);
       } catch {
-        const s: Step = { name: "approve-unknown", hash: ah, message: APPROVAL_SENT_UNKNOWN_MESSAGE };
-        step(s);
+        if (released(approveAttempt)) return stopped();
+        const s: Step = { name: "approve-unknown", hash: ah, message: APPROVAL_SENT_UNKNOWN_MESSAGE, tx: aSent };
+        astep(s);
         return s;
       }
+      if (released(approveAttempt)) return stopped(); // a delayed receipt after another tab settled it: never resumes
+      purchaseFlow.settling(approveAttempt); // this tab's own verified receipt, not a cross-tab settlement
       pendingStore.removeAttempt(approveAttempt, deps.storage); // only this approval's own entry
-      if (r.status !== "success") return fail("The approval transaction reverted. No IMD was spent.");
+      const afail = (message: string): Step => { const s: Step = { name: "error", message }; astep(s); return s; };
+      if (r.status !== "success") return afail("The approval transaction reverted. No IMD was spent.");
       const now = await deps.allowance();
-      if (now < total) return fail("The approval did not reach the required total. Approve again.");
+      if (released(approveAttempt)) return stopped();
+      if (now < total) return afail("The approval did not reach the required total. Approve again.");
       // tracked separately from the purchase: a later failure says the approval stands and the purchase was not sent
       // the receipt's own hash: a sped-up approval is mined under its replacement's hash, and that is the receipt linked
       approval = { hash: r.hash ?? ah, allowance: now, at: Date.now() };

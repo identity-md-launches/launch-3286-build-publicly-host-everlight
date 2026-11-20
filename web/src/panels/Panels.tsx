@@ -10,8 +10,8 @@ import { wishGardenAbi } from "../abi/WishGarden";
 import { BASESCAN, BASE_IMD, BASE_RECEIVER, ETHERSCAN, GARDEN, GARDEN_DEPLOY_BLOCK, IMD, LEGACY_GARDEN, OWNER, SOURCE_REPO, config } from "../config";
 import { STYLE_NAMES, date, imd, short, safeChecksum } from "../lib/format";
 import { explainError } from "../lib/errors";
-import { FIXTURE_MESSAGE, attemptOf, pendingStore, type PendingTx } from "../lib/purchase";
-import { CLAIM_SETTLED_ELSEWHERE, claimConflict, claimStepApplies, runClaim, webLock, type ClaimStep } from "../lib/claim";
+import { FIXTURE_MESSAGE, attemptOf, newAttemptId, pendingStore, type PendingTx } from "../lib/purchase";
+import { claimBoard, claimConflict, runClaim, webLock, type ClaimStep } from "../lib/claim";
 import { IntentRecovery, liveWallet, walletRevision } from "./LightPanel";
 import { IncompleteIdsError, type Candle } from "../lib/candles";
 import { ConnectButton } from "../components/ConnectSheet";
@@ -210,12 +210,12 @@ export function RewardsPanel() {
   const { address, chainId } = useAccount();
   const r = useRewards(address);
   const qc = useQueryClient();
-  // the last claim step belongs to the account that produced it: another connected wallet starts from idle, and
-  // switching back restores it (the durable claim intent is scoped per account in pendingStore)
-  const [stOf, setStOf] = useState<{ account: string; step: ClaimStep } | null>(null);
-  const st: ClaimStep = stOf && address && stOf.account.toLowerCase() === address.toLowerCase() ? stOf.step : { s: "idle" };
-  const setStFor = (account: string) => (step: ClaimStep) => setStOf({ account, step });
-  const setSt = (step: ClaimStep) => { if (address) setStFor(address)(step); };
+  // the claim display is per account and keyed by attempt (claimBoard): another connected wallet starts from idle,
+  // switching back restores it, and only each account's LATEST attempt (started or explicitly checked here) is shown
+  const boardVersion = useSyncExternalStore(claimBoard.subscribe, claimBoard.version);
+  const st: ClaimStep = useMemo(() => claimBoard.step(address), [boardVersion, address]);
+  const earlier = useMemo(() => claimBoard.history(address), [boardVersion, address]);
+  const setSt = (step: ClaimStep) => { if (address) claimBoard.offer(address, step); };
   // per account, the run holding this tab's claim lock; it learns its attempt from the first step, so settling that
   // attempt elsewhere releases exactly this run's lock (a newer run's lock is never released by an old attempt)
   const busy = useRef(new Map<string, { attempt?: string }>());
@@ -227,36 +227,31 @@ export function RewardsPanel() {
     [pendingVersion, address],
   );
   const [checking, setChecking] = useState(false);
-  // the local step is keyed by its claim attempt: once that attempt's record settles (here or in another tab) its
-  // pending or uncertain step is released, its transaction link kept, its in-flight lock dropped and the reward read
-  // refreshed; a newer saved attempt still locks Claim by itself
-  const released = useRef(new Set<string>());
+  // cross-tab settlement (claimBoard.reconcile, run on every pending-store change): the latest attempt's pending or
+  // uncertain step is released, its link kept; here exactly that run's in-flight lock is dropped and rewards re-read
   useEffect(() => {
-    if (!stOf || (stOf.step.s !== "uncertain" && stOf.step.s !== "pending") || !stOf.step.attempt) return;
-    const attempt = stOf.step.attempt;
-    if (pendingStore.get(attempt)) return;
-    released.current.add(attempt);
-    const k = stOf.account.toLowerCase();
-    if (busy.current.get(k)?.attempt === attempt) busy.current.delete(k);
-    const hash = stOf.step.s === "pending" ? stOf.step.hash : undefined;
-    setStOf({ account: stOf.account, step: { s: "resolved", msg: CLAIM_SETTLED_ELSEWHERE, hash, attempt } });
-    qc.invalidateQueries();
-  }, [pendingVersion, stOf]);
+    const off = claimBoard.onRelease((account, attempt) => {
+      const k = account.toLowerCase();
+      if (busy.current.get(k)?.attempt === attempt) busy.current.delete(k);
+      void qc.invalidateQueries();
+    });
+    claimBoard.reconcile(); // a settlement that happened while this panel was closed
+    return off;
+  }, [qc]);
   async function recheck(matched?: PendingTx) {
     const target = matched ?? pendingClaim; // after Match: the returned entry with its real hash
     if (!target || checking) return;
     const attempt = attemptOf(target);
+    // an explicit check makes this attempt the latest (refused while another claim is live): its outcome is shown;
+    // a check that finishes after a newer claim started only adds to history, never replaces the newer result
+    claimBoard.begin(target.account, attempt);
     setChecking(true);
     const v = await checkClaim(target);
     setChecking(false);
-    // only this attempt's outcome: a newer attempt's step in this tab is never overwritten by an older receipt
-    setStOf((cur) => {
-      if (cur && cur.step.attempt && cur.step.attempt !== attempt && (cur.step.s === "wallet" || cur.step.s === "pending")) return cur;
-      const step: ClaimStep = v.settled
-        ? (v.ok && v.hash ? { s: "done", hash: v.hash, amount: v.amount ?? 0n, attempt } : { s: "error", msg: v.text, attempt })
-        : { s: "uncertain", msg: v.text, attempt };
-      return { account: target.account, step };
-    });
+    const step: ClaimStep = v.settled
+      ? (v.ok && v.hash ? { s: "done", hash: v.hash, amount: v.amount ?? 0n, attempt } : { s: "error", msg: v.text, attempt })
+      : { s: "uncertain", msg: v.text, attempt };
+    claimBoard.offer(target.account, step);
     qc.invalidateQueries();
   }
   async function claim() {
@@ -268,6 +263,8 @@ export function RewardsPanel() {
     try {
       await runClaim({
         account: address,
+        // a new attempt becomes this account's latest the moment it is created, before any of its steps
+        newAttempt: () => { const id = newAttemptId(); claimBoard.begin(account, id); return id; },
         simulate: async () => (await simulateContract(config, { address: GARDEN, abi: wishGardenAbi, functionName: "claimRewards", account: address, chainId: 1 })).request,
         submission: () => submissionMeta(address),
         send: (request) => writeContract(config, { ...(request as any), account, chainId: 1 }),
@@ -283,10 +280,10 @@ export function RewardsPanel() {
         withLock: webLock,
         explain: (e) => explainError(e),
       }, (step) => {
-        if (step.attempt) run.attempt = step.attempt;
-        // this run's own attempt only: a delayed receipt or timeout never overwrites a newer attempt, and a running
-        // step of an attempt already settled elsewhere never re-locks Claim
-        setStOf((cur) => (claimStepApplies(cur?.account === account ? cur.step : null, step, released.current) ? { account, step } : cur));
+        if (step.attempt && busy.current.get(account.toLowerCase()) === run) run.attempt = step.attempt;
+        // only this account's latest attempt is shown: a delayed receipt, timeout or check of an older attempt never
+        // overwrites a newer attempt (running or completed), and a released attempt never re-locks Claim
+        claimBoard.offer(account, step);
       });
       qc.invalidateQueries();
     } finally {
@@ -321,6 +318,16 @@ export function RewardsPanel() {
         {st.s === "error" && <p className="bad" role="alert">{st.msg}</p>}
         {st.s === "resolved" && <p>{st.msg}{st.hash && <>{" "}<a href={`${ETHERSCAN}/tx/${st.hash}`} target="_blank" rel="noreferrer">View transaction</a></>}</p>}
         {st.s === "uncertain" && !pendingClaim && <p className="bad" role="alert">{st.msg}</p>}
+        {earlier.length > 0 && (
+          <p className="fine">
+            {earlier.map((h, i) => (
+              <span key={h.attempt ?? i}>
+                {h.s === "done" ? `An earlier claim also settled: ${imd(h.amount)} IMD claimed.` : h.s === "error" ? `An earlier claim settled: ${h.msg}` : ""}
+                {h.s === "done" && <>{" "}<a href={`${ETHERSCAN}/tx/${h.hash}`} target="_blank" rel="noreferrer">View earlier claim</a></>}{" "}
+              </span>
+            ))}
+          </p>
+        )}
         {pendingClaim && st.s !== "pending" && st.s !== "wallet" && (
           <div className="pending-box" role="status">
             <p>

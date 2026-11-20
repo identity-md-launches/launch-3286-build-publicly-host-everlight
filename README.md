@@ -1,3 +1,67 @@
+## Current revision (2026-11-20, revision 15): read first
+
+This round fixes the two unresolved transaction-state findings from the final review of job 959f20ae (reviewed commit `59aab81`, which was still the tip of `main` when this round started). Contracts, addresses, ABIs and economics are unchanged: 1 IMD per candle; 30% burn, 60% to earlier paid candles, 5% operations, 5% founder, and 90% burn for the first-ever candle. Sales stay closed: nothing was deployed or activated, and no real-fund transaction was sent.
+
+Commands, run from `web/`:
+
+| Command | Result |
+|---|---|
+| `npm ci` | installed from the committed lockfile (no dependency changes) |
+| `npx tsc --noEmit` | 0 errors |
+| `npx vitest run` | 18 files, **202 tests passed** (190 earlier ones unchanged and passing, plus 12 new tests in `tests/revision15.test.ts`); log in `evidence/rev15/vitest.txt` |
+| `npm run build` | `tsc --noEmit && vite build`, exported to `dist/` with relative `./` asset URLs |
+| browser reproduction (real Chromium tabs, **mocked chain**) | **68/68 checks passed** at 390×844 and 1280×800 (`evidence/rev15/browser-cross-tab-results.json`, 390 screenshots in `evidence/rev15/screens/`, harness `evidence/rev15/browser-harness.mjs`) |
+| taste probe (`taste.mjs --out test/scratch/taste`) | **16/16 passed** at 320, 390 and 1440 wide (`evidence/rev15/taste-probe.json`). The 390 screenshot shows the headline, "Light a candle · 1 IMD", the sales status and the garden with its Pepes on the first screen |
+
+### Fix 1: an older claim's receipt overwrote a newer claim (`web/src/lib/claim.ts`)
+- `createClaimBoard` / `claimBoard` (`web/src/lib/claim.ts:53`) replaces the panel-local step and `claimStepApplies` guard. For each account it tracks the **latest attempt**: the one most recently started, or explicitly checked, in this tab. This works whether the shown step is running or final. A new attempt becomes the latest when its ID is created, before any of its steps.
+- Only the latest attempt's steps are shown. A late outcome from an older attempt never replaces the newer attempt's result, amount, receipt link or error. That covers the automatic wait, a manual Check again and cross-tab settlement. Its final outcome goes into the account's history instead. The Rewards panel shows that history as one line beside the current result ("An earlier claim also settled: 2 IMD claimed. View earlier claim").
+- Cross-tab settlement (`claimBoard.reconcile`, run on every pending-store change) releases only the latest attempt's pending or uncertain step and keeps its link. The panel then drops exactly that run's lock and re-reads rewards. A released attempt's running steps cannot re-lock Claim. Steps are stored per account, so one account's claim never changes another account's display.
+- An explicit check cannot take over while another claim of the account is still live (`begin` refuses).
+
+### Fix 2: an approval settled in another tab stayed pending (`web/src/lib/purchase.ts`)
+- **Own attempt ID.** Approval steps now carry the approval's own attempt ID, and the parent purchase is passed as their `run`. So `purchaseFlow.attempt()` is the approval's ID while it is shown, and so is the panel's run lock. `approve-pending` and `approve-unknown` also carry the approval's saved record (`tx`).
+- **Reconciling known hashes.** The pending-store subscription (`purchase.ts:713`) now also reconciles known-hash `approve-pending` and `approve-unknown` steps. When that approval's record disappears in another tab:
+  - the step becomes the new non-running `approve-settled` step, with its transaction link kept;
+  - the matching run lock is released, and allowance and balances are re-read (`purchaseFlow.onSettled`);
+  - the approval is **verified, never inferred**. Verification reads its receipt (following a replacement from the saved sender and nonce), the mined transaction (this account's exact `approve(garden, amount)` on IMD) and the live allowance (`approvalOutcome`, `purchase.ts:677`). The outcomes are: success (the "Approval confirmed; candle purchase not sent." box, with its receipt and allowance), reverted, cancelled or replaced, allowance unreadable or below the approved amount, and unresolved. Unresolved means the receipt is not readable yet; the panel then shows a **Check again** button and the form stays usable.
+- **Delayed callbacks.** After a release, the run stops at its next await (`purchase.ts:877-888`). A delayed approval receipt or error from that run never steps, relocks the form or sends a purchase. The run's own receipt removal is marked with `purchaseFlow.settling` so it is not mistaken for a cross-tab settlement. That keeps the uninterrupted approval → purchase flow unchanged.
+- **Ledger.** `purchaseFlow.report(attempt, step, account, run)` (`purchase.ts:599`) applies a step only for the latest run, again whether the shown step is running or final. A run whose attempt was released can show only that attempt's own final outcome, never a continuation. Late final outcomes of older runs go to `purchaseFlow.history()`. An explicit Check again or the reload recovery (`recoverBuy`, `recoverApproval`) makes its attempt the latest unless a live run is shown.
+- A fresh explicit click is always required before a purchase is sent after a cross-tab recovery.
+
+### Regression tests (`web/tests/revision15.test.ts`, all mocked)
+1. The reviewer's claim sequence: A is resolved in tab B, B completes, then A's delayed receipt arrives. B stays the displayed result (state, amount and link), and A is kept in history.
+2. The reviewer's approval sequence: a known-hash approval is settled in tab B while tab A's receipt read is delayed. Tab A releases the approval, verifies it (receipt and allowance), keeps the receipt link and frees the lock. The later explicit click buys once, without a second approval.
+3. Delayed callbacks after recovery (success, RPC error, stale reports of the old run) neither send a purchase nor overwrite a newer running or completed attempt.
+4. Isolation and recovery cases: account isolation, rejected signatures (4001), wallet or account change before sending, reverted claim and approval, unavailable RPC (claim `uncertain` stays saved; approval `approve-unknown` stays locked, then is verified when settled elsewhere), and cancellation/replacement. An unrelated record change does not release the approval (no confusion with the parent purchase ID).
+5. Single-tab claim and the uninterrupted approval → purchase flow. Step order and attempt IDs are asserted. The existing reload-recovery and single-tab suites (revisions 7 to 14) pass unchanged.
+
+### Browser reproduction (real tabs, mocked chain)
+`evidence/rev15/browser-harness.mjs` runs the production `dist/` in headless Chromium:
+- Two pages of one browser context act as two real tabs: they share `localStorage`, and storage events and Web Locks are real.
+- Every JSON-RPC response is **mocked** by request interception, and receipt visibility is set per tab: tab A's receipt reads return `null` (delayed) while tab B's return the receipt.
+- Wallet requests go to an injected EIP-6963 wallet named **"Labelled Mock Wallet"**. It answers the claim and approval sends with fixed hashes and rejects the purchase signature with 4001, so nothing is bought even in the mock.
+- The mock reports sales as open only so that the approval step can be reached.
+
+These are **not live-chain transaction tests**. Both reproductions passed at 390×844 and 1280×800:
+- **Claim:** A is sent and its receipt delayed. Tab B opens and settles A, so tab A shows "settled in another tab" with A's link. Claim is enabled again. B completes with "Claimed 5 IMD". A's delayed receipt is then delivered to tab A, and the display still shows B's 5 IMD and B's link, with A's 2 IMD as history. Two sends in total.
+- **Approval:** tab A shows "Approval sent. Waiting…" with Working… disabled. Tab B settles it, so tab A releases it while its own receipt read is still `null`. Tab A does **not** claim success; it shows the link and a Check again button, and the form offers "Light 1 candle" because the allowance re-read shows 1 IMD. A's delayed receipt then arrives: no relock, no purchase, no overwrite. Check again verifies the approval: "Approval confirmed; candle purchase not sent." with the receipt link and "Allowance now 1 IMD". An explicit click then reaches the wallet with exactly one `buyCandles` request. One approval in total.
+
+### Better Interface review (six domains) of the changed UI
+- Accessibility (`LightPanel.tsx:471`, `Panels.tsx:321`): the new approval box uses the existing `pending-box` with `role="status"` inside the `aria-live` steps region. Its "Check again" button is a real `<button>`, disabled and labelled "Checking…" while busy. The links have descriptive text ("View approval", "View earlier claim").
+- Layout: it reuses `.pending-box` and `.pending-acts`, so there are no new layout rules. No horizontal overflow at 390 or 1280 in the browser run.
+- Writing: each state says what happened, what was not done ("Nothing else was sent", "candle purchase not sent") and what to do next.
+- Typography and colors: the existing `.fine` and body styles and existing tokens; no new sizes or colors.
+- UI: the main button returns to an actionable label after release, never "Working…". No finding needed a further fix.
+- Not measured: contrast ratios and screen-reader output.
+
+### Publication
+- The corrected source and the rebuilt `dist/` are committed together. `dist/` is the export the publisher pins and serves at https://everlight.imd.site/. This job does not run a publishing command (the platform publishes the committed export after the job).
+- So "hosted assets match the corrected build" can only be checked after publication: compare the hosted `index.html` asset names with `dist/index.html` from this commit.
+- Before publication, a fetch of https://everlight.imd.site/ was not part of these checks.
+
+Limitations: the Web Lock and storage-event behaviour was exercised in one Chromium context with two pages, which is how real same-origin tabs share them, but not across separate browser processes. The mocked chain has a fixed block cadence and no reorgs.
+
 ## Current revision (2026-11-20, revision 14): read first
 
 This round answers the 2 high findings from the review. Both reproduced and both are fixed; the answers are in `.imd-responses.json`. Commands, run from `web/`:

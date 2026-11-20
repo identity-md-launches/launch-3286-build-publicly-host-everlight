@@ -38,6 +38,99 @@ export function claimStepApplies(cur: ClaimStep | null, next: ClaimStep, release
   return true;
 }
 
+/**
+ * The claim display of this tab, per account, keyed by attempt identity (the fix for an older claim's delayed receipt
+ * replacing a newer claim's completed result). Each account has a LATEST attempt: the one most recently started here
+ * or explicitly checked. It is tracked independently of whether the shown step is running or final, so:
+ *  - only the latest attempt's steps are shown; an older attempt's late outcome (automatic wait, manual check or
+ *    cross-tab settlement) never replaces a newer attempt's result, amount, receipt link or error. Its final outcome
+ *    is kept in the account's history instead, shown beside (never instead of) the current result;
+ *  - an attempt settled elsewhere is released: its pending or uncertain step becomes "resolved" (link kept), its own
+ *    running steps can no longer re-lock Claim, and only its own final outcome may still replace "resolved";
+ *  - steps are stored per account, so a claim of one account never touches another account's display.
+ */
+export interface ClaimBoardStore { get(attempt: string, storage?: Storage | null): PendingTx | null }
+export function createClaimBoard(store: ClaimBoardStore = pendingStore, storage?: Storage | null) {
+  const key = (a: string) => a.toLowerCase();
+  const latest = new Map<string, string>();
+  const steps = new Map<string, ClaimStep>();
+  const hist = new Map<string, ClaimStep[]>();
+  const released = new Set<string>();
+  const subs = new Set<() => void>();
+  const releaseSubs = new Set<(account: string, attempt: string) => void>();
+  let version = 0;
+  const notify = () => { version++; subs.forEach((f) => f()); };
+  const remember = (account: string, step: ClaimStep) => {
+    if (step.s !== "done" && step.s !== "error") return;
+    const h = (hist.get(key(account)) ?? []).filter((x) => x.attempt !== step.attempt);
+    hist.set(key(account), [...h, step].slice(-3));
+  };
+  const board = {
+    /**
+     * Make an attempt the account's latest (a claim starting, or an explicit Check again). Refused while another
+     * attempt of this account is still running here and not released, so a check never takes over a live claim.
+     */
+    begin(account: string, attempt: string): boolean {
+      const cur = steps.get(key(account));
+      if (cur?.attempt && cur.attempt !== attempt && claimRunning(cur) && !released.has(cur.attempt)) return false;
+      latest.set(key(account), attempt);
+      return true;
+    },
+    latest: (account: string): string | null => latest.get(key(account)) ?? null,
+    /** A step reported for an account by one attempt. Answers whether it is now the shown step. */
+    offer(account: string, step: ClaimStep): boolean {
+      const a = step.attempt;
+      if (a && released.has(a) && claimRunning(step)) return false;
+      if (a && latest.get(key(account)) !== a) {
+        const before = hist.get(key(account));
+        remember(account, step);
+        if (hist.get(key(account)) !== before) notify();
+        return false;
+      }
+      steps.set(key(account), step);
+      notify();
+      return true;
+    },
+    /** The shown step of an account (idle when it has none). */
+    step: (account: string | null | undefined): ClaimStep => (account ? steps.get(key(account)) ?? { s: "idle" } : { s: "idle" }),
+    /** Late final outcomes of this account's earlier attempts, oldest first (never the latest attempt's). */
+    history(account: string | null | undefined): readonly ClaimStep[] {
+      if (!account) return [];
+      const cur = latest.get(key(account));
+      return (hist.get(key(account)) ?? []).filter((x) => x.attempt !== cur);
+    },
+    released: (attempt: string) => released.has(attempt),
+    /**
+     * Cross-tab settlement: an account whose shown step is its latest attempt's pending or uncertain step, and whose
+     * saved record is gone (settled in another tab or by its receipt), is released: "resolved" with its link kept.
+     * Answers the released (account, attempt) pairs so the panel drops exactly that run's lock and re-reads rewards.
+     */
+    reconcile(): { account: string; attempt: string }[] {
+      const out: { account: string; attempt: string }[] = [];
+      for (const [k, st] of [...steps.entries()]) {
+        if ((st.s !== "pending" && st.s !== "uncertain") || !st.attempt || latest.get(k) !== st.attempt) continue;
+        if (store.get(st.attempt, storage)) continue;
+        released.add(st.attempt);
+        steps.set(k, { s: "resolved", msg: CLAIM_SETTLED_ELSEWHERE, hash: st.s === "pending" ? st.hash : undefined, attempt: st.attempt });
+        out.push({ account: k, attempt: st.attempt });
+      }
+      if (out.length) {
+        notify();
+        out.forEach((r) => releaseSubs.forEach((f) => f(r.account, r.attempt)));
+      }
+      return out;
+    },
+    onRelease(f: (account: string, attempt: string) => void) { releaseSubs.add(f); return () => { releaseSubs.delete(f); }; },
+    subscribe(f: () => void) { subs.add(f); return () => { subs.delete(f); }; },
+    version: () => version,
+  };
+  return board;
+}
+export type ClaimBoard = ReturnType<typeof createClaimBoard>;
+/** This tab's claim display; reconciled whenever any tab saves or settles a transaction. */
+export const claimBoard = createClaimBoard();
+pendingStore.subscribe(() => { claimBoard.reconcile(); });
+
 export interface ClaimVerdictLike { ok: boolean; amount?: bigint; message?: string; unverified?: boolean; hash: Hash }
 
 export interface ClaimDeps {

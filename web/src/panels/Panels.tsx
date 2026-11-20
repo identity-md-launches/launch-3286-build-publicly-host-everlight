@@ -206,8 +206,13 @@ export function RewardsPanel() {
   const { address, chainId } = useAccount();
   const r = useRewards(address);
   const qc = useQueryClient();
-  const [st, setSt] = useState<ClaimStep>({ s: "idle" });
-  const busy = useRef(false);
+  // the last claim step belongs to the account that produced it: another connected wallet starts from idle, and
+  // switching back restores it (the durable claim intent is scoped per account in pendingStore)
+  const [stOf, setStOf] = useState<{ account: string; step: ClaimStep } | null>(null);
+  const st: ClaimStep = stOf && address && stOf.account.toLowerCase() === address.toLowerCase() ? stOf.step : { s: "idle" };
+  const setStFor = (account: string) => (step: ClaimStep) => setStOf({ account, step });
+  const setSt = (step: ClaimStep) => { if (address) setStFor(address)(step); };
+  const busy = useRef(new Set<string>());
   // a claim (or claim intent) saved by this wallet in any tab or before a reload that has not settled: Claim stays
   // off until it does, so the same rewards are never requested twice. Locks are per account, across networks.
   const pendingVersion = useSyncExternalStore(pendingStore.subscribe, pendingStore.version);
@@ -221,13 +226,14 @@ export function RewardsPanel() {
     setChecking(true);
     const v = await checkClaim(pendingClaim);
     setChecking(false);
-    setSt(v.settled ? (v.ok ? { s: "idle" } : { s: "error", msg: v.text }) : { s: "uncertain", msg: v.text });
+    setStFor(pendingClaim.account)(v.settled ? (v.ok ? { s: "idle" } : { s: "error", msg: v.text }) : { s: "uncertain", msg: v.text });
     qc.invalidateQueries();
   }
   async function claim() {
-    if (busy.current || !address) return;
+    if (!address || busy.current.has(address.toLowerCase())) return;
     if (FIXTURE !== null) return setSt({ s: "error", msg: FIXTURE_MESSAGE }); // fixture pages never reach the wallet
-    busy.current = true;
+    const account = address;
+    busy.current.add(account.toLowerCase());
     try {
       await runClaim({
         account: address,
@@ -243,10 +249,10 @@ export function RewardsPanel() {
         },
         withLock: webLock,
         explain: (e) => explainError(e),
-      }, setSt);
+      }, setStFor(account));
       qc.invalidateQueries();
     } finally {
-      busy.current = false;
+      busy.current.delete(account.toLowerCase());
     }
   }
   const d = r.data;
@@ -286,7 +292,7 @@ export function RewardsPanel() {
                 ? <a href={`${ETHERSCAN}/address/${pendingClaim.account}`} target="_blank" rel="noreferrer">View your wallet's transactions</a>
                 : <a href={`${ETHERSCAN}/tx/${pendingClaim.hash}`} target="_blank" rel="noreferrer">View pending claim</a>}
             </p>
-            <IntentRecovery tx={pendingClaim} what="claim" onCheck={recheck} onRelease={() => { pendingStore.remove(pendingClaim.hash); setSt({ s: "idle" }); }} />
+            <IntentRecovery tx={pendingClaim} what="claim" onCheck={recheck} onRelease={(t) => { pendingStore.remove(t.hash); setStFor(t.account)({ s: "idle" }); }} />
           </div>
         )}
       </div>
@@ -425,7 +431,7 @@ export function HowPanel() {
   return (
     <section aria-labelledby="how-title" className="how">
       <h2 id="how-title">How it works</h2>
-      <p className="lede">Everlight Garden is a shared garden of candles on Ethereum. Each candle costs 1 IMD, can carry a public wish, and stays lit in the garden for as long as Ethereum runs.</p>
+      <p className="lede">Everlight Garden is a shared garden of candles on Ethereum. Each candle costs 1 IMD and can carry a public wish. Ethereum keeps the candle and wish records even if this website goes offline.</p>
 
       <h3>Lighting a candle</h3>
       <ol className="bullets">
@@ -436,7 +442,7 @@ export function HowPanel() {
       </ol>
 
       <h3>Wishes are public and permanent</h3>
-      <p>A wish is optional. It is written into the contract for anyone to read, and it can never be edited, hidden or deleted. Keep private details out of it. Each wish is at most 280 characters and 1,120 bytes, and it is always shown as plain text.</p>
+      <p>A wish is optional. It is written into the contract for anyone to read, and it can never be edited, hidden or deleted. Keep private details out of it. Each wish is at most 280 characters and 1,120 bytes, and it is always shown as plain text. The wish lives in the contract, not on this website: if the site goes offline, anyone can still read it from the garden contract on Etherscan (getCandle).</p>
 
       <h3>Where each IMD goes</h3>
       <dl className="summary">

@@ -313,7 +313,7 @@ export default function App() {
             </p>
             {cs.error && (
               <p className="bad" role="alert">
-                {counts.incomplete || cs.total === null ? "Some candle records could not be read: the RPCs did not answer." : "The latest candle records could not be refreshed."}{" "}
+                {counts.incomplete || cs.total === null ? "Some candle records could not be read from Ethereum yet, so the list is incomplete." : "The latest candle records could not be refreshed."}{" "}
                 <button type="button" className="link" onClick={() => store.sync()}>Retry</button>
               </p>
             )}

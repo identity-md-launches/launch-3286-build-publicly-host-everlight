@@ -273,14 +273,35 @@ export function settleBuy(r: Receipt, sent: Hash, account: string, quantity?: nu
   return { name: "done", hash: mined, firstId: ev.firstId, quantity: ev.quantity };
 }
 
-/** One shared purchase state, so a remounted form or a reload sees a purchase that is still in flight. */
+/**
+ * One shared purchase state, so a remounted form or a reload sees a purchase that is still in flight. The step belongs
+ * to the account that started it: another connected account never sees (or is blocked by) it, and switching back
+ * restores it. The durable intent in pendingStore is scoped the same way.
+ */
 let flowStep: Step | null = null;
+let flowAccount: string | null = null;
 const flowSubs = new Set<() => void>();
+const notifyFlow = () => flowSubs.forEach((f) => f());
 export const purchaseFlow = {
   get: () => flowStep,
-  set(s: Step | null) {
+  /** The account the current step belongs to (null for a step recorded without one). */
+  account: () => flowAccount,
+  /** The current step if it belongs to this account (or to no particular account), otherwise null. */
+  for(account: string | null | undefined): Step | null {
+    if (flowAccount === null) return flowStep;
+    return account && sameAddr(account, flowAccount) ? flowStep : null;
+  },
+  set(s: Step | null, account: string | null = null) {
     flowStep = s;
-    flowSubs.forEach((f) => f());
+    flowAccount = s === null ? null : account;
+    notifyFlow();
+  },
+  /** Drop the step of this account only (a released intent); another account's step is left alone. */
+  clear(account: string) {
+    if (flowAccount !== null && !sameAddr(flowAccount, account)) return;
+    flowStep = null;
+    flowAccount = null;
+    notifyFlow();
   },
   subscribe(f: () => void) {
     flowSubs.add(f);
@@ -359,7 +380,8 @@ export async function runPurchase(
       const now = await deps.allowance();
       if (now < total) return fail("The approval did not reach the required total. Approve again.");
       // tracked separately from the purchase: a later failure says the approval stands and the purchase was not sent
-      approval = { hash: ah, allowance: now };
+      // the receipt's own hash: a sped-up approval is mined under its replacement's hash, and that is the receipt linked
+      approval = { hash: r.hash ?? ah, allowance: now };
     }
     onStep({ name: "simulating" });
     const request = await deps.simulate(styles, wishes);

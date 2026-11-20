@@ -159,7 +159,11 @@ export function drawSectorUpright(g: CanvasRenderingContext2D, index: number, sh
   const flush = stairs.flush;
   // one of four terrace arrangements per sector, from its grid seed (decoration only: slot coordinates never move)
   const arrangement = terraceArrangement(gx, gy);
-  if (!wild) plan.terraces.forEach((t, ti) => items.push({ y: t.cy + t.rx * TILT, draw: () => drawTerrace(g, t, plan.slots, im, wallPat, lawnPat, pathPat, put, r, stairOf.get(ti), flush.has(ti), arrangement) }));
+  // ground an embankment may run onto: off the path, the water, every holder, every flight and walk, other lawns
+  const openGround = (x: number, y: number, own: number) => Math.abs(y - pathY(gy, x)) > 30 && Math.abs(x - streamX(gx, y)) > streamHalf(y) + 6
+    && !plan.slots.some((sl) => Math.abs(sl[0] - x) < 18 && y - sl[1] > -12 && y - sl[1] < 80) && !onStairs(x, y, 6)
+    && !onTerrace(plan, x, y, [own]);
+  if (!wild) plan.terraces.forEach((t, ti) => items.push({ y: t.cy + t.rx * TILT, draw: () => drawTerrace(g, t, plan.slots, im, wallPat, lawnPat, pathPat, put, r, stairOf.get(ti), flush.has(ti), arrangement, (x, y) => openGround(x, y, ti)) }));
   const onStairs = (x: number, y: number, rad: number) => {
     const all = stairs.gazebo?.stair ? [...stairs.terraces, stairs.gazebo.stair] : stairs.terraces;
     for (const st of all) {
@@ -320,6 +324,7 @@ function drawTerrace(
   g: CanvasRenderingContext2D, t: Terrace, slots: [number, number, number][], im: Sheet["img"],
   wallPat: CanvasPattern | null, lawnPat: CanvasPattern | null, pathPat: CanvasPattern | null,
   put: (n: string, x: number, y: number, flip?: boolean) => void, r: () => number, stair?: Stair, flush = false, arrangement = 0,
+  open: (x: number, y: number) => boolean = () => false,
 ) {
   if (t.rx > 0) {
     const pad = 0.16, depth = 46 * t.scale, R = t.rx + 16 * t.scale;
@@ -335,33 +340,101 @@ function drawTerrace(
     // a ground-level bed (no flight could reach the path from its wall): a low stone kerb at path height, never a
     // raised platform, so the holders on it are reached from the surrounding ground
     const wall = flush ? PX * 2 : snap(t.wall);
-    for (const [X, { yo, yi }] of cols) {
-      // the ground rises to the lawn behind (an earth bank), so the terrace is cut into a slope rather than floating
-      if (!flush) { g.fillStyle = "#132a1c"; g.fillRect(X, yi - PX * 3, PX, PX * 3); g.fillStyle = "#183622"; if (dither(X / PX, 1, 0.5)) g.fillRect(X, yi - PX * 4, PX, PX); }
+    const keys = [...cols.keys()].sort((p, q) => p - q);
+    const span = keys.length ? keys[keys.length - 1] - keys[0] : 0;
+    const lawnDeep = Math.max(PX * 6, snap(depth * TILT));
+    // Four footprints around the same slot arc (slot coordinates never move; only the ground built around them):
+    //  0 stepped hillside  - a second, higher tier of lawn and wall behind the bed, cut into a rising slope
+    //  1 river embankment  - dressed ashlar courses, and the wall runs on past its free ends into the banks
+    //  2 open courtyard    - a paved forecourt in front of a low balustraded wall, a paved rim behind the lawn
+    //  3 staggered ruins   - the wall breaks into segments of uneven height, some set forward, cracked and mossy
+    const A = flush ? -1 : arrangement;
+    const segOf = (X: number) => Math.floor((X - (keys[0] ?? 0)) / (PX * 12));
+    const wallAt = (X: number) => (A === 3 ? snap(wall * (0.6 + 0.65 * hash2(segOf(X), t.first, 31))) : A === 2 ? snap(wall * 0.7) : wall);
+    const fwdAt = (X: number) => (A === 3 && hash2(segOf(X), t.first, 32) < 0.4 ? PX * 2 : 0);
+    const bank = A === 0 ? snap(lawnDeep * 1.1 + wall * 0.8) : snap(lawnDeep * 0.85 + 10);
+    const earth = (X: number, y: number, n: number, light: string, dark: string) => {
+      // a dithered earth-and-moss slope n rows tall ending at y, fading into the ground at its upper edge
+      for (let k = 0; k < n; k += PX) {
+        const fade = k / n; // 0 at the bottom (against the lawn) .. 1 at the top
+        if (fade > 0.7 && !dither(X / PX, (y - k) / PX, (1 - fade) / 0.3)) continue;
+        g.fillStyle = hash2(X, y - k, 41) < 0.08 ? "#2f5a32" : dither(X / PX, (y - k) / PX, 0.35 + 0.4 * fade) ? light : dark;
+        g.fillRect(X, y - k - PX, PX, PX);
+      }
+    };
+    for (const X of keys) {
+      const { yo: yo0, yi } = cols.get(X)!;
+      const w = wallAt(X), yo = yo0 + fwdAt(X);
+      if (!flush) {
+        if (A === 0) {
+          // upper tier: a band of lawn on a second low wall, then the hillside rising behind it
+          const ty = yi - snap(bank * 0.45);
+          earth(X, ty - PX * 4, bank - snap(bank * 0.45), "#183622", "#122619");
+          g.fillStyle = lawnPat ?? "#1c3a26"; g.fillRect(X, ty - PX * 4, PX, PX * 4);
+          g.fillStyle = "rgba(5,10,8,0.28)"; g.fillRect(X, ty - PX * 4, PX, PX * 4);
+          g.fillStyle = wallPat ?? "#3f413a"; g.fillRect(X, ty, PX, yi - ty);
+          g.fillStyle = (X / PX) % 5 === 0 ? "#8fbf5e" : "#5d9446"; g.fillRect(X, ty - PX, PX, PX);
+          g.fillStyle = "#a89f80"; g.fillRect(X, ty, PX, PX);
+        } else earth(X, yi, bank, "#1b3824", "#142c1d");
+      }
       g.fillStyle = lawnPat ?? "#1c3a26"; g.fillRect(X, yi, PX, yo - yi);
-      g.fillStyle = wallPat ?? "#3f413a"; g.fillRect(X, yo, PX, wall);
-      g.fillStyle = "#050a08"; g.fillRect(X, yo + wall, PX, PX); // foot shadow line
-      // contact shadow on the ground in front of the wall, fading in dithered rows
-      for (let k = 1; k <= 4; k++) if (dither(X / PX, k, 0.8 - k * 0.18)) { g.fillStyle = "rgba(5,10,8,0.55)"; g.fillRect(X, yo + wall + k * PX, PX, PX); }
+      if (A === 2) { g.fillStyle = pathPat ?? "#646453"; g.fillRect(X, yi, PX, PX * 2); g.fillStyle = "#2a3a2c"; g.fillRect(X, yi + PX * 2, PX, PX); }
+      g.fillStyle = wallPat ?? "#3f413a"; g.fillRect(X, yo, PX, w);
+      if (A === 1 || A === 0) { // dressed courses: mortar rows and staggered joints
+        for (let c = 0, yy = yo + PX * 3; yy < yo + w - PX; c++, yy += PX * 3) {
+          g.fillStyle = "#26281f"; g.fillRect(X, yy, PX, PX);
+          if (((X / PX) + c * 3) % 7 === 0) g.fillRect(X, yy - PX * 2, PX, PX * 2);
+        }
+      }
+      if (A === 3 && hash2(X, yo, 43) < 0.05) { g.fillStyle = "#14160f"; g.fillRect(X, yo + PX * 2, PX, snap(w * 0.6)); } // cracks
+      if (!flush) {
+        // foundation: a darker footing course one art pixel proud of the wall, then an earth slope down to the ground
+        g.fillStyle = "#24261f"; g.fillRect(X, yo + w, PX, PX * 2);
+        if (A === 2) {
+          // forecourt paving in front of the wall, edged with a dark kerb line
+          const fc = snap(10 + 8 * t.scale);
+          g.fillStyle = pathPat ?? "#646453"; g.fillRect(X, yo + w + PX * 2, PX, fc);
+          g.fillStyle = "rgba(5,10,8,0.3)"; g.fillRect(X, yo + w + PX * 2, PX, PX);
+          g.fillStyle = "#2a3a2c"; g.fillRect(X, yo + w + PX * 2 + fc, PX, PX);
+        } else {
+          for (let k = 0; k < 5; k++) if (dither(X / PX, k, 0.9 - k * 0.17)) { g.fillStyle = k < 2 ? "#0d1a12" : "rgba(5,10,8,0.5)"; g.fillRect(X, yo + w + PX * 2 + k * PX, PX, PX); }
+        }
+      } else {
+        g.fillStyle = "#050a08"; g.fillRect(X, yo + w, PX, PX);
+      }
       g.fillStyle = (X / PX) % 7 === 0 ? "#a7d36a" : "#6aa84f"; g.fillRect(X, yo - PX, PX, PX); // mossy coping
       g.fillStyle = "#c4bb98"; g.fillRect(X, yo, PX, PX);
-      if (!flush && hash2(X, yo, 3) < 0.09) { g.fillStyle = "#3f7a3c"; g.fillRect(X, yo + PX, PX, snap(4 + hash2(X, 1, 4) * (wall - 4))); } // hanging moss
+      if (A === 2 && Math.round((X - keys[0]) / PX) % 6 === 0) { g.fillStyle = "#c4bb98"; g.fillRect(X, yo - PX * 4, PX, PX * 3); g.fillStyle = "#8f8b74"; g.fillRect(X, yo - PX * 2, PX, PX); } // balusters
+      if (!flush && hash2(X, yo, 3) < (A === 3 ? 0.16 : 0.09)) { g.fillStyle = "#3f7a3c"; g.fillRect(X, yo + PX, PX, snap(4 + hash2(X, 1, 4) * Math.max(0, w - 4))); } // hanging moss
     }
+    if (A === 2 && keys.length) { g.fillStyle = "#8f8b74"; for (const X of keys) g.fillRect(X, cols.get(X)!.yo - PX * 4, PX, PX); } // balustrade rail
     // white flowers at the wall foot and shrubs on the lawn behind the holders
-    const keys = [...cols.keys()];
-    for (let k = 0; k < Math.max(1, t.count / 5); k++) { const X = keys[(r() * keys.length) | 0]; const c = cols.get(X)!; put("flowers", X, c.yo + wall + 8); }
+    for (let k = 0; k < Math.max(1, t.count / 5); k++) { const X = keys[(r() * keys.length) | 0]; const c = cols.get(X)!; put("flowers", X, c.yo + wallAt(X) + 8); }
     for (let k = 0; k < Math.max(1, t.count / 6); k++) { const X = keys[(r() * keys.length) | 0]; const c = cols.get(X)!; put(r() < 0.5 ? "bush" : "bush-flower", X, c.yi + 4, r() < 0.5); }
-    // arrangement detail along this terrace
-    const ends: [number, boolean][] = [[keys[0], stair?.end !== 0], [keys[keys.length - 1], stair?.end !== 1]];
-    if (arrangement === 0) { // clipped hedge along the back of the lawn
-      for (let k = 0; k < keys.length; k += 7) { const X = keys[k]; put("bush", X, cols.get(X)!.yi + 3, k % 2 === 0); }
-    } else if (arrangement === 1) { // flower border: blossoms along the coping and pink sprays on the wall face
+    const ends: [number, boolean, -1 | 1][] = [[keys[0], stair?.end !== 0, -1], [keys[keys.length - 1], stair?.end !== 1, 1]];
+    if (A === 0) { // hedges and flowering shrubs along the upper tier
+      for (let k = 2; k < keys.length; k += 8) { const X = keys[k]; put(k % 16 === 2 ? "bush-flower" : "bush", X, cols.get(X)!.yi - snap(bank * 0.45) - PX * 2, k % 3 === 0); }
+    } else if (A === 1) {
+      // the embankment continues past each free end along the bank, its wall sinking into the ground as it goes
+      for (const [X0, free, dir] of ends) if (free && X0 !== undefined) {
+        const c = cols.get(X0)!, run = snap(Math.min(120, 50 + span * 0.35) * t.scale);
+        for (let k = PX; k <= run; k += PX) {
+          const X = X0 + dir * k, f = 1 - k / run;
+          const yy = c.yo + snap(k * 0.08);
+          if (!open(X, yy) || !open(X, yy - 20)) break;
+          const hh = snap(wall * f);
+          earth(X, yy, snap((lawnDeep * 0.5 + 6) * f + PX * 2), "#183622", "#132a1c");
+          g.fillStyle = lawnPat ?? "#1c3a26"; g.fillRect(X, yy - PX * 3, PX, PX * 3);
+          if (hh >= PX) { g.fillStyle = wallPat ?? "#3f413a"; g.fillRect(X, yy, PX, hh); g.fillStyle = "#24261f"; g.fillRect(X, yy + hh, PX, PX); }
+          g.fillStyle = (X / PX) % 7 === 0 ? "#a7d36a" : "#6aa84f"; g.fillRect(X, yy - PX, PX, PX);
+          g.fillStyle = "#c4bb98"; g.fillRect(X, yy, PX, PX);
+        }
+      }
       for (let k = 3; k < keys.length; k += 9) { const X = keys[k]; put("flowers", X, cols.get(X)!.yo + PX); }
-      for (const X of keys) if (hash2(X, 2, 13) < 0.12) { const c = cols.get(X)!; g.fillStyle = hash2(X, 3, 13) < 0.5 ? "#d98aa8" : "#f2c4d2"; g.fillRect(X, c.yo + PX * 2, PX, PX); g.fillStyle = "#3f7a3c"; g.fillRect(X, c.yo + PX * 3, PX, PX * 2); }
-    } else if (arrangement === 2) { // lantern walk: green lamps at the free ends, vines on the wall
+    } else if (A === 2) { // courtyard lamps at the free corners, vines on the wall
       for (const [X, free] of ends) if (free && X !== undefined) put("lamp", X, cols.get(X)!.yo + 2);
-      for (let k = 5; k < keys.length; k += 13) { const X = keys[k]; put("vine", X, cols.get(X)!.yo + snap(wall * 0.8)); }
-    } else { // old ruin: broken pillar stubs at the free ends, boulders at the wall foot
+      for (let k = 5; k < keys.length; k += 13) { const X = keys[k]; put("vine", X, cols.get(X)!.yo + snap(wall * 0.6)); }
+    } else if (A === 3) { // broken pillar stubs at the free ends, boulders and rubble at the wall foot
       for (const [X, free] of ends) if (free && X !== undefined) {
         const c = cols.get(X)!, hgt = snap(16 + hash2(X, c.yo, 14) * 14);
         g.fillStyle = wallPat ?? "#3f413a"; g.fillRect(X - PX * 3, c.yo + wall - hgt - wall, PX * 6, hgt + wall);
@@ -369,9 +442,16 @@ function drawTerrace(
         g.fillStyle = "#6aa84f"; g.fillRect(X - PX * 3, c.yo - hgt - PX, PX * 6, PX);
         g.fillStyle = "#050a08"; g.fillRect(X - PX * 4, c.yo + wall, PX * 8, PX);
       }
-      for (let k = 6; k < keys.length; k += 17) { const X = keys[k]; put("rock", X, cols.get(X)!.yo + wall + 10); }
+      for (let k = 6; k < keys.length; k += 17) { const X = keys[k]; put("rock", X, cols.get(X)!.yo + wallAt(X) + 10); }
     }
-    if (stair) drawStair(g, stair, wallPat, pathPat);
+    if (stair) {
+      drawStair(g, stair, wallPat, pathPat);
+      // a flagstone landing at the foot of the flight, where its walk to the main path begins
+      const lx = snap(stair.x - stair.halfW - PX * 3), ly = snap(stair.yTop + stair.drop - PX), lw = snap(stair.halfW * 2 + PX * 6);
+      g.fillStyle = pathPat ?? "#646453"; g.fillRect(lx, ly, lw, PX * 4);
+      g.fillStyle = "#8f8b74"; g.fillRect(lx, ly, lw, PX);
+      g.fillStyle = "#2a3a2c"; g.fillRect(lx, ly + PX * 4, lw, PX);
+    }
   }
   const mine = slots.slice(t.first, t.first + t.count).sort((a, b) => a[1] - b[1]);
   for (const [x, y, k] of mine) put(k > 1.5 ? "pedestal-hero" : "holder", x, y + 2);

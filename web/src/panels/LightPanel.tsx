@@ -10,7 +10,7 @@ import { STYLE_NAMES, eth, imd } from "../lib/format";
 import { explainError, isGasCapError } from "../lib/errors";
 import { FIXTURE_MESSAGE, INTENT_PENDING_MESSAGE, buyConflict, removeBuyIntent, awaitBuy, isRunning, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step } from "../lib/purchase";
 import { readReceipt } from "../lib/receipt";
-import { attachHash, minedTx, NONCE_UNVERIFIED, sentTx, settleBuyReceipt, submissionMeta } from "../lib/chain";
+import { attachHash, minedTx, NONCE_UNVERIFIED, releaseVerified, sentTx, settleBuyReceipt, submissionMeta, verifyCancelled, type CancelCheck } from "../lib/chain";
 import { APPROVED_NOT_SENT } from "../lib/purchase";
 import { rememberTx } from "../lib/txhash";
 import { webLock } from "../lib/claim";
@@ -27,7 +27,7 @@ export function clearDraft() {
   try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* private mode */ }
 }
 /** One purchase at a time across remounts of this panel: a second click or a reopened form cannot send twice. */
-let inFlight = false;
+const inFlight = new Set<string>(); // per account: another account's open request never blocks this one
 
 /** Recover a purchase sent before a reload: the form stays locked on it until its receipt settles. */
 export function recoverBuy(tx: PendingTx): Promise<Step> {
@@ -37,7 +37,7 @@ export function recoverBuy(tx: PendingTx): Promise<Step> {
       if (tx.styles && tx.wishes) consumeSavedDraft(tx.styles, tx.wishes);
       else clearDraft();
     }
-    purchaseFlow.set(s);
+    purchaseFlow.set(s, tx.account);
   };
   onStep({ name: "buy-pending", hash: tx.hash });
   return awaitBuy(
@@ -120,8 +120,10 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
   const qtyValid = parsed.ok;
   const qty = parsed.ok ? parsed.n : 0;
   const [ack, setAck] = useState(false);
-  const step = useSyncExternalStore(purchaseFlow.subscribe, purchaseFlow.get);
-  const setStep = purchaseFlow.set;
+  const flowStep = useSyncExternalStore(purchaseFlow.subscribe, purchaseFlow.get);
+  // only the connected account's own step: wallet B is never blocked by, nor shown, wallet A's purchase state
+  const step = flowStep && purchaseFlow.for(address) === flowStep ? flowStep : null;
+  const setStep = (s: Step | null) => purchaseFlow.set(s, address ?? null);
   const pendingVersion = useSyncExternalStore(pendingStore.subscribe, pendingStore.version);
   // a purchase sent earlier (this session or before a reload) that has no settled receipt yet
   // scoped to the connected account: another account's unresolved purchase neither locks nor is released from here
@@ -189,10 +191,10 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
 
   async function submit() {
     if (FIXTURE !== null) return setStep({ name: "error", message: FIXTURE_MESSAGE }); // fixture pages never reach the wallet
-    if (inFlight || isRunning(purchaseFlow.get()) || !address || pendingStore.list().some(buyConflict(address))) return; // duplicate-send guard
-    inFlight = true;
-    const account = address!;
+    if (!address || inFlight.has(address.toLowerCase()) || isRunning(purchaseFlow.for(address)) || pendingStore.list().some(buyConflict(address))) return; // duplicate-send guard
     if (!next) return;
+    const account = address;
+    inFlight.add(account.toLowerCase());
     const batch = next.items;
     const key = itemsKey;
     try {
@@ -254,7 +256,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
         (s) => {
           // a confirmed purchase removes its candles from the draft; errors and replacements keep every item
           if (s.name === "done") consumeSavedDraft(batch.map((i) => i.style), batch.map((i) => i.wish));
-          setStep(s);
+          purchaseFlow.set(s, account);
           if (s.name === "approve-pending" || (s.name === "error" && s.approval)) qc.invalidateQueries();
           if (s.name === "done") {
             store.sync().then(() => onLit(s.firstId, s.quantity ?? batch.length));
@@ -263,7 +265,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
         },
       );
     } finally {
-      inFlight = false;
+      inFlight.delete(account.toLowerCase());
     }
   }
 
@@ -410,7 +412,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
                 : <a href={`${ETHERSCAN}/tx/${pendingBuy.hash}`} target="_blank" rel="noreferrer">View pending transaction</a>}
             </p>
             <IntentRecovery tx={pendingBuy} what="purchase" onCheck={() => recoverBuy(pendingBuy)}
-              onRelease={() => { pendingStore.remove(pendingBuy.hash); removeBuyIntent(pendingBuy.account); setStep(null); }} />
+              onRelease={(t) => { pendingStore.remove(t.hash); removeBuyIntent(t.account); purchaseFlow.clear(t.account); }} />
           </div>
         )}
       </div>
@@ -466,14 +468,23 @@ export function CandlePreview({ style }: { style: number }) {
 
 /**
  * Recovery controls for a saved transaction or intent: check again, reconcile by pasting the transaction hash from
- * the wallet (validated against account, chain, target, nonce and call), and a release that needs an explicit
- * confirmation that the wallet shows nothing sent.
+ * the wallet (validated against account, chain, target, nonce and call), and a release that is offered only after the
+ * chain verifies a cancellation of this exact attempt (its nonce consumed by a different transaction, nothing
+ * pending) and that re-verifies the saved attempt before removing it. An attempt with a known hash is never released
+ * here: Check again settles it from its own or its replacement's receipt.
  */
-export function IntentRecovery({ tx, what, onCheck, onRelease }: { tx: PendingTx; what: "purchase" | "claim"; onCheck: () => Promise<unknown> | void; onRelease: () => void }) {
+export function IntentRecovery({ tx, what, onCheck, onRelease, verify = verifyCancelled, release = releaseVerified }: {
+  tx: PendingTx; what: "purchase" | "claim"; onCheck: () => Promise<unknown> | void; onRelease: (t: PendingTx) => void;
+  verify?: (t: PendingTx) => Promise<CancelCheck>; release?: (t: PendingTx, remove: (t: PendingTx) => void) => Promise<CancelCheck>;
+}) {
   const [hash, setHash] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  // a verified cancellation of exactly this saved attempt (same placeholder, start time and nonce); anything else locks
+  const [verified, setVerified] = useState<PendingTx | null>(null);
+  const [cancelMsg, setCancelMsg] = useState<string | null>(null);
+  const sameAttempt = verified !== null && verified.hash === tx.hash && verified.createdAt === tx.createdAt && verified.nonce === tx.nonce;
+  useEffect(() => { if (!sameAttempt) setVerified(null); }, [tx.hash, tx.createdAt, tx.nonce]);
   const id = `reconcile-${what}`;
   async function reconcile(e: React.FormEvent) {
     e.preventDefault();
@@ -481,7 +492,23 @@ export function IntentRecovery({ tx, what, onCheck, onRelease }: { tx: PendingTx
     const r = await attachHash(tx, hash);
     setBusy(false);
     setMsg(r.ok ? { ok: true, text: "Transaction matched. Following its receipt…" } : { ok: false, text: r.reason });
-    if (r.ok) { setHash(""); await onCheck(); }
+    if (r.ok) { setHash(""); setVerified(null); await onCheck(); }
+  }
+  async function checkCancel() {
+    setBusy(true);
+    try {
+      const v = await verify(tx);
+      setVerified(v.ok ? v.tx : null);
+      setCancelMsg(v.ok ? null : v.reason);
+    } finally { setBusy(false); }
+  }
+  async function doRelease() {
+    if (!verified) return;
+    setBusy(true);
+    try {
+      const v = await release(verified, onRelease);
+      if (!v.ok) { setVerified(null); setCancelMsg(v.reason); }
+    } finally { setBusy(false); }
   }
   return (
     <div className="recovery">
@@ -498,14 +525,19 @@ export function IntentRecovery({ tx, what, onCheck, onRelease }: { tx: PendingTx
           {msg && <p id={`${id}-msg`} className={msg.ok ? "fine" : "bad"}>{msg.text}</p>}
         </form>
       )}
-      {!confirming ? (
-        <button type="button" className="link" onClick={() => setConfirming(true)}>My wallet shows this {what} was never sent or was cancelled</button>
+      {!tx.intent ? (
+        <p className="fine">If you cancelled or sped it up in your wallet, Check again recognises the replacement once it is mined. It stays locked until then.</p>
+      ) : !sameAttempt ? (
+        <div className="confirm-release">
+          <button type="button" className="link" disabled={busy} onClick={checkCancel}>I cancelled it in my wallet: verify the cancellation</button>
+          {cancelMsg && <p className="bad" role="alert">{cancelMsg}</p>}
+        </div>
       ) : (
         <div className="confirm-release" role="group" aria-label="Confirm release">
-          <p>Release only if your wallet's activity shows no sent or pending {what}. If it was sent, releasing could let you {what === "purchase" ? "buy the same candles twice" : "send a second claim"}.</p>
+          <p>Verified on Ethereum: nonce {verified!.nonce} of your account was used by a different transaction and nothing is pending, so this {what} can no longer be sent. Releasing unlocks {what === "purchase" ? "this draft" : "Claim"}; it is checked once more first.</p>
           <div className="pending-acts">
-            <button type="button" className="btn danger" onClick={onRelease}>Release the {what}</button>
-            <button type="button" className="link" onClick={() => setConfirming(false)}>Keep it locked</button>
+            <button type="button" className="btn danger" disabled={busy} onClick={doRelease}>Release the {what}</button>
+            <button type="button" className="link" onClick={() => setVerified(null)}>Keep it locked</button>
           </div>
         </div>
       )}

@@ -30,6 +30,13 @@ export interface StoreState {
   updatedAt: number | null;
 }
 
+/** A page inside the verified total came back empty (or out of order): the register is incomplete. */
+export class IncompleteSync extends Error {
+  constructor(readonly firstMissing: number, readonly total: number) {
+    super(`Candle records from #${firstMissing} of ${total} could not be read yet; the list is incomplete.`);
+  }
+}
+
 const CACHE_KEY = `everlight:v2:candles:${GARDEN.toLowerCase()}`;
 
 /**
@@ -87,13 +94,20 @@ export class CandleStore {
         while (next <= total) {
           const limit = Math.min(PAGE_SIZE, total - next + 1);
           const page = await this.source.page(next, limit);
-          if (page.length === 0) break;
-          this.set({ candles: [...this.state.candles, ...page] });
-          next += page.length;
+          // totalCandles and getCandles are separate latest-block reads, so an RPC serving an older snapshot can
+          // return a valid empty page for ids the verified total already covers: that is incomplete data, not the
+          // end of the register. Keep the total and every earlier record, and let Retry resume at this id.
+          if (page.length === 0) throw new IncompleteSync(next, total);
+          // only consecutive ids are accepted, so a retry always resumes with the first missing one
+          const fresh = page.filter((c, i) => c.id === next + i).slice(0, limit);
+          if (fresh.length === 0) throw new IncompleteSync(next, total);
+          this.set({ candles: [...this.state.candles, ...fresh] });
+          next += fresh.length;
         }
         this.persist();
         this.set({ loading: false, updatedAt: Date.now() });
       } catch (e) {
+        if (e instanceof IncompleteSync) this.persist(); // the records that did load are still good
         this.set({ loading: false, error: e instanceof Error ? e.message : String(e) });
       } finally {
         this.syncing = null;

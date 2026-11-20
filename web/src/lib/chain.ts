@@ -149,3 +149,47 @@ export async function completeMeta(tx: PendingTx): Promise<PendingTx> {
   if (next !== tx && pendingStore.list().some((t) => t.hash === tx.hash)) pendingStore.add(next);
   return next;
 }
+
+export type CancelCheck = { ok: true; tx: PendingTx } | { ok: false; reason: string };
+
+/** The saved entry for exactly this attempt (same placeholder or hash, account, start time and nonce), if still saved. */
+export function savedAttempt(tx: PendingTx, storage?: Storage | null): PendingTx | null {
+  return pendingStore.list(storage).find((t) => t.hash === tx.hash && t.kind === tx.kind && t.account.toLowerCase() === tx.account.toLowerCase()
+    && t.createdAt === tx.createdAt && t.nonce === tx.nonce) ?? null;
+}
+
+/**
+ * Verified cancellation of one saved attempt that has no known transaction hash. It holds only when the chain shows
+ * the attempt can no longer be mined: every nonce from the saved one up to the account's mined count was consumed by a
+ * transaction that is not this call (a cancel or another transaction replaced it), and nothing is pending. A nonce
+ * that is still unused, a pending transaction, an unreadable RPC or a matching transaction never counts: missing
+ * evidence is not proof that nothing was sent. An attempt with a known hash is never released here; Check again
+ * settles it from its own or its replacement's receipt.
+ */
+export async function verifyCancelled(tx: PendingTx, client: IntentClient = intentClient): Promise<CancelCheck> {
+  if (!tx.intent) return { ok: false, reason: "This transaction's hash is known, so it is settled from its receipt: use Check again. A cancellation in your wallet is recognised there." };
+  let at: Awaited<ReturnType<typeof resolveIntent>>;
+  try {
+    at = await resolveIntent(client, tx);
+  } catch {
+    return { ok: false, reason: "Your account's transactions could not be read from Ethereum, so a cancellation cannot be verified. It stays locked; try again in a moment." };
+  }
+  if (at.kind === "not-found") return { ok: true, tx };
+  if (at.kind === "found") return { ok: false, reason: "A matching transaction was mined from your account, so this was sent. Use Check again to follow its receipt." };
+  if (at.kind === "pending") return { ok: false, reason: `Nonce ${tx.nonce ?? "?"} of your account has not been used by a mined transaction yet, so this may still be pending in your wallet. To cancel it, use your wallet's cancel (or send any transaction from this account); once that is mined, verify again.` };
+  return { ok: false, reason: `${at.reason} It stays locked.` };
+}
+
+/**
+ * Release a saved attempt only after re-validating it: the exact saved entry must still be there, and its cancellation
+ * is verified again against the chain at the moment of release. Returns why it stays locked otherwise.
+ */
+export async function releaseVerified(tx: PendingTx, remove: (t: PendingTx) => void, client: IntentClient = intentClient, storage?: Storage | null): Promise<CancelCheck> {
+  const cur = savedAttempt(tx, storage);
+  if (!cur) return { ok: false, reason: "This attempt is no longer saved in this browser (another tab may have settled it)." };
+  const v = await verifyCancelled(cur, client);
+  if (!v.ok) return v;
+  if (!savedAttempt(cur, storage)) return { ok: false, reason: "This attempt changed while it was being checked; check again." };
+  remove(cur);
+  return v;
+}

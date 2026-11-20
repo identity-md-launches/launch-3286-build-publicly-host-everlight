@@ -209,6 +209,57 @@ function removeOne(storage: Storage | null, id: string) {
   } catch { /* ignore */ }
 }
 
+/**
+ * Cross-tab mutual exclusion for writers of one existing attempt. In the browser: a Web Lock named after the attempt
+ * (navigator.locks.request, waiting mode), which is shared by every tab of this origin, so the read, comparison and
+ * write of a compare-and-update cannot interleave with another tab's. Without Web Locks (insecure contexts, very old
+ * browsers) an in-page queue serialises this tab's writers; tombstones still stop settled attempts being restored.
+ * Critical sections are synchronous storage work only, so they never wait on one another (no deadlock).
+ */
+export type AttemptLock = <T>(name: string, f: () => T) => Promise<T>;
+const queues = new Map<string, Promise<unknown>>();
+export const inPageLock: AttemptLock = <T,>(name: string, f: () => T): Promise<T> => {
+  const prev = queues.get(name) ?? Promise.resolve();
+  const run = prev.then(() => f(), () => f());
+  const tail = run.catch(() => undefined);
+  queues.set(name, tail);
+  void tail.then(() => { if (queues.get(name) === tail) queues.delete(name); });
+  return run;
+};
+export const browserLock: AttemptLock = <T,>(name: string, f: () => T): Promise<T> => {
+  let locks: LockManager | undefined;
+  try { locks = typeof navigator !== "undefined" ? (navigator as Navigator & { locks?: LockManager }).locks : undefined; } catch { locks = undefined; }
+  if (!locks) return inPageLock(name, f);
+  return locks.request(name, { mode: "exclusive" }, () => f()) as Promise<T>;
+};
+let attemptLock: AttemptLock = browserLock;
+/** Tests install a lock shared by their simulated tabs; null restores the browser lock. */
+export function setAttemptLock(l: AttemptLock | null) { attemptLock = l ?? browserLock; }
+const withAttempt = <T,>(attempt: string, f: () => T): Promise<T> => attemptLock(`everlight-attempt-${attempt}`, f);
+
+/** The compare-and-update itself; only ever called inside withAttempt for the same attempt. */
+function casNow(attempt: string, f: (cur: PendingTx) => PendingTx, storage: Storage | null, expectHash?: string): { result: "updated" | "missing" | "failed"; current: PendingTx | null } {
+  const inMem = memFor(storage).find((m) => attemptOf(m.tx) === attempt)?.tx;
+  const matches = (t: PendingTx) => expectHash === undefined || t.hash.toLowerCase() === expectHash.toLowerCase();
+  const cur = readOne(storage, attempt);
+  if (cur && matches(cur)) {
+    const next = { ...f(cur), attempt };
+    if (!writeOne(storage, next)) return { result: "failed", current: cur };
+    const now = readOne(storage, attempt);
+    if (now === null) return { result: "missing", current: null }; // settled meanwhile: our write was withdrawn
+    dropMem(storage, attempt);
+    pendingChanged();
+    return { result: "updated", current: now };
+  }
+  if (!cur && inMem && matches(inMem) && !tombstoned(storage, attempt)) {
+    const next = { ...f(inMem), attempt };
+    keepMem(storage, next);
+    pendingChanged();
+    return { result: "updated", current: next };
+  }
+  return { result: "missing", current: cur ?? (inMem && !tombstoned(storage, attempt) ? inMem : null) };
+}
+
 /** Pending transaction hashes survive reloads so a closed tab can recover its receipt. */
 export const pendingStore = {
   list(storage: Storage | null = safeStorage()): PendingTx[] {
@@ -259,38 +310,52 @@ export const pendingStore = {
     return "saved";
   },
   /**
-   * Replace this attempt's entry (its intent) with the sent transaction in one write. The intent and its sent hash
-   * share one attempt id, so no other attempt's entry is touched. Never throws: if the write fails the intent stays
-   * saved and this page holds the sent hash in memory. Returns whether the sent entry itself was saved.
+   * Replace this attempt's entry (its intent) with the sent transaction, as one critical section under the attempt's
+   * cross-tab lock (see withAttempt). It writes only while the saved entry is still this attempt's intent (or the same
+   * hash, or nothing was saved yet): when another tab already attached a different real hash to the attempt (a pasted
+   * hash, Match), that entry is kept and returned, never overwritten. A settled attempt is never written back. Never
+   * throws: if the write fails the intent stays saved and this page holds the sent hash in memory.
+   * saved: the sent entry (or the newer entry another tab attached) is what storage now holds. current: that entry.
    */
-  replace(attempt: string, tx: PendingTx, storage: Storage | null = safeStorage()): boolean {
-    const next = { ...tx, attempt };
-    const saved = writeOne(storage, next);
-    if (saved) dropMem(storage, attempt); else keepMem(storage, next);
-    pendingChanged();
-    return saved;
+  replace(attempt: string, tx: PendingTx, storage: Storage | null = safeStorage()): Promise<{ saved: boolean; current: PendingTx | null }> {
+    return withAttempt(attempt, () => {
+      const next = { ...tx, attempt };
+      const cur = readOne(storage, attempt);
+      if (cur && !cur.intent && cur.hash.toLowerCase() !== next.hash.toLowerCase()) return { saved: true, current: cur };
+      const saved = writeOne(storage, next);
+      if (saved) dropMem(storage, attempt); else keepMem(storage, next);
+      pendingChanged();
+      return { saved, current: saved ? readOne(storage, attempt) : next };
+    });
   },
   /**
-   * Compare-and-update: change this attempt's entry only while it is still saved (and, when given, still has the
-   * expected hash). A settled or released attempt is never resurrected. "updated" | "missing" | "failed".
+   * Atomic compare-and-update across tabs: the read, the expected-hash comparison and the write of this attempt run as
+   * ONE critical section under the attempt's cross-tab lock (Web Locks; see withAttempt), which every writer of an
+   * existing attempt (replace, metadata reconciliation, Match/attachHash, the post-broadcast fallback) takes too. So no
+   * other tab can attach a hash between this comparison and this write. The entry changes only while it is still saved
+   * (and, when given, still has the expected hash). A writer whose expected hash changed gets the CURRENT entry back,
+   * without overwriting it; callers check only that returned entry. A settled attempt is never resurrected.
    */
-  update(attempt: string, f: (cur: PendingTx) => PendingTx, storage: Storage | null = safeStorage(), expectHash?: string): "updated" | "missing" | "failed" {
-    const inMem = memFor(storage).find((m) => attemptOf(m.tx) === attempt)?.tx;
-    const matches = (t: PendingTx) => expectHash === undefined || t.hash.toLowerCase() === expectHash.toLowerCase();
-    const cur = readOne(storage, attempt);
-    if (cur && matches(cur)) {
-      const next = { ...f(cur), attempt };
-      if (!writeOne(storage, next)) return "failed";
-      if (readOne(storage, attempt) === null) return "missing"; // settled meanwhile: our write was withdrawn
-      pendingChanged();
-      return "updated";
-    }
-    if (!cur && inMem && matches(inMem) && !tombstoned(storage, attempt)) {
-      keepMem(storage, { ...f(inMem), attempt });
-      pendingChanged();
-      return "updated";
-    }
-    return "missing";
+  compareAndUpdate(attempt: string, f: (cur: PendingTx) => PendingTx, storage: Storage | null = safeStorage(), expectHash?: string): Promise<{ result: "updated" | "missing" | "failed"; current: PendingTx | null }> {
+    return withAttempt(attempt, () => casNow(attempt, f, storage, expectHash));
+  },
+  /** compareAndUpdate, answering only the result. "updated" | "missing" | "failed". */
+  async update(attempt: string, f: (cur: PendingTx) => PendingTx, storage: Storage | null = safeStorage(), expectHash?: string): Promise<"updated" | "missing" | "failed"> {
+    return (await this.compareAndUpdate(attempt, f, storage, expectHash)).result;
+  },
+  /**
+   * After a broadcast whose tracking failed: keep this attempt on its sent hash. Under the attempt's lock, an intent is
+   * replaced by the sent entry, any other saved entry of the attempt is kept, and a missing (not settled) one is added.
+   */
+  keepSent(attempt: string, sent: PendingTx, storage: Storage | null = safeStorage()): Promise<void> {
+    return withAttempt(attempt, () => {
+      const r = casNow(attempt, (t) => (t.intent ? { ...sent, attempt } : t), storage);
+      if (r.result === "missing" && !tombstoned(storage, attempt)) {
+        const next = { ...sent, attempt };
+        if (writeOne(storage, next)) dropMem(storage, attempt); else keepMem(storage, next);
+        pendingChanged();
+      }
+    });
   },
   /** Remove exactly one attempt (saved copy and memory fallback). Other attempts, even with the same placeholder hash, stay. */
   removeAttempt(attempt: string, storage: Storage | null = safeStorage()) {
@@ -458,6 +523,9 @@ let flowStep: Step | null = null;
 let flowAccount: string | null = null;
 let flowAttempt: string | null = null;
 const flowSubs = new Set<() => void>();
+/** Attempts released because their record settled elsewhere; their still-running callbacks may not re-lock the UI. */
+const releasedAttempts = new Set<string>();
+const releaseSubs = new Set<(account: string, attempt: string) => void>();
 const notifyFlow = () => flowSubs.forEach((f) => f());
 export const purchaseFlow = {
   get: () => flowStep,
@@ -481,6 +549,7 @@ export const purchaseFlow = {
    * running or uncertain. A delayed receipt or callback of an older attempt never overwrites a newer attempt.
    */
   report(attempt: string, s: Step, account: string): boolean {
+    if (releasedAttempts.has(attempt) && isRunning(s)) return false;
     if (flowAttempt !== null && flowAttempt !== attempt && isRunning(flowStep)) return false;
     this.set(s, account, attempt);
     return true;
@@ -498,10 +567,29 @@ export const purchaseFlow = {
     flowSubs.add(f);
     return () => { flowSubs.delete(f); };
   },
+  /** Called with (account, attempt) when an attempt shown here was settled elsewhere and its UI lock released. */
+  onRelease(f: (account: string, attempt: string) => void) {
+    releaseSubs.add(f);
+    return () => { releaseSubs.delete(f); };
+  },
+  /** Was this attempt released because another tab (or its receipt elsewhere) settled it? */
+  released: (attempt: string) => releasedAttempts.has(attempt),
 };
-// another tab settled or matched this tab's uncertain attempt: release only that attempt's UI lock
+export const SETTLED_ELSEWHERE_MESSAGE =
+  "That purchase was settled in another tab or by its receipt, so this tab stopped waiting for it. The garden and your balances were re-read; check the transaction below.";
+// another tab settled this tab's uncertain or pending attempt (its saved record is gone): release only that attempt's
+// UI lock, keep its transaction link, and tell the panel so it can drop that run's in-flight lock. A delayed step from
+// the released attempt's still-running wait can no longer re-lock the form (see report).
 pendingStore.subscribe(() => {
-  if (flowAttempt && (flowStep?.name === "buy-unknown" || flowStep?.name === "approve-unknown") && !pendingStore.get(flowAttempt)) purchaseFlow.clear(flowAccount ?? "", flowAttempt);
+  const s = flowStep;
+  const a = flowAttempt;
+  if (!a || !s || (s.name !== "buy-unknown" && s.name !== "approve-unknown" && s.name !== "buy-pending")) return;
+  if (pendingStore.get(a)) return;
+  const account = flowAccount ?? "";
+  releasedAttempts.add(a);
+  if (s.name === "buy-pending") purchaseFlow.set({ name: "error", message: SETTLED_ELSEWHERE_MESSAGE, hash: s.hash }, flowAccount, a);
+  else purchaseFlow.clear(account, a);
+  releaseSubs.forEach((f) => f(account, a));
 });
 export const isRunning = (s: Step | null) => s !== null && s.name !== "done" && s.name !== "error";
 
@@ -624,7 +712,7 @@ export async function runPurchase(
         return s;
       }
       const aSent: PendingTx = { ...aIntent, hash: ah, intent: undefined };
-      pendingStore.replace(approveAttempt, aSent, deps.storage);
+      await pendingStore.replace(approveAttempt, aSent, deps.storage);
       step({ name: "approve-pending", hash: ah });
       let r: Receipt;
       try {
@@ -694,14 +782,16 @@ export async function runPurchase(
       hash, kind: "buy", account: deps.account, quantity: styles.length, createdAt: Date.now(),
       from: deps.account, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false, styles: [...styles], wishes: [...wishes], attempt,
     };
-    const saved = pendingStore.replace(attempt, sent, deps.storage);
-    step({ name: "buy-pending", hash });
-    const checked = saved ? await reconcileSent(deps, sent) : await reconcileSent(deps, sent).catch(() => sent!);
+    const rep = await pendingStore.replace(attempt, sent, deps.storage);
+    // another tab may already have attached this attempt's real hash (Match): follow the entry the comparison returned
+    const tracked: PendingTx = rep.current && !rep.current.intent ? rep.current : sent;
+    step({ name: "buy-pending", hash: tracked.hash });
+    const checked = rep.saved ? await reconcileSent(deps, tracked) : await reconcileSent(deps, tracked).catch(() => tracked);
     return await awaitBuy(deps, checked, step);
   } catch (e) {
     if (sent) {
       // a failure after broadcast (storage, RPC): keep this attempt pending and the draft locked, never a plain error
-      if (pendingStore.update(attempt, (t) => (t.intent ? sent! : t), deps.storage) === "missing") pendingStore.add(sent, deps.storage);
+      await pendingStore.keepSent(attempt, sent, deps.storage).catch(() => pendingStore.add(sent!, deps.storage));
       const s: Step = { name: "buy-unknown", hash: sent.hash, message: SENT_UNKNOWN_MESSAGE };
       step(s);
       return s;
@@ -750,8 +840,11 @@ export async function reconcileSent(
     const got = await deps.sentTx(tx.hash).catch(() => null);
     if (got) {
       const next: PendingTx = { ...tx, from: got.from, nonce: got.nonce, nonceChecked: true };
-      // compare-and-update: only while this attempt is still saved under this hash (never resurrect a settled one)
-      pendingStore.update(attemptOf(tx), () => next, deps.storage, tx.hash);
+      // atomic compare-and-update: only while this attempt is still saved under this hash (never resurrect a settled
+      // one, never overwrite a hash another tab attached). A changed entry is returned as it is now.
+      const r = await pendingStore.compareAndUpdate(attemptOf(tx), () => next, deps.storage, tx.hash);
+      if (r.result === "updated" && r.current) return r.current;
+      if (r.result === "missing" && r.current) return r.current;
       return next;
     }
     if (i < tries - 1) await pause(1500);

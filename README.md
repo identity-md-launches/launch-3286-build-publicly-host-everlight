@@ -1,3 +1,26 @@
+## Current revision (2026-11-20, revision 14): read first
+
+This round answers the 2 high findings from the review. Both reproduced and both are fixed; the answers are in `.imd-responses.json`. Commands, run from `web/`:
+
+| Command | Result |
+|---|---|
+| `npm ci` | installed from the committed lockfile |
+| `npx tsc --noEmit` | 0 errors |
+| `npx vitest run` | 17 files, **190 tests passed** (181 earlier, plus 9 new in `tests/revision14.test.ts`) |
+| `npm run build` | `tsc --noEmit && vite build`, built in about 3.5 s, exported to `dist/` with relative `./` asset URLs |
+| taste probe (`taste.mjs --out test/scratch/taste`, run with the machine's cached Playwright and Chromium 1246) | **16/16 passed** at 320, 390 and 1440 wide (`evidence/rev14/taste-probe.json`). The 390 screenshot still shows the headline, "Light a candle · 1 IMD", the sales status and the garden on the first screen |
+
+All tests are **mocked**: labelled in-memory storage shared by simulated tabs, a mocked wallet (wagmi actions) and mocked RPC reads and receipts. No funds and no chain writes were used. The only live check this round was the probe's render of the export. No new frame-time measurements or Pepe activity recordings were made: the garden code did not change, so the evidence from the earlier rounds still describes it.
+
+What changed:
+- **Atomic compare-and-update across tabs** (finding 4307f4bf). `pendingStore.compareAndUpdate` runs the read, the expected-hash comparison and the write of one attempt as one critical section under a Web Lock named `everlight-attempt-<id>`, which every tab of the origin shares. Every writer of an existing attempt takes the same lock: `replace` (the wallet's sent hash), `reconcileSent` and `completeMeta` (metadata), `attachHash` (Match) and the post-broadcast fallback `keepSent`. A writer whose expected hash changed gets the current entry back and writes nothing, and its caller checks only that returned entry. `replace` never overwrites a real hash another tab already attached; purchases and claims then follow that entry. Without Web Locks (insecure contexts, very old browsers), an in-page queue serialises this tab's writers.
+  - Control run: with a no-op lock, the reviewer's interleaving reproduces (`updated`/`updated`, H1 saved). With the lock, exactly one writer wins.
+- **Pending claims released when settled elsewhere** (finding 45488fbe). The Rewards panel now reconciles `pending` steps as well as `uncertain` ones by attempt ID. When the saved attempt is gone, the panel shows "That claim was settled in another tab or by its receipt…" with the transaction link kept, re-reads rewards and releases that run's in-flight lock. The lock is now a per-run token, so a newer run's lock is never released by an old attempt. `claimStepApplies` guards the still-running wait callback: a step from a released attempt cannot re-lock Claim, and a step from an old attempt never overwrites a newer one.
+  - The same rule now covers purchases: a `buy-pending` step whose attempt was settled in another tab shows the transaction link and releases that run's lock. A delayed running step from the released attempt cannot re-lock the form.
+- **Tests** (`tests/revision14.test.ts`, all mocked): the reviewer's paused-`setItem` interleaving, B committing first (H2 kept), two Match commits racing, `replace` and `reconcileSent` against a hash attached elsewhere, the Web Lock name and mode, and a render of `RewardsPanel` as tab A at 390 wide. That render clicks Claim 2 IMD (hash 0xcc…, nonce 9, receipt never returned), lets tab B's `checkClaim` verify the receipt, and checks that tab A releases, keeps the link, re-reads rewards and starts a new claim. It also checks that the old wait's later timeout does not overwrite the new claim. With the panel's old uncertain-only condition put back, this render test fails.
+
+Limitations: the claim render test uses one jsdom document. Tab B is the same module calling `checkClaim` on shared storage, and the store notification stands in for the browser's cross-tab `storage` event. Real Web Locks were not exercised across two real browser tabs; the test checks that `navigator.locks.request` is called with the attempt's lock name in exclusive mode.
+
 ## Current revision (2026-11-20, revision 13): read first
 
 This round fixes the 11 high findings and 1 medium finding from the review. Each one is answered in `.imd-responses.json`. Commands, run from `web/`:

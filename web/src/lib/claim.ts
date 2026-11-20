@@ -20,7 +20,23 @@ export type ClaimStep = (
   | { s: "uncertain"; msg: string }
   | { s: "done"; hash: Hash; amount: bigint }
   | { s: "error"; msg: string }
+  /** The attempt's record was settled elsewhere (another tab, or its receipt): Claim is released, the link kept. */
+  | { s: "resolved"; msg: string; hash?: Hash }
 ) & { attempt?: string };
+
+export const CLAIM_SETTLED_ELSEWHERE =
+  "That claim was settled in another tab or by its receipt, so this tab stopped waiting for it. Your rewards were re-read.";
+const claimRunning = (s: ClaimStep | null) => !!s && (s.s === "wallet" || s.s === "pending" || s.s === "uncertain");
+/**
+ * May a step reported by a claim run replace the shown step? Not when the shown step is a running step of ANOTHER
+ * attempt (a delayed callback never overwrites a newer attempt), and not when it would put an attempt that was already
+ * settled elsewhere back into a running state. Its own final outcome (done/error) still replaces "resolved".
+ */
+export function claimStepApplies(cur: ClaimStep | null, next: ClaimStep, released: ReadonlySet<string>): boolean {
+  if (next.attempt && released.has(next.attempt) && claimRunning(next)) return false;
+  if (cur && cur.attempt && next.attempt && cur.attempt !== next.attempt && claimRunning(cur)) return false;
+  return true;
+}
 
 export interface ClaimVerdictLike { ok: boolean; amount?: bigint; message?: string; unverified?: boolean; hash: Hash }
 
@@ -99,11 +115,13 @@ export async function runClaim(deps: ClaimDeps, onStep0: (s: ClaimStep) => void)
   }
   const sent: PendingTx = { ...intent, hash, intent: undefined };
   // one write; if it fails the intent stays saved (a reload resolves it by nonce) and this page holds the hash
-  pendingStore.replace(attempt, sent, storage);
-  onStep({ s: "pending", hash });
+  const rep = await pendingStore.replace(attempt, sent, storage);
+  // another tab may already have attached this attempt's real hash: follow the entry the comparison returned
+  const tracked: PendingTx = rep.current && !rep.current.intent ? rep.current : sent;
+  onStep({ s: "pending", hash: tracked.hash });
   try {
-    await reconcileSent({ sentTx: deps.sentTx, storage }, sent).catch(() => sent);
-    const v = await deps.wait(hash);
+    await reconcileSent({ sentTx: deps.sentTx, storage }, tracked).catch(() => tracked);
+    const v = await deps.wait(tracked.hash);
     if (v.unverified) return end({ s: "uncertain", msg: v.message ?? CLAIM_UNCERTAIN_MESSAGE });
     pendingStore.removeAttempt(attempt, storage); // this claim attempt only
     return end(v.ok ? { s: "done", hash: v.hash, amount: v.amount ?? 0n } : { s: "error", msg: v.message ?? "The claim did not complete." });

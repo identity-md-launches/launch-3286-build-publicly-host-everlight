@@ -29,7 +29,16 @@ export function clearDraft() {
   try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* private mode */ }
 }
 /** One purchase at a time across remounts of this panel: a second click or a reopened form cannot send twice. */
-const inFlight = new Set<string>(); // per account: another account's open request never blocks this one
+/**
+ * Per account, the run that holds this tab's purchase lock (another account's open request never blocks this one).
+ * The token learns its attempt from the first step; when that attempt is settled in another tab, its lock is released
+ * here at once, and the old run's finally only deletes the lock while it still holds it.
+ */
+const inFlight = new Map<string, { attempt?: string }>();
+purchaseFlow.onRelease((account, attempt) => {
+  const k = account.toLowerCase();
+  if (inFlight.get(k)?.attempt === attempt) inFlight.delete(k);
+});
 
 /** Recover a purchase sent before a reload: the form stays locked on it until its receipt settles. */
 export function recoverBuy(tx: PendingTx): Promise<Step> {
@@ -228,7 +237,8 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
     if (!address || inFlight.has(address.toLowerCase()) || isRunning(purchaseFlow.for(address)) || pendingStore.list().some(buyConflict(address))) return; // duplicate-send guard
     if (!next) return;
     const account = address;
-    inFlight.add(account.toLowerCase());
+    const run: { attempt?: string } = {};
+    inFlight.set(account.toLowerCase(), run);
     const batch = next.items;
     const key = itemsKey;
     const quotedApproval = needApproval;
@@ -296,6 +306,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
         batch.map((i) => i.style),
         batch.map((i) => i.wish),
         (s, attempt) => {
+          run.attempt = attempt;
           // a confirmed purchase removes its candles from the draft; errors and replacements keep every item
           if (s.name === "done") consumeSavedDraft(batch.map((i) => i.style), batch.map((i) => i.wish));
           if (!purchaseFlow.report(attempt, s, account)) return;
@@ -307,7 +318,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
         },
       );
     } finally {
-      inFlight.delete(account.toLowerCase());
+      if (inFlight.get(account.toLowerCase()) === run) inFlight.delete(account.toLowerCase());
     }
   }
 

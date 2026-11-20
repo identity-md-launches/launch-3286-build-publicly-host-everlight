@@ -62,22 +62,19 @@ export async function attachHash(intent: PendingTx, hash: string, client: Pick<I
   const m = matchesIntent(intent, t);
   if (!m.ok) return m;
   const seen = t;
-  // compare-and-swap after the asynchronous lookup: attach only while this attempt is still saved with the placeholder
-  // the lookup started from. A removed (settled) attempt is never recreated; a changed one is returned as it is now.
-  const res = pendingStore.update(
+  // atomic compare-and-swap after the asynchronous lookup: under the attempt's cross-tab lock, attach only while this
+  // attempt is still saved with the placeholder the lookup started from. A removed (settled) attempt is never
+  // recreated; a changed one (another tab attached its hash first) is returned as it is now, never overwritten. The
+  // entry checked afterwards is exactly the one this comparison returned.
+  const res = await pendingStore.compareAndUpdate(
     attempt,
     (cur) => ({ ...cur, attempt, hash: seen.hash, intent: undefined, from: seen.from, nonce: seen.nonce, nonceChecked: true }),
     storage,
     intent.hash,
   );
-  if (res === "updated") {
-    const now = pendingStore.get(attempt, storage);
-    if (now && now.hash.toLowerCase() === seen.hash.toLowerCase()) return { ok: true, tx: now };
-    return { ok: false, settled: true, reason: ALREADY_RESOLVED, current: now };
-  }
-  if (res === "failed") return { ok: false, reason: "This browser could not save the matched hash. Nothing was changed; try again." };
-  const current = pendingStore.get(attempt, storage);
-  return { ok: false, settled: true, reason: ALREADY_RESOLVED, current };
+  if (res.result === "updated" && res.current && res.current.hash.toLowerCase() === seen.hash.toLowerCase()) return { ok: true, tx: res.current };
+  if (res.result === "failed") return { ok: false, reason: "This browser could not save the matched hash. Nothing was changed; try again." };
+  return { ok: false, settled: true, reason: ALREADY_RESOLVED, current: res.current };
 }
 
 export async function minedTx(hash: Hash): Promise<MinedTx | null> {
@@ -172,7 +169,11 @@ export async function completeMeta(tx: PendingTx): Promise<PendingTx> {
     const ago = BigInt(Math.ceil(Math.max(0, Date.now() - tx.createdAt) / 12_000) + 25);
     next = { ...next, block: (head > ago ? head - ago : 0n).toString() };
   }
-  if (next !== tx) pendingStore.update(attemptOf(tx), () => next, undefined, tx.hash); // compare-and-update
+  if (next !== tx) {
+    // atomic compare-and-update: a hash another tab attached meanwhile is kept and followed instead
+    const r = await pendingStore.compareAndUpdate(attemptOf(tx), () => next, undefined, tx.hash);
+    if (r.current && !r.current.intent) return r.current;
+  }
   return next;
 }
 

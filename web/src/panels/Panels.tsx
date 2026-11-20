@@ -11,7 +11,7 @@ import { BASESCAN, BASE_IMD, BASE_RECEIVER, ETHERSCAN, GARDEN, GARDEN_DEPLOY_BLO
 import { STYLE_NAMES, date, imd, short, safeChecksum } from "../lib/format";
 import { explainError } from "../lib/errors";
 import { FIXTURE_MESSAGE, attemptOf, pendingStore, type PendingTx } from "../lib/purchase";
-import { claimConflict, runClaim, webLock, type ClaimStep } from "../lib/claim";
+import { CLAIM_SETTLED_ELSEWHERE, claimConflict, claimStepApplies, runClaim, webLock, type ClaimStep } from "../lib/claim";
 import { IntentRecovery, liveWallet, walletRevision } from "./LightPanel";
 import { IncompleteIdsError, type Candle } from "../lib/candles";
 import { ConnectButton } from "../components/ConnectSheet";
@@ -216,7 +216,9 @@ export function RewardsPanel() {
   const st: ClaimStep = stOf && address && stOf.account.toLowerCase() === address.toLowerCase() ? stOf.step : { s: "idle" };
   const setStFor = (account: string) => (step: ClaimStep) => setStOf({ account, step });
   const setSt = (step: ClaimStep) => { if (address) setStFor(address)(step); };
-  const busy = useRef(new Set<string>());
+  // per account, the run holding this tab's claim lock; it learns its attempt from the first step, so settling that
+  // attempt elsewhere releases exactly this run's lock (a newer run's lock is never released by an old attempt)
+  const busy = useRef(new Map<string, { attempt?: string }>());
   // a claim (or claim intent) saved by this wallet in any tab or before a reload that has not settled: Claim stays
   // off until it does, so the same rewards are never requested twice. Locks are per account, across networks.
   const pendingVersion = useSyncExternalStore(pendingStore.subscribe, pendingStore.version);
@@ -226,11 +228,18 @@ export function RewardsPanel() {
   );
   const [checking, setChecking] = useState(false);
   // the local step is keyed by its claim attempt: once that attempt's record settles (here or in another tab) its
-  // uncertain step is released and the reward read refreshed; a newer saved attempt still locks Claim by itself
+  // pending or uncertain step is released, its transaction link kept, its in-flight lock dropped and the reward read
+  // refreshed; a newer saved attempt still locks Claim by itself
+  const released = useRef(new Set<string>());
   useEffect(() => {
-    if (!stOf || stOf.step.s !== "uncertain" || !stOf.step.attempt) return;
-    if (pendingStore.get(stOf.step.attempt)) return;
-    setStOf({ account: stOf.account, step: { s: "error", msg: "That claim attempt was resolved in another tab or by its receipt. Your rewards were re-read.", attempt: stOf.step.attempt } });
+    if (!stOf || (stOf.step.s !== "uncertain" && stOf.step.s !== "pending") || !stOf.step.attempt) return;
+    const attempt = stOf.step.attempt;
+    if (pendingStore.get(attempt)) return;
+    released.current.add(attempt);
+    const k = stOf.account.toLowerCase();
+    if (busy.current.get(k)?.attempt === attempt) busy.current.delete(k);
+    const hash = stOf.step.s === "pending" ? stOf.step.hash : undefined;
+    setStOf({ account: stOf.account, step: { s: "resolved", msg: CLAIM_SETTLED_ELSEWHERE, hash, attempt } });
     qc.invalidateQueries();
   }, [pendingVersion, stOf]);
   async function recheck(matched?: PendingTx) {
@@ -254,7 +263,8 @@ export function RewardsPanel() {
     if (!address || busy.current.has(address.toLowerCase())) return;
     if (FIXTURE !== null) return setSt({ s: "error", msg: FIXTURE_MESSAGE }); // fixture pages never reach the wallet
     const account = address;
-    busy.current.add(account.toLowerCase());
+    const run: { attempt?: string } = {};
+    busy.current.set(account.toLowerCase(), run);
     try {
       await runClaim({
         account: address,
@@ -272,10 +282,15 @@ export function RewardsPanel() {
         },
         withLock: webLock,
         explain: (e) => explainError(e),
-      }, setStFor(account));
+      }, (step) => {
+        if (step.attempt) run.attempt = step.attempt;
+        // this run's own attempt only: a delayed receipt or timeout never overwrites a newer attempt, and a running
+        // step of an attempt already settled elsewhere never re-locks Claim
+        setStOf((cur) => (claimStepApplies(cur?.account === account ? cur.step : null, step, released.current) ? { account, step } : cur));
+      });
       qc.invalidateQueries();
     } finally {
-      busy.current.delete(account.toLowerCase());
+      if (busy.current.get(account.toLowerCase()) === run) busy.current.delete(account.toLowerCase());
     }
   }
   const d = r.data;
@@ -304,6 +319,7 @@ export function RewardsPanel() {
         {st.s === "pending" && <p>Claim sent. Waiting for its receipt… <a href={`${ETHERSCAN}/tx/${st.hash}`} target="_blank" rel="noreferrer">View transaction</a></p>}
         {st.s === "done" && <p>Claimed {imd(st.amount)} IMD. <a href={`${ETHERSCAN}/tx/${st.hash}`} target="_blank" rel="noreferrer">View transaction</a></p>}
         {st.s === "error" && <p className="bad" role="alert">{st.msg}</p>}
+        {st.s === "resolved" && <p>{st.msg}{st.hash && <>{" "}<a href={`${ETHERSCAN}/tx/${st.hash}`} target="_blank" rel="noreferrer">View transaction</a></>}</p>}
         {st.s === "uncertain" && !pendingClaim && <p className="bad" role="alert">{st.msg}</p>}
         {pendingClaim && st.s !== "pending" && st.s !== "wallet" && (
           <div className="pending-box" role="status">

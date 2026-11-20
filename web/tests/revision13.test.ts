@@ -97,12 +97,13 @@ describe("275eb15b: settling one attempt can never erase another tab's newer int
     expect(injected).toBe(true);
     expect(storedEntries(asS(st)).map((t) => t.attempt)).toEqual(["B"]);
   });
-  it("a delayed compare-and-update of a settled attempt withdraws its own write (no resurrection)", () => {
+  it("a delayed compare-and-update of a settled attempt withdraws its own write (no resurrection)", async () => {
     const st = new SharedStorage();
     pendingStore.persist(buyIntent("A", 1), asS(st));
     let fired = false;
     st.onGet = (k) => { if (!fired && k.includes(":x:")) { fired = true; st.onGet = null; pendingStore.removeAttempt("A", asS(st)); } };
-    pendingStore.update("A", (t) => ({ ...t, nonce: 9 }), asS(st));
+    expect(await pendingStore.update("A", (t) => ({ ...t, nonce: 9 }), asS(st))).toBe("missing");
+    expect(fired).toBe(true);
     expect(storedEntries(asS(st))).toHaveLength(0);
   });
   it("entries saved by an earlier build as one list are migrated, not lost", () => {

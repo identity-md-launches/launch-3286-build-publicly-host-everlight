@@ -16,7 +16,7 @@ vi.mock("../src/lib/chain", async (orig) => {
     attachHash: async (tx: import("../src/lib/purchase").PendingTx, h: string) => {
       const next = { ...tx, attempt: real.savedAttempt(tx)?.attempt ?? tx.attempt, hash: h as Hash, intent: undefined, nonce: 9, nonceChecked: true };
       const { pendingStore, attemptOf } = await import("../src/lib/purchase");
-      pendingStore.replace(attemptOf(tx), next);
+      await pendingStore.replace(attemptOf(tx), next);
       return { ok: true, tx: next };
     },
   };
@@ -169,11 +169,11 @@ describe("2. durable attempt ids: old callbacks only touch their own attempt (tw
     expect(purchaseFlow.report("B", { name: "done", hash: H("b"), firstId: 2 }, ME)).toBe(true);
     purchaseFlow.set(null);
   });
-  it("compare-and-update: a nonce reconciliation never resurrects an attempt another tab settled", () => {
+  it("compare-and-update: a nonce reconciliation never resurrects an attempt another tab settled", async () => {
     const st = new SharedStorage();
     pendingStore.persist({ hash: H("a"), kind: "buy", account: ME, createdAt: 1, attempt: "A" }, asS(st));
     pendingStore.removeAttempt("A", asS(st));
-    expect(pendingStore.update("A", (t) => ({ ...t, nonce: 9, nonceChecked: true }), asS(st), H("a"))).toBe("missing");
+    expect(await pendingStore.update("A", (t) => ({ ...t, nonce: 9, nonceChecked: true }), asS(st), H("a"))).toBe("missing");
     expect(saved(st)).toHaveLength(0);
   });
 });

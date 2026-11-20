@@ -102,7 +102,11 @@ their structure from the previous revision (below); this revision restyles them 
   line above the button says nothing was sent and every wish is kept.
 - **Pending claim** (revision 8). It reuses `.pending-box` / `.pending-acts` from the purchase lock: a status line with
   the pending claim link, a Check again button (`.btn`) and a Forget link (`.link`). The Claim button (`.cta.wide`)
-  reads "Waiting for the earlier claim" and is disabled. The
+  reads "Waiting for the earlier claim" and is disabled. Settled elsewhere (revision 14): when another tab settles
+  a pending or uncertain claim, the steps area (`.steps`, `aria-live="polite"`) shows a plain status paragraph, "That
+  claim was settled in another tab or by its receipt…", with a "View transaction" link when the hash is known. The
+  Claim button becomes active again. A purchase settled elsewhere shows the same kind of line in the form's error slot,
+  also with its transaction link. The
 purchase preview is now a pixel composition (arch, hero pedestal, chosen candle sprite, 4 flame frames at 3x)
 in `LightPanel.tsx` `CandlePreview`. Style picker and My Candles use the pixel candle sprites (`img.px`,
 `image-rendering: pixelated`).

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { TX_GAS_CAP } from "../src/config";
 import { consumeDraft, planBatches } from "../src/lib/split";
 import { motionPlan, shouldDraw } from "../src/garden/motion";
-import { buyIntentHash, pendingStore, runPurchase, STORAGE_MESSAGE, type PurchaseDeps, type Step } from "../src/lib/purchase";
+import { PENDING_STORAGE_KEY, buyIntentHash, pendingStore, runPurchase, STORAGE_MESSAGE, type PurchaseDeps, type Step } from "../src/lib/purchase";
 import { CandleStore, type CandleSource } from "../src/lib/candles";
 import { MIN_SECTORS, sectorPlan } from "../src/garden/layout";
 import { stairsOf } from "../src/garden/scenery";
@@ -94,8 +94,10 @@ describe("storage failures around a purchase (finding 1adfd347)", () => {
     expect(calls).toEqual(["buy", "wait"]);
     expect(r.name).toBe("buy-unknown");
     expect(steps.some((s) => s.name === "buy-pending")).toBe(true);
-    // the saved intent plus the sent hash held in memory: the UI guard sees both
-    expect(pendingStore.list(st as unknown as Storage).map((t) => t.hash)).toEqual([buyIntentHash("0xabc"), "0xb7"]);
+    // revision 12: one attempt id. Storage still holds the intent (a reload resolves it); this page overlays the sent
+    // hash held in memory for the same attempt, so the UI guard locks on the real hash
+    expect(pendingStore.list(st as unknown as Storage).map((t) => t.hash)).toEqual(["0xb7"]);
+    expect(JSON.parse(st.getItem(PENDING_STORAGE_KEY) ?? "[]").map((t: { hash: string }) => t.hash)).toEqual([buyIntentHash("0xabc")]);
   });
 });
 

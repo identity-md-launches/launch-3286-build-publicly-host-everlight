@@ -1,6 +1,6 @@
 import type { Hash } from "viem";
 import { intentHash, isProvenRejection } from "./intent";
-import { pendingStore, reconcileSent, type PendingTx } from "./purchase";
+import { WALLET_CHANGED_MESSAGE, attemptOf, newAttemptId, pendingStore, reconcileSent, walletStillBound, type PendingTx, type WalletState } from "./purchase";
 
 /**
  * Manual reward claim with a durable intent. Order (the fix for "claims sent before an intent was recorded"):
@@ -34,6 +34,9 @@ export interface ClaimDeps {
   /** Cross-tab mutual exclusion while the intent is written (Web Locks when available). */
   withLock?: <T>(name: string, f: () => Promise<T> | T) => Promise<T | "busy">;
   explain: (e: unknown) => string;
+  /** Live wallet account and chain, re-read immediately before the claim is sent. */
+  walletState?: () => Promise<WalletState>;
+  newAttempt?: () => string;
 }
 
 export const CLAIM_STORAGE_MESSAGE =
@@ -65,36 +68,40 @@ export async function runClaim(deps: ClaimDeps, onStep: (s: ClaimStep) => void):
   }
   const intent: PendingTx = {
     hash: intentHash("claim", account), kind: "claim", intent: true, account, createdAt: Date.now(),
-    from: account, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false,
+    from: account, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false, attempt: (deps.newAttempt ?? newAttemptId)(),
   };
+  const attempt = attemptOf(intent);
   const write = () => pendingStore.persistExclusive(intent, conflict, storage);
   const saved = deps.withLock ? await deps.withLock(`everlight-claim-${account.toLowerCase()}`, write) : write();
   if (saved === "busy" || saved === "conflict") return end({ s: "error", msg: CLAIM_BUSY_MESSAGE });
   if (saved !== "saved") return end({ s: "error", msg: CLAIM_STORAGE_MESSAGE });
 
+  if (deps.walletState && !(await walletStillBound(account, deps.walletState))) {
+    pendingStore.removeAttempt(attempt, storage);
+    return end({ s: "error", msg: WALLET_CHANGED_MESSAGE });
+  }
   let hash: Hash;
   try {
     hash = await deps.send(request);
   } catch (e) {
     if (isProvenRejection(e)) {
-      pendingStore.remove(intent.hash, storage);
+      pendingStore.removeAttempt(attempt, storage);
       return end({ s: "error", msg: deps.explain(e) });
     }
     return end({ s: "uncertain", msg: CLAIM_UNCERTAIN_MESSAGE });
   }
   const sent: PendingTx = { ...intent, hash, intent: undefined };
   // one write; if it fails the intent stays saved (a reload resolves it by nonce) and this page holds the hash
-  pendingStore.replace(intent.hash, sent, storage);
+  pendingStore.replace(attempt, sent, storage);
   onStep({ s: "pending", hash });
   try {
     await reconcileSent({ sentTx: deps.sentTx, storage }, sent).catch(() => sent);
     const v = await deps.wait(hash);
     if (v.unverified) return end({ s: "uncertain", msg: v.message ?? CLAIM_UNCERTAIN_MESSAGE });
-    pendingStore.remove(hash, storage);
-    pendingStore.remove(intent.hash, storage);
+    pendingStore.removeAttempt(attempt, storage); // this claim attempt only
     return end(v.ok ? { s: "done", hash: v.hash, amount: v.amount ?? 0n } : { s: "error", msg: v.message ?? "The claim did not complete." });
   } catch {
-    return end({ s: "uncertain", msg: "Your claim was sent, but its receipt could not be read yet. It stays saved and Claim stays off until it settles." });
+    return end({ s: "uncertain", msg: "Your claim may have been sent, but its receipt could not be read yet. It stays saved and Claim stays off until it settles." });
   }
 }
 

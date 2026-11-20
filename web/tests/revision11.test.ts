@@ -14,7 +14,7 @@ import { act } from "react";
 import type { Hash } from "viem";
 import { CandleStore, type Candle, type CandleSource } from "../src/lib/candles";
 import { countLine } from "../src/lib/counts";
-import { pendingStore, purchaseFlow, runPurchase, type PendingTx, type PurchaseDeps } from "../src/lib/purchase";
+import { attemptOf, pendingStore, purchaseFlow, runPurchase, type PendingTx, type PurchaseDeps } from "../src/lib/purchase";
 import { intentHash, type IntentClient } from "../src/lib/intent";
 import { releaseVerified, verifyCancelled } from "../src/lib/chain";
 import { explainError } from "../src/lib/errors";
@@ -98,15 +98,15 @@ describe("0751d676: Release needs a verified cancellation of this exact attempt"
       const broken = { ...rpc({ mined: 8 }).c, nonceAt: async () => { throw new Error("rpc down"); } };
       expect((await verifyCancelled(intentOf(kind), broken)).ok).toBe(false);
     });
-    it(`${kind}: nonce 7 consumed by a 0-ETH self-send (a cancel) verifies, and release removes only that attempt`, async () => {
+    it(`${kind} (revision 12): nonce 7 consumed by an unrelated self-send is NOT proof of cancellation; nothing is released`, async () => {
       const st = new FakeStorage();
       pendingStore.persist(intentOf(kind), st);
       pendingStore.persist({ ...intentOf(kind), hash: intentHash(kind, B), account: B, from: B }, st);
       const { c } = rpc({ mined: 8, at7: { to: ME, input: "0x" } });
-      expect((await verifyCancelled(intentOf(kind), c)).ok).toBe(true);
-      const r = await releaseVerified(intentOf(kind), (t) => pendingStore.remove(t.hash, st), c, st);
-      expect(r.ok).toBe(true);
-      expect(pendingStore.list(st).map((t) => t.account)).toEqual([B]);
+      expect((await verifyCancelled(intentOf(kind), c)).ok).toBe(false);
+      const r = await releaseVerified(intentOf(kind), (t) => pendingStore.removeAttempt(attemptOf(t), st), c, st);
+      expect(r.ok).toBe(false);
+      expect(pendingStore.list(st).map((t) => t.account).sort()).toEqual([ME, B].sort());
     });
     it(`${kind}: a different saved attempt (new start time) is not released by an earlier verification`, async () => {
       const st = new FakeStorage();
@@ -120,32 +120,25 @@ describe("0751d676: Release needs a verified cancellation of this exact attempt"
     const sent: PendingTx = { ...intentOf("buy"), hash: H("a"), intent: undefined };
     expect((await verifyCancelled(sent, rpc({ mined: 8, at7: { to: ME, input: "0x" } }).c)).ok).toBe(false);
   });
-  it("UI: no Release control until verification succeeds; a failed verification keeps it locked", async () => {
+  it("UI (revision 12): there is no Release control at all; a chain search only reports why it stays locked", async () => {
     const el = document.createElement("div"); document.body.appendChild(el);
     const root = createRoot(el);
-    let released = 0, verifies = 0;
-    let answer: { ok: true; tx: PendingTx } | { ok: false; reason: string } = { ok: false, reason: "Nonce 7 has not been used yet." };
+    let verifies = 0;
     const tx = intentOf("buy");
-    await act(async () => { root.render(createElement(IntentRecovery, { tx, what: "purchase", onCheck: () => {}, onRelease: () => { released++; }, verify: async () => { verifies++; return answer; }, release: async (t, rm) => { rm(t); return { ok: true, tx: t }; } })); });
+    await act(async () => { root.render(createElement(IntentRecovery, { tx, what: "purchase", onCheck: () => {}, verify: async () => { verifies++; return { ok: false as const, reason: "No matching garden transaction from your account has been found yet." }; } })); });
     const buttons = () => [...el.querySelectorAll("button")].map((b) => b.textContent);
     expect(buttons().some((b) => /Release/.test(b ?? ""))).toBe(false);
-    const verifyBtn = [...el.querySelectorAll("button")].find((b) => /verify the cancellation/.test(b.textContent ?? ""))!;
-    await act(async () => { verifyBtn.click(); });
+    await act(async () => { [...el.querySelectorAll("button")].find((b) => /Search my account/.test(b.textContent ?? ""))!.click(); });
     expect(verifies).toBe(1);
-    expect(el.textContent).toMatch(/has not been used yet/);
+    expect(el.textContent).toMatch(/has been found yet/);
+    expect(el.textContent).toMatch(/may have been sent/);
     expect(buttons().some((b) => /Release/.test(b ?? ""))).toBe(false);
-    answer = { ok: true, tx };
-    await act(async () => { [...el.querySelectorAll("button")].find((b) => /verify the cancellation/.test(b.textContent ?? ""))!.click(); });
-    const rel = [...el.querySelectorAll("button")].find((b) => /Release the purchase/.test(b.textContent ?? ""))!;
-    expect(rel).toBeTruthy();
-    await act(async () => { rel.click(); });
-    expect(released).toBe(1);
     await act(async () => root.unmount());
   });
   it("UI: a saved transaction with a hash shows no release path at all", async () => {
     const el = document.createElement("div");
     const root = createRoot(el);
-    await act(async () => { root.render(createElement(IntentRecovery, { tx: { ...intentOf("claim"), hash: H("a"), intent: undefined }, what: "claim", onCheck: () => {}, onRelease: () => {} })); });
+    await act(async () => { root.render(createElement(IntentRecovery, { tx: { ...intentOf("claim"), hash: H("a"), intent: undefined }, what: "claim", onCheck: () => {} })); });
     expect(el.textContent).not.toMatch(/Release|verify the cancellation/);
     expect(el.textContent).toMatch(/Check again/);
     await act(async () => root.unmount());
@@ -179,7 +172,7 @@ describe("c55d2fd3: a sped-up approval links its mined receipt after a re-plan",
     const s = await runPurchase(d, [0, 0, 0, 0, 0], ["", "", "", "", ""], () => {});
     expect(s.name).toBe("error");
     if (s.name !== "error") return;
-    expect(s.approval).toEqual({ hash: H("f"), allowance: 5n * 10n ** 18n });
+    expect(s.approval).toMatchObject({ hash: H("f"), allowance: 5n * 10n ** 18n });
     expect(buys).toBe(0);
   });
 });

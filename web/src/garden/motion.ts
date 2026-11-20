@@ -13,7 +13,10 @@ export interface MotionInput {
   candles: number;
   waterInView: boolean;
   igniting: boolean;
+  /** Ambient frogs are in view (and drawn at this zoom). */
+  actors?: boolean;
 }
+export const ACTOR_FPS = 12;
 export const FLAME_ZOOM = 0.7;
 export const WATER_ZOOM = 0.3;
 export const FLAME_FPS = 30;
@@ -25,6 +28,7 @@ export function motionPlan(m: MotionInput): { animate: boolean; minGap: number }
   if (m.reducedMotion) return { animate: false, minGap: Infinity };
   if (m.candles > 0 && m.zoom >= FLAME_ZOOM) return { animate: true, minGap: 1000 / FLAME_FPS };
   if (m.waterInView && m.zoom >= WATER_ZOOM) return { animate: true, minGap: 1000 / WATER_FPS };
+  if (m.actors) return { animate: true, minGap: 1000 / ACTOR_FPS };
   return { animate: false, minGap: Infinity };
 }
 

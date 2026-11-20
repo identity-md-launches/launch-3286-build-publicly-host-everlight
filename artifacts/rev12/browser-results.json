@@ -1,0 +1,296 @@
+{
+  "base": "local static server over dist/",
+  "pages": [
+    {
+      "viewport": 1440,
+      "fixture": 0,
+      "frameMs": 6.599998474121094,
+      "drawnCandles": 0,
+      "actorsInView": 22,
+      "fpsMeasured": 20,
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 1440,
+      "fixture": 100,
+      "frameMs": 7,
+      "drawnCandles": 96,
+      "actorsInView": 22,
+      "fpsMeasured": 30,
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 1440,
+      "fixture": 3000,
+      "frameMs": 7.299999237060547,
+      "drawnCandles": 168,
+      "actorsInView": 22,
+      "fpsMeasured": 28.9,
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 1440,
+      "fixture": 10000,
+      "frameMs": 7.900001525878906,
+      "drawnCandles": 168,
+      "actorsInView": 22,
+      "fpsMeasured": 28.2,
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 390,
+      "fixture": 0,
+      "frameMs": 2.6000003814697266,
+      "drawnCandles": 0,
+      "actorsInView": 14,
+      "fpsMeasured": 20.4,
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 390,
+      "fixture": 100,
+      "frameMs": 3,
+      "drawnCandles": 63,
+      "actorsInView": 14,
+      "fpsMeasured": 19.9,
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 390,
+      "fixture": 3000,
+      "frameMs": 3,
+      "drawnCandles": 63,
+      "actorsInView": 14,
+      "fpsMeasured": 19.9,
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 390,
+      "fixture": 10000,
+      "frameMs": 3,
+      "drawnCandles": 63,
+      "actorsInView": 14,
+      "fpsMeasured": 19.9,
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 1440,
+      "route": "light",
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 1440,
+      "route": "mine",
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 1440,
+      "route": "rewards",
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 1440,
+      "route": "treasury",
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 1440,
+      "route": "how",
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 390,
+      "route": "light",
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 390,
+      "route": "mine",
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 390,
+      "route": "rewards",
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 390,
+      "route": "treasury",
+      "horizontalOverflow": false
+    },
+    {
+      "viewport": 390,
+      "route": "how",
+      "horizontalOverflow": false
+    }
+  ],
+  "activities": {
+    "read": {
+      "at": [
+        -731,
+        299
+      ],
+      "framesOverTime": [
+        "read:0@-731,299",
+        "read:0@-731,299",
+        "read:1@-731,299",
+        "read:1@-731,299",
+        "read:1@-731,299"
+      ],
+      "animated": true
+    },
+    "ritual": {
+      "at": [
+        822,
+        336
+      ],
+      "framesOverTime": [
+        "ritual:1@822,336",
+        "ritual:1@822,336",
+        "ritual:1@822,336",
+        "ritual:1@822,336",
+        "ritual:1@822,336"
+      ],
+      "animated": false
+    },
+    "dance": {
+      "at": [
+        -454,
+        392
+      ],
+      "framesOverTime": [
+        "dance:0@-458,392",
+        "dance:0@-458,392",
+        "dance:1@-456,390",
+        "dance:3@-454,392",
+        "dance:3@-454,392"
+      ],
+      "animated": true
+    },
+    "walk": {
+      "at": [
+        1348,
+        461
+      ],
+      "framesOverTime": [
+        "walk:1@1434,479",
+        "walk:0@1444,481",
+        "walk:2@1453,483",
+        "walk:1@1461,484",
+        "walk:3@1470,486"
+      ],
+      "animated": true
+    },
+    "roll": {
+      "at": [
+        -84,
+        495
+      ],
+      "framesOverTime": [
+        "roll:1@840,541",
+        "curl:0@837,541",
+        "getup:0@837,541",
+        "getup:0@837,541",
+        "dance:0@837,541"
+      ],
+      "animated": true
+    },
+    "lantern": {
+      "at": [
+        1643,
+        527
+      ],
+      "framesOverTime": [
+        "lantern:0@1800,564",
+        "lantern:3@1809,566",
+        "lantern:1@1818,568",
+        "lantern:0@1826,570",
+        "lantern:2@1834,572"
+      ],
+      "animated": true
+    },
+    "getup": {
+      "at": [
+        1436,
+        986
+      ],
+      "framesOverTime": [
+        "getup:0@1436,986",
+        "roll:1@1441,986",
+        "roll:3@1447,986",
+        "roll:1@1453,986",
+        "roll:0@1459,986"
+      ],
+      "animated": true
+    },
+    "curl": {
+      "at": [
+        837,
+        541
+      ],
+      "framesOverTime": [
+        "roll:3@881,541",
+        "roll:1@874,541",
+        "roll:3@868,541",
+        "roll:1@862,541",
+        "roll:2@856,541"
+      ],
+      "animated": true
+    },
+    "idle": {
+      "at": [
+        1436,
+        986
+      ],
+      "framesOverTime": [
+        "curl:0@1436,986",
+        "curl:0@1436,986",
+        "getup:0@1436,986",
+        "dance:0@1436,986",
+        "dance:0@1436,986"
+      ],
+      "animated": true
+    },
+    "lift": {
+      "at": [
+        1471,
+        486
+      ],
+      "framesOverTime": [
+        "lantern:0@1716,544",
+        "lantern:3@1707,542",
+        "lantern:1@1698,540",
+        "lantern:0@1690,538",
+        "lantern:2@1681,536"
+      ],
+      "animated": true
+    },
+    "rest": {
+      "at": [
+        -326,
+        2337
+      ],
+      "framesOverTime": [
+        "rest:1@-326,2337",
+        "rest:0@-326,2337",
+        "rest:0@-326,2337",
+        "rest:1@-326,2337",
+        "rest:1@-326,2337"
+      ],
+      "animated": true
+    }
+  },
+  "reduced": {
+    "framesIdentical": true,
+    "framesDrawnIn1500ms": 0
+  },
+  "tap": {
+    "onFrog": "dance:3",
+    "hashBefore": "",
+    "hashAfter": "",
+    "walletRequests": 0,
+    "popup": 0
+  },
+  "errors": [],
+  "activitiesMissing": []
+}

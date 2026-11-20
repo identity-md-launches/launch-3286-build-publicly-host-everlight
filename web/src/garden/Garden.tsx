@@ -40,8 +40,11 @@ export function Garden(p: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const miniRef = useRef<HTMLCanvasElement>(null);
   const rRef = useRef<GardenRenderer | null>(null);
-  const inputRef = useRef(p);
-  inputRef.current = p;
+  // "Still garden": a user switch on top of prefers-reduced-motion; frogs, water and flames hold one frame
+  const [still, setStill] = useState(() => { try { return localStorage.getItem("everlight:still") === "1"; } catch { return false; } });
+  const inputRef = useRef({ ...p, reducedMotion: p.reducedMotion || still });
+  inputRef.current = { ...p, reducedMotion: p.reducedMotion || still };
+  const visible = useRef(true);
   const [, setReady] = useState(0);
   const dirty = useRef(true);
 
@@ -71,6 +74,8 @@ export function Garden(p: Props) {
     let anchorKey = "";
     let lastDraw = -Infinity;
     const onVis = () => { dirty.current = true; };
+    const io = typeof IntersectionObserver !== "undefined" ? new IntersectionObserver((es) => { visible.current = es.some((e) => e.isIntersecting); if (visible.current) dirty.current = true; }) : null;
+    io?.observe(canvas);
     document.addEventListener("visibilitychange", onVis);
     const loop = (t: number) => {
       raf = requestAnimationFrame(loop);
@@ -78,7 +83,9 @@ export function Garden(p: Props) {
       // hidden tabs never draw; water ripples run on their own capped clock, independent of candles (motion.ts)
       const hidden = typeof document !== "undefined" && document.hidden;
       if (hidden) return;
-      const plan = motionPlan({ reducedMotion: inp.reducedMotion, hidden, zoom: r.cam.z, candles: inp.candles.length, waterInView: r.waterInView(), igniting: igniting() });
+      // a garden scrolled out of view does not animate either (frogs, water, flames); it redraws when it returns
+      if (!visible.current && !dirty.current) return;
+      const plan = motionPlan({ reducedMotion: inp.reducedMotion, hidden, zoom: r.cam.z, candles: inp.candles.length, waterInView: r.waterInView(), igniting: igniting(), actors: r.actorsVisible > 0 });
       if (!shouldDraw(plan, dirty.current || r.pending, t, lastDraw)) return;
       lastDraw = t;
       dirty.current = false;
@@ -114,12 +121,13 @@ export function Garden(p: Props) {
       cancelAnimationFrame(raf);
       ro.disconnect();
       document.removeEventListener("visibilitychange", onVis);
+      io?.disconnect();
     };
   }, []);
 
   useEffect(() => {
     dirty.current = true;
-  }, [p.total, p.known, p.extra, p.candles, p.selected, p.mine, p.highlightMine, p.reducedMotion]);
+  }, [p.total, p.known, p.extra, p.candles, p.selected, p.mine, p.highlightMine, p.reducedMotion, still]);
 
   const jumpTo = useCallback((id: number) => {
     const r = rRef.current;
@@ -291,6 +299,13 @@ export function Garden(p: Props) {
         <div className="zoom" role="group" aria-label="Zoom">
           <button type="button" className="icon-btn" onClick={() => zoom(1.3)} aria-label="Zoom in">+</button>
           <button type="button" className="icon-btn" onClick={() => zoom(1 / 1.3)} aria-label="Zoom out">−</button>
+          <button type="button" className="icon-btn" aria-pressed={still || p.reducedMotion} disabled={p.reducedMotion}
+            onClick={() => { const v = !still; setStill(v); try { localStorage.setItem("everlight:still", v ? "1" : "0"); } catch { /* private mode */ } }}
+            aria-label={still || p.reducedMotion ? "Animate the garden" : "Still garden (pause animation)"} title={p.reducedMotion ? "Still: your system asks for reduced motion" : still ? "Animate the garden" : "Still garden"}>
+            {still || p.reducedMotion
+              ? <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
+              : <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z" /></svg>}
+          </button>
           <button type="button" className="icon-btn" onClick={reset} aria-label="Reset view" title="Reset view">
             <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 12a8 8 0 1 0 2.4-5.7" /><path d="M4 4v4h4" /></svg>
           </button>

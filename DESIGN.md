@@ -1,3 +1,24 @@
+# DESIGN: revision 12 additions (current source, 2026-11-20)
+
+The tokens, type scale and components further down still apply. This revision adds only what is listed here.
+
+## Tokens added
+- Hillside geometry (`web/src/garden/scenery.ts`): `CONTOUR_STEP = 150` world units between terrace levels, `CONTOUR_WALL = 10` (wall face height), `contourY(k, x)` for each wall's top edge (continuous across cells), `SPRING_TAPER = 320` (the stream widens from 28% to full width over this distance).
+- Wall colours reuse the stone palette: lit course `#8f8b74`, face `#565648`, joints `#1e201c`, foot shadow `#0a140f`, moss coping `#3f7a3c`, flowers `#f4f1e4` / `#d98aa8`. Cascade foam `#c8f0de` over `#5aaa96`.
+- Frog sprite palette (`web/src/garden/ambient.ts`, `PAL`): body `#3f7a3c`, light `#6aa84f`, legs `#2a5233`, ink `#050a08`, eye white `#f0efe6`, belly `#cdbf9c`, cheeks `#d79a32`, paper `#efe6cc`, lantern `#d79a32`/`#fff2b0`, ritual light `#7dffb0`/`#c8ffe0`. The ritual lights are mint so they never read as purchased amber candles.
+- Motion: `ACTOR_FPS = 12` (`motion.ts`). Frogs are drawn only at zoom `>= ACTOR_ZOOM = 0.34` (`renderer.ts`).
+
+## Components added
+- **Ambient frogs**: 20x20 art-pixel frames in one atlas built at start (walk 4, idle 3, read 5, lantern 4, lift 1, roll 4, curl 1, getup 1, dance 5, ritual 2, rest 2). They are drawn at 1 art pixel = 2 world units, like all scenery, with a contact shadow. Each cell has a seated reader who turns pages, a lantern carrier with a soft warm glow, a roller, two walkers who rest beneath real trees, and a dancer; every third cell has a five-frog ritual circle. Depth: frogs draw after their row's scenery and before its candles and the next row, and trees in front of a frog are redrawn over it.
+- **Still garden button** (map tools, 44 px icon button with `aria-pressed`): pauses frogs, water and flames. It is disabled, with a title explaining why, when the OS already requests reduced motion.
+- **IntentRecovery**: Check again, Search my account's transactions, and paste-a-hash Match. There is no Release control.
+
+## Responsive behaviour added
+- Frogs scale with the world, at the same pixel density as candles and trees. At phone zoom (0.42 to 0.62) they stay visible; below 0.34 they are not drawn. Touch pan and pinch-zoom are unchanged, and a tap on a frog does nothing.
+- Animation pauses when the garden scrolls out of view (IntersectionObserver), in hidden tabs, and in reduced-motion or still mode.
+
+---
+
 # DESIGN: Everlight Garden, 16-bit pixel revision (current, 2026-11-19)
 
 This section describes the implemented source after the pixel redesign. It supersedes the earlier sections

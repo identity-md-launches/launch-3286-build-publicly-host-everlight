@@ -26,6 +26,39 @@ export function springY(gx: number): number {
 
 const snap = (v: number) => Math.round(v / PX) * PX;
 export const streamHalf = (y: number) => 32 + 7 * Math.sin(y / 90) + 3 * Math.sin(y / 37);
+/** Distance over which a home-row stream widens from its spring basin to full width. */
+export const SPRING_TAPER = 320;
+/**
+ * Stream half-width in column gx: in the home row it starts narrow at the spring basin and widens smoothly downstream
+ * (a believable source instead of a full-width cut); elsewhere it is streamHalf.
+ */
+export function streamHalfAt(gx: number, y: number): number {
+  const hw = streamHalf(y);
+  if (y > SECTOR_H) return hw;
+  const k = Math.max(0, Math.min(1, (y - springY(gx)) / SPRING_TAPER));
+  return hw * (0.28 + 0.72 * k * k * (3 - 2 * k));
+}
+/** Tree positions painted in each cell's upright layer (so ambient walkers can rest beneath real trees and be occluded by them). */
+export const TREE_SPOTS = new Map<number, { n: string; x: number; y: number; flip: boolean }[]>();
+const TREE_NAMES = new Set(["willow", "willow-s", "willow-l", "tree", "cypress"]);
+
+/**
+ * Hillside contours: stepped terraces of the one continuous slope, in world space (no seams between cells). Each
+ * contour is the upper edge of a dry-stone retaining wall; the ground above it is one step higher (a shade lighter).
+ */
+export const CONTOUR_STEP = 150;
+export const CONTOUR_WALL = 10;
+export const contourY = (k: number, x: number) => k * CONTOUR_STEP + 26 * Math.sin(x / 230 + k * 1.31) + 11 * Math.sin(x / 83 + k * 0.7);
+/** Where (x, y) sits relative to the nearest contour wall: d in [0, CONTOUR_WALL) is the wall face, k its index. */
+export function contourAt(x: number, y: number): { k: number; d: number } {
+  const k0 = Math.round(y / CONTOUR_STEP);
+  let best = { k: k0, d: Infinity };
+  for (const k of [k0 - 1, k0, k0 + 1]) {
+    const d = y - contourY(k, x);
+    if (d >= -3 && d < best.d) best = { k, d };
+  }
+  return best;
+}
 const B4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 const dither = (X: number, Y: number, t: number) => B4[(Y & 3) * 4 + (X & 3)] / 16 < t;
 
@@ -55,9 +88,11 @@ export function drawSectorBase(g: CanvasRenderingContext2D, index: number, sheet
     const ti = ((Y & 15) * 16 + (X & 15)) * 4;
     d[o] = (t ? t[ti] : fb[0]) * shade; d[o + 1] = (t ? t[ti + 1] : fb[1]) * shade; d[o + 2] = (t ? t[ti + 2] : fb[2]) * shade; d[o + 3] = 255;
   };
+  // the spring: a rounded basin ringed with mossy stones and reeds at the stream head (home row only)
+  const bx = gy === 0 ? streamX(gx, spring + 6) : 0, by = spring + 6, BR = 30;
   for (let j = 0; j < h; j++) {
     const Y = Y0 + j, y = Y * PX + 1;
-    const sx = streamX(gx, y), hw = streamHalf(y);
+    const sx = streamX(gx, y), hw = streamHalfAt(gx, y);
     const hasStream = y > spring;
     for (let i = 0; i < w; i++) {
       const X = X0 + i, x = X * PX + 1, o = (j * w + i) * 4;
@@ -65,6 +100,26 @@ export function drawSectorBase(g: CanvasRenderingContext2D, index: number, sheet
       const ds = hasStream ? Math.abs(x - sx) : Infinity;
       let pool = Infinity;
       for (const p of pools) { const q = ((x - p.x) / p.rx) ** 2 + ((y - p.y) / (p.rx * TILT)) ** 2; if (q < pool) pool = q; }
+      if (gy === 0) {
+        const q = Math.hypot((x - bx) / BR, (y - by) / (BR * 0.62));
+        if (q < 1) pool = Math.min(pool, q * q);
+        else if (q < 1.42 && y > by - BR) {
+          // ring of rounded stones (lit from the upper left), with reeds standing on the far side
+          const a = Math.atan2(y - by, x - bx), cell = Math.floor((a + Math.PI) / 0.42), lc = ((a + Math.PI) % 0.42) / 0.42;
+          const rq = (q - 1) / 0.42;
+          const inStone = Math.abs(lc - 0.5) < 0.42 && rq < 0.92;
+          if (inStone) {
+            const lit = lc < 0.4 && rq < 0.5;
+            const v = lit ? [143, 139, 116] : rq > 0.7 ? [38, 40, 36] : [100, 100, 83];
+            const mossy = hash2(cell, Y >> 1, 8) > 0.72 && y < by;
+            d[o] = mossy ? 63 : v[0]; d[o + 1] = mossy ? 122 : v[1]; d[o + 2] = mossy ? 60 : v[2]; d[o + 3] = 255;
+            continue;
+          }
+          if (y < by && hash2(X, 0, 12) > 0.55 && rq > 0.2) { d[o] = 62; d[o + 1] = 138; d[o + 2] = 47; d[o + 3] = 255; continue; } // reeds
+          d[o] = 16; d[o + 1] = 30; d[o + 2] = 24; d[o + 3] = 255;
+          continue;
+        }
+      }
       // natural banks: an irregular earth-and-moss margin whose width wanders along the stream (world-space noise)
       const wob = 3 + 4 * (0.5 + 0.5 * Math.sin(y / 23 + gx * 1.7)) + 3 * (0.5 + 0.5 * Math.sin(y / 9.5 + x / 31));
       if (ds < hw || pool < 1) {
@@ -73,6 +128,13 @@ export function drawSectorBase(g: CanvasRenderingContext2D, index: number, sheet
         const depth = 0.62 + 0.38 * edge;
         // quiet water (no sheared tile, which read as uniform diagonal stripes): a depth gradient, the banks' dark
         // green reflection along each edge, and a few short horizontal glints that never line up into a pattern
+        const cw = contourAt(x, y);
+        if (cw.d >= 0 && cw.d < CONTOUR_WALL && pool >= 1 && y > spring + 60) {
+          // a low cascade where the hillside steps down: white water over the stone lip
+          const foam = dither(X, Y, 0.35 + 0.5 * (cw.d / CONTOUR_WALL)) ;
+          d[o] = foam ? 200 : 90; d[o + 1] = foam ? 240 : 170; d[o + 2] = foam ? 222 : 150; d[o + 3] = 255;
+          continue;
+        }
         const glint = hash2(X >> 2, Y, 31) > 0.985 && edge < 0.8;
         const refl = edge > 0.72 ? 0.55 + 0.45 * ((1 - edge) / 0.28) : 1;
         if (glint) { d[o] = 120; d[o + 1] = 205; d[o + 2] = 180; d[o + 3] = 255; continue; }
@@ -88,14 +150,41 @@ export function drawSectorBase(g: CanvasRenderingContext2D, index: number, sheet
         continue;
       }
       const dp = Math.abs(y - pathY(gy, x));
+      const cw = gy === 0 && y < horizonY(x) + 70 ? { k: 0, d: Infinity } : contourAt(x, y);
+      if (dp < 20 && cw.d >= -2 && cw.d < CONTOUR_WALL + 2) {
+        // stairs where the path climbs a contour: treads with lit nosings and dark risers
+        const row = Math.floor((cw.d + 2) / 3);
+        const v = row % 2 === 0 ? 0.62 : 1.05;
+        put(o, path, X, Y, [100, 100, 83], dp > 17 ? 0.45 : v);
+        continue;
+      }
       if (dp < 20) { put(o, path, X, Y, [100, 100, 83], 0.85); continue; }
+      if (cw.d >= -2 && cw.d < CONTOUR_WALL + 4) {
+        if (cw.d < 0) { // coping and moss along the top of the wall, with flowers here and there
+          const fl = hash2(X, cw.k, 14);
+          if (fl > 0.94) { d[o] = fl > 0.97 ? 244 : 217; d[o + 1] = fl > 0.97 ? 241 : 138; d[o + 2] = fl > 0.97 ? 228 : 168; d[o + 3] = 255; continue; }
+          put(o, dither(X, Y, 0.55) ? moss : null, X, Y, [63, 122, 60], 0.85);
+          continue;
+        }
+        if (cw.d >= CONTOUR_WALL) { put(o, null, X, Y, [10, 20, 15]); continue; } // contact shadow at the foot
+        // dry-stone courses: 2-pixel rows, staggered joints, lit top rows
+        const course = Math.floor(cw.d / (PX * 2.5));
+        const joint = ((X + course * 3) % 7) === 0 || Math.floor(cw.d) % 5 === 4;
+        const lit = cw.d < 3;
+        const base = joint ? [30, 32, 28] : lit ? [143, 139, 116] : [86, 86, 72];
+        const n = 0.88 + 0.24 * hash2(X >> 1, course, 15);
+        d[o] = base[0] * n; d[o + 1] = base[1] * n; d[o + 2] = base[2] * n; d[o + 3] = 255;
+        continue;
+      }
       if (dp < 24) { put(o, dither(X, Y, 0.5) ? moss : dark, X, Y, [42, 82, 51]); continue; }
       // quiet dark ground: one deep emerald with a slow tonal field and only a faint trace of the grass tile, so the
       // terraces, paths, water and candles carry the detail (replaces the earlier two-tile dither noise)
       const f = 0.5 * Math.sin(x / 173 + y / 97) + 0.5 * Math.sin(x / 61 - y / 133);
       const ti = ((Y & 15) * 16 + (X & 15)) * 4;
       const tex = dark ? (dark[ti + 1] - 60) / 255 : 0;
-      const lum = 1 + 0.07 * f + 0.12 * tex - (wild ? 0.14 : 0);
+      // stepped elevation: each band between two walls is a level; higher (further back) levels catch more light
+      const band = cw.d < Infinity ? (cw.d - CONTOUR_WALL) / CONTOUR_STEP : 0.5;
+      const lum = 1 + 0.07 * f + 0.12 * tex - (wild ? 0.14 : 0) + 0.07 * (0.5 - Math.max(0, Math.min(1, band)));
       // atmospheric perspective: toward the skyline the ground lifts into a cool blue-green haze
       const haze = gy === 0 ? Math.max(0, 1 - (y - horizonY(x)) / 220) : 0;
       const r0 = 20 * lum, g0 = 40 * lum, b0 = 29 * lum;
@@ -127,9 +216,12 @@ export function drawSectorUpright(g: CanvasRenderingContext2D, index: number, sh
   };
   const wallPat = pattern("tile-wall"), lawnPat = pattern("tile-grass"), pathPat = pattern("tile-path");
   /** sprite with its bottom-centre at (x, yBase), 1 sprite pixel = 1 art pixel */
+  const spots: { n: string; x: number; y: number; flip: boolean }[] = [];
+  TREE_SPOTS.set(index, spots);
   const put = (n: string, x: number, yBase: number, flip = false) => {
     const s = im[n];
     if (!s) return;
+    if (TREE_NAMES.has(n)) spots.push({ n, x, y: yBase, flip });
     const w = s.width * PX, h = s.height * PX;
     const left = snap(x - w / 2), top = snap(yBase) - h;
     if (flip) { g.save(); g.translate(left + w, top); g.scale(-1, 1); g.drawImage(s, 0, 0, w, h); g.restore(); }

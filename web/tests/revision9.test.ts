@@ -166,13 +166,13 @@ describe("review a103c521 / 658d1824: purchase intents are exclusive across tabs
     expect(b.name).toBe("buy-unknown");
     expect(bAsked).toBe(1);
     expect(saved(st).map((t) => t.hash).sort()).toEqual([intentHash("buy", ME), intentHash("buy", OTHER)].sort());
-    removeBuyIntent(OTHER, st);
+    removeBuyIntent(saved(st).find((t) => t.account === OTHER)!, st);
     expect(saved(st).map((t) => t.account)).toEqual([ME]);
     // a legacy shared intent belongs to whoever wrote it: releasing another account leaves it
     pendingStore.persist({ hash: INTENT_HASH, kind: "buy", intent: true, account: OTHER, createdAt: 0 }, st);
-    removeBuyIntent(ME, st);
+    removeBuyIntent(saved(st).find((t) => t.account === ME)!, st);
     expect(saved(st).map((t) => [t.hash, t.account])).toEqual([[INTENT_HASH, OTHER]]);
-    removeBuyIntent(OTHER, st);
+    removeBuyIntent(saved(st)[0], st);
     expect(saved(st)).toHaveLength(0);
   });
 });
@@ -280,7 +280,7 @@ describe("finding 4: approval confirmed, then the purchase was re-planned", () =
     const s = await runPurchase(d, [0, 0, 0, 0, 0], ["", "", "", "", ""], () => {});
     expect(s.name).toBe("error");
     if (s.name !== "error") return;
-    expect(s.approval).toEqual({ hash: H("e"), allowance: 5n * 10n ** 18n });
+    expect(s.approval).toMatchObject({ hash: H("e"), allowance: 5n * 10n ** 18n });
     expect(s.message).not.toMatch(/Nothing was sent/);
     expect(s.message).toMatch(/candle purchase was not sent/);
     expect(APPROVED_NOT_SENT).toBe("Approval confirmed; candle purchase not sent.");

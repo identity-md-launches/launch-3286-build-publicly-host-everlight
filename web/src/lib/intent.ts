@@ -12,7 +12,8 @@ import { locateMined, type RecoveryClient } from "./recovery";
  * purchase, claimRewards for a claim). It is cleared only for:
  *  - a proven rejection before submission (EIP-1193 4001 / viem UserRejectedRequestError, or a wagmi pre-flight
  *    error that is thrown before any request reaches the wallet),
- *  - a confirmed cancellation (the user confirms after the chain shows nothing matching is mined or pending), or
+ *  - evidence tied to the submitted transaction itself: its hash (pasted and validated, or found as a matching call),
+ *    whose receipt settles it (a nonce consumed by an unrelated transaction is never proof of cancellation), or
  *  - a validated completion (a mined receipt whose transaction is this account calling this exact function).
  * Anything else (4900/4901 disconnects, timeouts, RPC failures, an unknown error) is ambiguous: the wallet may have
  * broadcast the transaction and lost the hash, so the intent stays and the action stays locked.
@@ -87,7 +88,10 @@ export type IntentState =
   | { kind: "found"; hash: Hash }
   /** Nothing mined for it yet, and the wallet may still hold or broadcast it. */
   | { kind: "pending" }
-  /** Every nonce used since the intent was checked (none is this call) and nothing is pending: the user may release it. */
+  /**
+   * No matching call among the nonces checked and nothing visibly pending. NOT a cancellation: the preflight nonce is
+   * unverified, and the wallet may have used a higher or private nonce. The attempt stays saved.
+   */
   | { kind: "not-found"; checked: number }
   | { kind: "unknown"; reason: string };
 
@@ -119,4 +123,4 @@ export async function resolveIntent(c: IntentClient, intent: PendingTx, garden: 
 }
 
 export const INTENT_NOT_FOUND =
-  "None of your account's transactions since this action is a matching garden transaction, and nothing is pending. If your wallet also shows no pending request, you can release it.";
+  "No matching garden transaction from your account has been found yet. This attempt may have been sent: the wallet can use a different or private nonce, so an unrelated transaction at the expected nonce does not prove it was cancelled. It stays saved and locked; check again later, or paste the transaction hash from your wallet's activity.";

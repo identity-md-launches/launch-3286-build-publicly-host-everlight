@@ -1,3 +1,30 @@
+## Current revision (2026-11-20, revision 12): read first
+
+Website only: no contract, address, ABI or economics change, and nothing was sent on chain.
+
+- **Transaction fixes** (`web/src/lib/purchase.ts`, `chain.ts`, `intent.ts`, `claim.ts`, `panels/LightPanel.tsx`, `panels/Panels.tsx`, `App.tsx`):
+  1. an attempt without a returned hash is never released on nonce evidence (a wallet may broadcast at a higher or private nonce, then return 4900). It stays "may have been sent", with Check again, a chain search and hash recovery;
+  2. every approval, purchase and claim attempt has a durable id. Receipts, rejections and delayed callbacks touch only their own attempt (compare-and-update, safe across tabs);
+  3. the connector's live account and chain are re-read right before approve, buy and claim, and every request carries `account` and `chainId: 1`. A change sends nothing and needs a fresh click;
+  4. persisted storage is authoritative; memory keeps only failed writes;
+  5. after Match, the returned entry with the real hash is checked at once;
+  6. the newest allowance read wins (never the max), and a reduced allowance asks for a fresh exact approval.
+- **Living garden** (`web/src/garden/scenery.ts`, `ambient.ts`, `renderer.ts`, `Garden.tsx`, `motion.ts`): one stepped hillside with dry-stone contour walls, stairs where paths climb, moss and flowers on the copings, cascades where the river steps down, and a rounded stone-and-reed spring from which the stream widens. Candle slots and selection are unchanged. Small animated frogs (an original design made for this garden) read the paper, carry a lantern, roll in the grass, walk to trees and rest, dance, and hold a mint-light ritual circle. They are decorative only: never hit-tested, no chain activity. They pause off screen, in hidden tabs, under reduced motion, or with the new Still garden button.
+- Test results, performance and browser evidence: `artifacts/rev12/validation.md`. Mocked tests and browser checks are listed separately; no live chain checks were run this revision.
+
+Install, preview, rebuild:
+
+```bash
+cd web
+npm ci              # install exactly the locked dependencies
+npm run typecheck   # tsc --noEmit
+npm test            # vitest, 165 mocked tests
+npm run build       # writes the static export to ../dist (relative asset URLs)
+npm run preview     # serve the built export locally
+```
+
+The committed `dist/` is what gets hosted. Add `?fixture=100` to the URL to see labelled fixture candles with payments disabled.
+
 ## Current revision (2026-11-20, revision 9): read first
 
 Live site: https://everlight.imd.site/ (static export in `dist/`, pinned by the publishing plane). Contracts, ABIs, config, economics, candle IDs, wishes and records are unchanged: Ethereum garden `0x33a514c5e2028f1affd70b82f170e8193df030a5`, Base receiver `0x4FdE47d5b574F9F18bC86D9878A460e6b1373D1E`. Nothing was deployed, activated or spent.

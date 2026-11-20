@@ -1,6 +1,7 @@
 import type { Candle } from "../lib/candles";
 import { HOLDER_TOP, HORIZON_CUT, SECTOR_H, SECTOR_MARGIN, SECTOR_W, SLOTS_PER_SECTOR, cameraBounds, horizonY, positionOf, sectorAt, sectorCount, sectorOrigin, streamX } from "./layout";
-import { BASE_PAD, PX, drawSectorBase, drawSectorUpright, springY, streamHalf, type Sheet } from "./scenery";
+import { BASE_PAD, PX, TREE_SPOTS, drawSectorBase, drawSectorUpright, springY, streamHalf, streamHalfAt, type Sheet } from "./scenery";
+import { ACTOR_BOX, actorFrames, actorsOf, drawActor, frogAtlas, type ActorFrame } from "./ambient";
 import { ignition } from "./ignite";
 import { CASTLE_BOXES, CASTLE_W, MOON_AT, MOON_R, VISTA_CASTLE_X, VISTA_FOOT, VISTA_H, VISTA_TOP, VISTA_W, makeVista, type Vista } from "./vista";
 
@@ -51,9 +52,13 @@ export interface RenderInput {
   mine: Set<number>;
   highlightMine: boolean;
   reducedMotion: boolean;
+  /** Decorative frogs on (default) or off. */
+  ambient?: boolean;
 }
 
-export interface FrameStats { visibleSectors: number; drawnCandles: number; lod: number; ms: number }
+export interface FrameStats { visibleSectors: number; drawnCandles: number; lod: number; ms: number; actors?: number }
+/** Below this zoom the frogs would be a few pixels tall: they are not drawn (and do not animate). */
+export const ACTOR_ZOOM = 0.34;
 
 export class GardenRenderer {
   cam: Camera = { x: SECTOR_W / 2, y: SECTOR_H / 2, z: 1 };
@@ -74,6 +79,8 @@ export class GardenRenderer {
   private litCache = new Map<number, { count: number; canvas: HTMLCanvasElement }>();
   private glow: HTMLCanvasElement;
   missingAssets = 0;
+  /** Frogs drawn in the last frame (0 = none in view: no ambient animation needed). */
+  actorsVisible = 0;
   stats: FrameStats = { visibleSectors: 0, drawnCandles: 0, lod: 0, ms: 0 };
   private dpr = 1;
   w = 0;
@@ -82,6 +89,8 @@ export class GardenRenderer {
   constructor(private canvas: HTMLCanvasElement, onReady: () => void) {
     this.ctx = canvas.getContext("2d")!;
     this.glow = makeGlow();
+    frogAtlas(); // the frogs' one shared sprite atlas, built once
+    (window as any).__gardenRenderer = this; // read-only inspection hook for the browser checks
     this.vista = makeVista();
     Promise.all([...CANDLE_ART, ...FLAME_ART, ...LAYERS].map(loadImage)).then((imgs) => {
       this.candleImgs = imgs.slice(0, 7);
@@ -210,7 +219,7 @@ export class GardenRenderer {
     for (let gx = gx0; gx <= gx1; gx++) {
       const y0 = Math.max(tl.y, springY(gx) + 8);
       for (let y = y0; y <= br.y; y += 40) {
-        const x = streamX(gx, y), hw = streamHalf(y);
+        const x = streamX(gx, y), hw = streamHalfAt(gx, y);
         if (x + hw >= tl.x && x - hw <= br.x) return true;
       }
     }
@@ -230,7 +239,9 @@ export class GardenRenderer {
       for (let y = start; y < y1; y += 14) {
         if (y < head + 8) continue;
         const row = Math.round((y - flow) / 14);
-        const hw = streamHalf(y) - 6;
+        // ripples taper with the stream: fewer and shorter near the spring
+        const full = streamHalf(y), hw = streamHalfAt(gx, y) - 6;
+        if (hw < 4 || (hw < full * 0.6 && row % 2)) continue;
         const off = (((row * 37) % 23) / 23 - 0.5) * 2 * hw;
         const x = Math.round((streamX(gx, y) + off) / PX) * PX, yy = Math.round(y / PX) * PX;
         ctx.fillStyle = row % 3 ? "rgba(159,240,207,0.55)" : "rgba(239,230,204,0.5)";
@@ -382,10 +393,14 @@ export class GardenRenderer {
       rows.push(row);
     }
     this.drawWater(tl, br, time, input.reducedMotion);
+    let actors = 0;
+    (window as any).__actorFrames = []; // inspection hook: every frog drawn this frame, all rows
     rows.forEach((row, i) => {
       const gy = gy0 + i;
       for (const { gx, art } of row) if (art) ctx.drawImage(art.up, gx * SECTOR_W - M, gy * SECTOR_H - M, SECTOR_W + 2 * M, SECTOR_H + 2 * M);
       if (gy === 0) this.drawMist(tl, br);
+      // ambient frogs of this row: after its scenery, before its candles and before the next row's scenery
+      if (cam.z >= ACTOR_ZOOM && input.ambient !== false) actors += this.drawActors(row.filter((c) => c.art).map((c) => c.s), tl, br, time, input.reducedMotion);
       // candles of this row draw before the next row's upright layer, so nearer trees and walls occlude them
       const lit = row.filter((c) => c.s < n).map((c) => c.s);
       drawn += lod === 0 ? this.drawRowLights(lit, input) : this.drawRowCandles(lit, input, tl, br, lod, time);
@@ -401,8 +416,34 @@ export class GardenRenderer {
       ctx.globalCompositeOperation = "source-over";
     }
     (window as any).__gardenFrames = ((window as any).__gardenFrames ?? 0) + 1;
-    this.stats = { visibleSectors: cells, drawnCandles: drawn, lod, ms: performance.now() - t0 };
+    this.actorsVisible = actors;
+    this.stats = { visibleSectors: cells, drawnCandles: drawn, lod, ms: performance.now() - t0, actors };
     (window as any).__lastFrame = this.stats;
+  }
+
+  /**
+   * Decorative frogs of the given cells, culled to the view, depth-sorted by their feet; trees standing in front of a
+   * frog (lower on screen and overlapping it) are drawn again over it so it passes behind them. Never hit-tested.
+   */
+  private drawActors(cells: number[], tl: { x: number; y: number }, br: { x: number; y: number }, time: number, still: boolean): number {
+    const { ctx } = this;
+    const frames: ActorFrame[] = [];
+    for (const s of cells) for (const a of actorsOf(s)) for (const f of actorFrames(a, time, still))
+      if (f.x > tl.x - 60 && f.x < br.x + 60 && f.y > tl.y - 20 && f.y < br.y + 60) frames.push(f);
+    frames.sort((a, b) => a.y - b.y);
+    ((window as any).__actorFrames ??= []).push(...frames.map((f) => ({ x: Math.round(f.x), y: Math.round(f.y), frame: f.frame })));
+    for (const f of frames) {
+      drawActor(ctx, f, time);
+      for (const s of cells) for (const t of TREE_SPOTS.get(s) ?? []) {
+        const im = this.sheet.img[t.n];
+        if (!im || t.y <= f.y + 2) continue;
+        const w = im.width * PX, h = im.height * PX, left = Math.round((t.x - w / 2) / PX) * PX, top = Math.round(t.y / PX) * PX - h;
+        if (left > f.x + ACTOR_BOX.w / 2 || left + w < f.x - ACTOR_BOX.w / 2 || top > f.y || top + h < f.y - ACTOR_BOX.h) continue;
+        if (t.flip) { ctx.save(); ctx.translate(left + w, top); ctx.scale(-1, 1); ctx.drawImage(im, 0, 0, w, h); ctx.restore(); }
+        else ctx.drawImage(im, left, top, w, h);
+      }
+    }
+    return frames.length;
   }
 
   /** Night mist along the skyline, in world space across the whole view. */

@@ -9,9 +9,9 @@ import { wishGardenAbi } from "../abi/WishGarden";
 import { BASESCAN, BASE_IMD, BASE_RECEIVER, ETHERSCAN, GARDEN, GARDEN_DEPLOY_BLOCK, IMD, LEGACY_GARDEN, OWNER, SOURCE_REPO, config } from "../config";
 import { STYLE_NAMES, date, imd, short, safeChecksum } from "../lib/format";
 import { explainError } from "../lib/errors";
-import { FIXTURE_MESSAGE, pendingStore, type PendingTx } from "../lib/purchase";
+import { FIXTURE_MESSAGE, attemptOf, pendingStore, type PendingTx } from "../lib/purchase";
 import { claimConflict, runClaim, webLock, type ClaimStep } from "../lib/claim";
-import { IntentRecovery } from "./LightPanel";
+import { IntentRecovery, liveWallet } from "./LightPanel";
 import type { Candle } from "../lib/candles";
 import { ConnectButton } from "../components/ConnectSheet";
 import { FIXTURE, useActivity, useCandleTx, useMyIds, useRewards, useTreasury } from "../hooks";
@@ -195,7 +195,7 @@ export async function checkClaim(tx: PendingTx): Promise<{ ok: boolean; text: st
     const { receipt: r, mined } = await settleReceipt(tx.hash, tx);
     const v = settleClaim(r, mined, tx.account);
     const unverified = "unverified" in v && !!v.unverified;
-    if (!unverified) pendingStore.remove(tx.hash);
+    if (!unverified) pendingStore.removeAttempt(attemptOf(tx)); // this attempt only
     return { ok: v.ok, settled: !unverified, href: `${ETHERSCAN}/tx/${r.transactionHash}`, text: v.ok ? `Your earlier claim confirmed: ${imd(v.amount)} IMD claimed.` : v.message };
   } catch {
     return { ok: false, settled: false, href: `${ETHERSCAN}/tx/${tx.hash}`, text: "The claim sent earlier has no receipt yet. It is still saved and Claim stays off until it settles." };
@@ -221,12 +221,13 @@ export function RewardsPanel() {
     [pendingVersion, address],
   );
   const [checking, setChecking] = useState(false);
-  async function recheck() {
-    if (!pendingClaim || checking) return;
+  async function recheck(matched?: PendingTx) {
+    const target = matched ?? pendingClaim; // after Match: the returned entry with its real hash
+    if (!target || checking) return;
     setChecking(true);
-    const v = await checkClaim(pendingClaim);
+    const v = await checkClaim(target);
     setChecking(false);
-    setStFor(pendingClaim.account)(v.settled ? (v.ok ? { s: "idle" } : { s: "error", msg: v.text }) : { s: "uncertain", msg: v.text });
+    setStFor(target.account)(v.settled ? (v.ok ? { s: "idle" } : { s: "error", msg: v.text }) : { s: "uncertain", msg: v.text });
     qc.invalidateQueries();
   }
   async function claim() {
@@ -239,7 +240,8 @@ export function RewardsPanel() {
         account: address,
         simulate: async () => (await simulateContract(config, { address: GARDEN, abi: wishGardenAbi, functionName: "claimRewards", account: address, chainId: 1 })).request,
         submission: () => submissionMeta(address),
-        send: (request) => writeContract(config, request as any),
+        send: (request) => writeContract(config, { ...(request as any), account, chainId: 1 }),
+        walletState: liveWallet,
         sentTx,
         wait: async (hash) => {
           // follows a sped-up or cancelled replacement; only a verified RewardsClaimed from the garden shows Claimed
@@ -292,7 +294,7 @@ export function RewardsPanel() {
                 ? <a href={`${ETHERSCAN}/address/${pendingClaim.account}`} target="_blank" rel="noreferrer">View your wallet's transactions</a>
                 : <a href={`${ETHERSCAN}/tx/${pendingClaim.hash}`} target="_blank" rel="noreferrer">View pending claim</a>}
             </p>
-            <IntentRecovery tx={pendingClaim} what="claim" onCheck={recheck} onRelease={(t) => { pendingStore.remove(t.hash); setStFor(t.account)({ s: "idle" }); }} />
+            <IntentRecovery tx={pendingClaim} what="claim" onCheck={recheck} />
           </div>
         )}
       </div>

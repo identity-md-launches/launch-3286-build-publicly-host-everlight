@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useAccount } from "wagmi";
-import { simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
+import { getAccount, simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
 import { erc20Abi, type Hash } from "viem";
 import { useQueryClient } from "@tanstack/react-query";
 import { wishGardenAbi } from "../abi/WishGarden";
@@ -8,9 +8,9 @@ import { ETHERSCAN, GARDEN, IMD, MAX_BATCH, TX_GAS_CAP, config, ethClient } from
 import { checkWish, gasBound } from "../lib/wish";
 import { STYLE_NAMES, eth, imd } from "../lib/format";
 import { explainError, isGasCapError } from "../lib/errors";
-import { FIXTURE_MESSAGE, INTENT_PENDING_MESSAGE, buyConflict, removeBuyIntent, awaitBuy, isRunning, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step } from "../lib/purchase";
+import { FIXTURE_MESSAGE, INTENT_PENDING_MESSAGE, attemptOf, buyConflict, awaitBuy, isRunning, latestAllowance, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step, type WalletState } from "../lib/purchase";
 import { readReceipt } from "../lib/receipt";
-import { attachHash, minedTx, NONCE_UNVERIFIED, releaseVerified, sentTx, settleBuyReceipt, submissionMeta, verifyCancelled, type CancelCheck } from "../lib/chain";
+import { attachHash, minedTx, NONCE_UNVERIFIED, sentTx, settleBuyReceipt, submissionMeta, verifyCancelled, type CancelCheck } from "../lib/chain";
 import { APPROVED_NOT_SENT } from "../lib/purchase";
 import { rememberTx } from "../lib/txhash";
 import { webLock } from "../lib/claim";
@@ -31,13 +31,15 @@ const inFlight = new Set<string>(); // per account: another account's open reque
 
 /** Recover a purchase sent before a reload: the form stays locked on it until its receipt settles. */
 export function recoverBuy(tx: PendingTx): Promise<Step> {
+  const attempt = attemptOf(tx);
   const onStep = (s: Step) => {
     // a confirmed purchase removes exactly its candles from the saved draft; a split draft keeps the rest
     if (s.name === "done") {
       if (tx.styles && tx.wishes) consumeSavedDraft(tx.styles, tx.wishes);
       else clearDraft();
     }
-    purchaseFlow.set(s, tx.account);
+    // only this attempt's step: a delayed receipt never overwrites a newer attempt shown in this tab
+    purchaseFlow.report(attempt, s, tx.account);
   };
   onStep({ name: "buy-pending", hash: tx.hash });
   return awaitBuy(
@@ -51,11 +53,7 @@ export function recoverBuy(tx: PendingTx): Promise<Step> {
     },
     tx,
     onStep,
-  ).then((s) => {
-    // the purchase behind a saved intent is settled: the intent itself is no longer needed
-    if (s.name !== "buy-unknown") removeBuyIntent(tx.account);
-    return s;
-  });
+  );
 }
 
 const ART = (i: number) => `./art/px/candle-${i}.png`;
@@ -164,8 +162,9 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
   const nextQty = next ? next.items.length : qty;
   const split = plan.length > 1;
   const bound = next ? next.bound : gasBound(qty, wishBytes);
-  const approvedNow = step?.name === "error" && step.approval ? step.approval.allowance : 0n;
-  const allowanceKnown = wallet.data ? (wallet.data.allowance > approvedNow ? wallet.data.allowance : approvedNow) : approvedNow > 0n ? approvedNow : undefined;
+  // the latest verified allowance (newer read wins; never the larger of an old approval and the current read)
+  const approvedNow = step?.name === "error" && step.approval ? step.approval : null;
+  const allowanceKnown = latestAllowance(wallet.data ? { allowance: wallet.data.allowance, at: wallet.dataUpdatedAt } : null, approvedNow);
   const needApproval = allowanceKnown === undefined || allowanceKnown < BigInt(nextQty) * 10n ** 18n;
   // A gas quote is current only while the query has fresh data; a failed refetch withdraws it.
   const gasOk = gas.data !== undefined && !gas.isError;
@@ -201,7 +200,9 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
       await runPurchase(
         {
           account,
-          chainId: () => chainId ?? 0,
+          // the live connector state, re-read right before each wallet request (not this render's stale values)
+          chainId: () => getAccount(config).chainId ?? 0,
+          walletState: liveWallet,
           salesOpen: async () => {
             const [a, p] = await Promise.all([
               ethClient.readContract({ address: GARDEN, abi: wishGardenAbi, functionName: "activated" }),
@@ -212,7 +213,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
           balance: () => ethClient.readContract({ address: IMD, abi: erc20Abi, functionName: "balanceOf", args: [account] }),
           allowance: () => ethClient.readContract({ address: IMD, abi: erc20Abi, functionName: "allowance", args: [account, GARDEN] }),
           ethBalance: () => ethClient.getBalance({ address: account }),
-          approve: (amount) => writeContract(config, { address: IMD, abi: erc20Abi, functionName: "approve", args: [GARDEN, amount], chainId: 1 }),
+          approve: (amount) => writeContract(config, { address: IMD, abi: erc20Abi, functionName: "approve", args: [GARDEN, amount], account, chainId: 1 }),
           // follows sped-up or cancelled replacements; the purchase is settled from the mined receipt's own logs
           wait: async (hash: Hash) => {
             const rec = await waitForTransactionReceipt(config, { hash, chainId: 1 });
@@ -248,15 +249,16 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
             const withRoom = (est * 120n) / 100n;
             return { ...request, gas: withRoom > TX_GAS_CAP ? TX_GAS_CAP : withRoom };
           },
-          buy: (request) => writeContract(config, request as any),
+          // the simulated request carries the initiating account and chainId 1: never sent from another account
+          buy: (request) => writeContract(config, { ...(request as any), account, chainId: 1 }),
           explain: (e) => explainError(e),
         },
         batch.map((i) => i.style),
         batch.map((i) => i.wish),
-        (s) => {
+        (s, attempt) => {
           // a confirmed purchase removes its candles from the draft; errors and replacements keep every item
           if (s.name === "done") consumeSavedDraft(batch.map((i) => i.style), batch.map((i) => i.wish));
-          purchaseFlow.set(s, account);
+          if (!purchaseFlow.report(attempt, s, account)) return;
           if (s.name === "approve-pending" || (s.name === "error" && s.approval)) qc.invalidateQueries();
           if (s.name === "done") {
             store.sync().then(() => onLit(s.firstId, s.quantity ?? batch.length));
@@ -411,8 +413,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
                 ? <a href={`${ETHERSCAN}/address/${pendingBuy.account}`} target="_blank" rel="noreferrer">View your wallet's transactions</a>
                 : <a href={`${ETHERSCAN}/tx/${pendingBuy.hash}`} target="_blank" rel="noreferrer">View pending transaction</a>}
             </p>
-            <IntentRecovery tx={pendingBuy} what="purchase" onCheck={() => recoverBuy(pendingBuy)}
-              onRelease={(t) => { pendingStore.remove(t.hash); removeBuyIntent(t.account); purchaseFlow.clear(t.account); }} />
+            <IntentRecovery tx={pendingBuy} what="purchase" onCheck={(t) => recoverBuy(t ?? pendingBuy)} />
           </div>
         )}
       </div>
@@ -467,54 +468,45 @@ export function CandlePreview({ style }: { style: number }) {
 }
 
 /**
- * Recovery controls for a saved transaction or intent: check again, reconcile by pasting the transaction hash from
- * the wallet (validated against account, chain, target, nonce and call), and a release that is offered only after the
- * chain verifies a cancellation of this exact attempt (its nonce consumed by a different transaction, nothing
- * pending) and that re-verifies the saved attempt before removing it. An attempt with a known hash is never released
- * here: Check again settles it from its own or its replacement's receipt.
+ * Recovery controls for a saved transaction or intent: check again (settles a mined receipt in one action), reconcile
+ * by pasting the transaction hash from the wallet (validated against account, chain, target, nonce and call; the
+ * returned entry with its real hash is checked at once), and a chain search for a matching call. There is no release
+ * without evidence tied to the submitted transaction: a nonce consumed by an unrelated transaction never unlocks it.
  */
-export function IntentRecovery({ tx, what, onCheck, onRelease, verify = verifyCancelled, release = releaseVerified }: {
-  tx: PendingTx; what: "purchase" | "claim"; onCheck: () => Promise<unknown> | void; onRelease: (t: PendingTx) => void;
-  verify?: (t: PendingTx) => Promise<CancelCheck>; release?: (t: PendingTx, remove: (t: PendingTx) => void) => Promise<CancelCheck>;
+export function IntentRecovery({ tx, what, onCheck, verify = verifyCancelled }: {
+  tx: PendingTx; what: "purchase" | "claim"; onCheck: (t?: PendingTx) => Promise<unknown> | void;
+  verify?: (t: PendingTx) => Promise<CancelCheck>;
 }) {
   const [hash, setHash] = useState("");
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  // a verified cancellation of exactly this saved attempt (same placeholder, start time and nonce); anything else locks
-  const [verified, setVerified] = useState<PendingTx | null>(null);
-  const [cancelMsg, setCancelMsg] = useState<string | null>(null);
-  const sameAttempt = verified !== null && verified.hash === tx.hash && verified.createdAt === tx.createdAt && verified.nonce === tx.nonce;
-  useEffect(() => { if (!sameAttempt) setVerified(null); }, [tx.hash, tx.createdAt, tx.nonce]);
+  const [searchMsg, setSearchMsg] = useState<string | null>(null);
   const id = `reconcile-${what}`;
   async function reconcile(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
-    const r = await attachHash(tx, hash);
-    setBusy(false);
-    setMsg(r.ok ? { ok: true, text: "Transaction matched. Following its receipt…" } : { ok: false, text: r.reason });
-    if (r.ok) { setHash(""); setVerified(null); await onCheck(); }
+    try {
+      const r = await attachHash(tx, hash);
+      setMsg(r.ok ? { ok: true, text: "Transaction matched. Checking its receipt now…" } : { ok: false, text: r.reason });
+      // the matched entry (real hash, verified nonce), never the stale placeholder this render captured
+      if (r.ok) { setHash(""); await onCheck(r.tx); }
+    } finally { setBusy(false); }
   }
-  async function checkCancel() {
+  async function search() {
     setBusy(true);
     try {
       const v = await verify(tx);
-      setVerified(v.ok ? v.tx : null);
-      setCancelMsg(v.ok ? null : v.reason);
-    } finally { setBusy(false); }
-  }
-  async function doRelease() {
-    if (!verified) return;
-    setBusy(true);
-    try {
-      const v = await release(verified, onRelease);
-      if (!v.ok) { setVerified(null); setCancelMsg(v.reason); }
+      setSearchMsg(v.ok ? null : v.reason);
+      if (/matching transaction was mined/.test(v.ok ? "" : v.reason)) await onCheck();
     } finally { setBusy(false); }
   }
   return (
     <div className="recovery">
       <div className="pending-acts">
         <button type="button" className="btn" disabled={busy} onClick={async () => { setBusy(true); try { await onCheck(); } finally { setBusy(false); } }}>{busy ? "Checking…" : "Check again"}</button>
+        {tx.intent && <button type="button" className="link" disabled={busy} onClick={search}>Search my account's transactions</button>}
       </div>
+      {searchMsg && <p className="fine" role="status">{searchMsg}</p>}
       {tx.intent && (
         <form className="reconcile" onSubmit={reconcile}>
           <label htmlFor={id}>Transaction hash from your wallet</label>
@@ -525,22 +517,18 @@ export function IntentRecovery({ tx, what, onCheck, onRelease, verify = verifyCa
           {msg && <p id={`${id}-msg`} className={msg.ok ? "fine" : "bad"}>{msg.text}</p>}
         </form>
       )}
-      {!tx.intent ? (
-        <p className="fine">If you cancelled or sped it up in your wallet, Check again recognises the replacement once it is mined. It stays locked until then.</p>
-      ) : !sameAttempt ? (
-        <div className="confirm-release">
-          <button type="button" className="link" disabled={busy} onClick={checkCancel}>I cancelled it in my wallet: verify the cancellation</button>
-          {cancelMsg && <p className="bad" role="alert">{cancelMsg}</p>}
-        </div>
-      ) : (
-        <div className="confirm-release" role="group" aria-label="Confirm release">
-          <p>Verified on Ethereum: nonce {verified!.nonce} of your account was used by a different transaction and nothing is pending, so this {what} can no longer be sent. Releasing unlocks {what === "purchase" ? "this draft" : "Claim"}; it is checked once more first.</p>
-          <div className="pending-acts">
-            <button type="button" className="btn danger" disabled={busy} onClick={doRelease}>Release the {what}</button>
-            <button type="button" className="link" onClick={() => setVerified(null)}>Keep it locked</button>
-          </div>
-        </div>
-      )}
+      <p className="fine">{tx.intent
+        ? `This ${what} may have been sent. It stays locked until its transaction is found or matched, so it is never sent twice.`
+        : "If you cancelled or sped it up in your wallet, Check again recognises the replacement once it is mined. It stays locked until then."}</p>
     </div>
   );
+}
+
+/** The connector's own current account and chain (not React state), read just before a wallet request. */
+export async function liveWallet(): Promise<WalletState> {
+  const a = getAccount(config);
+  const c = a.connector;
+  if (!c) return { account: a.address, chainId: a.chainId };
+  const [accounts, chainId] = await Promise.all([c.getAccounts(), c.getChainId()]);
+  return { account: accounts[0] ?? undefined, chainId };
 }

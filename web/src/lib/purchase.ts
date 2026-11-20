@@ -28,6 +28,8 @@ export interface PendingTx {
    * finds it keeps the form locked and resolves the purchase from the sender's nonce before another send.
    */
   intent?: boolean;
+  /** Durable id of the attempt this entry belongs to (see attemptOf). */
+  attempt?: string;
 }
 
 /**
@@ -42,10 +44,23 @@ const sameAddr = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 export const buyConflict = (account: string) => (t: PendingTx) => t.kind === "buy" && sameAddr(t.account, account);
 /** The placeholder hash this account's purchase intent is saved under. */
 export const buyIntentHash = (account: string) => intentHash("buy", account);
-/** Remove this account's purchase intent (and a legacy shared intent only when this account wrote it). */
-export function removeBuyIntent(account: string, storage: Storage | null = safeStorage()) {
-  pendingStore.remove(buyIntentHash(account), storage);
-  if (pendingStore.list(storage).some((t) => t.hash === INTENT_HASH && sameAddr(t.account, account))) pendingStore.remove(INTENT_HASH, storage);
+
+/**
+ * Durable attempt id. Every approval, purchase and claim attempt gets one when it starts; its intent, its sent hash and
+ * any matched replacement keep the same id. Receipts, rejection handlers and delayed callbacks update or remove only
+ * entries carrying their own id, so they can never erase a newer attempt (another tab's, or a later one in this tab).
+ * Entries saved by earlier builds have no id: they get a stable one derived from their own fields.
+ */
+export const attemptOf = (t: PendingTx): string => t.attempt ?? `legacy:${t.kind}:${t.account.toLowerCase()}:${t.hash.toLowerCase()}:${t.createdAt}`;
+export function newAttemptId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  } catch { /* insecure context */ }
+  return `a-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+/** Remove one attempt (and nothing else). Kept under its old name for the panels: only this attempt's entry goes. */
+export function removeBuyIntent(tx: PendingTx, storage: Storage | null = safeStorage()) {
+  pendingStore.removeAttempt(attemptOf(tx), storage);
 }
 
 // v2: scoped to the live garden, so a transaction sent to an earlier contract is never re-attached here
@@ -60,16 +75,32 @@ try {
 export const PENDING_STORAGE_KEY = PENDING_KEY;
 
 /**
- * In-memory copy of every pending entry, per storage object. A hash is kept here the moment it is known, so even if
- * the browser refuses to save it (quota, blocked storage) the page stays locked on it until its receipt settles.
+ * Memory fallback, per storage object: ONLY entries whose save failed (quota, blocked storage). Storage that saved
+ * successfully is authoritative: an entry that was saved and later settled (here or in another tab) is never merged
+ * back from memory. A successful save or a removal of an attempt drops its fallback copy.
  */
-const memory = new WeakMap<object, PendingTx[]>();
+const unsaved = new WeakMap<object, { tx: PendingTx; overlay: boolean }[]>();
 const NO_STORAGE = {};
 const memFor = (storage: Storage | null) => {
   const k = storage ?? NO_STORAGE;
-  let l = memory.get(k);
-  if (!l) memory.set(k, (l = []));
+  let l = unsaved.get(k);
+  if (!l) unsaved.set(k, (l = []));
   return l;
+};
+const dropMem = (storage: Storage | null, attempt: string) => {
+  const m = memFor(storage);
+  for (let i = m.length - 1; i >= 0; i--) if (attemptOf(m[i].tx) === attempt) m.splice(i, 1);
+};
+/**
+ * A failed write. overlay: the attempt was already saved (e.g. its intent) and this newer version (its sent hash)
+ * could not replace it. An overlay is shown over the saved entry only while that entry is still saved; once storage
+ * no longer has the attempt (settled or matched in another tab) the overlay is dropped, never resurrected.
+ */
+const keepMem = (storage: Storage | null, tx: PendingTx) => {
+  const id = attemptOf(tx);
+  const overlay = readStored(storage).some((t) => attemptOf(t) === id);
+  dropMem(storage, id);
+  memFor(storage).push({ tx, overlay });
 };
 function readStored(storage: Storage | null): PendingTx[] {
   try {
@@ -79,43 +110,54 @@ function readStored(storage: Storage | null): PendingTx[] {
     return [];
   }
 }
+function writeStored(storage: Storage | null, list: PendingTx[]): boolean {
+  if (!storage) return false;
+  try {
+    if (list.length) storage.setItem(PENDING_KEY, JSON.stringify(list));
+    else storage.removeItem(PENDING_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+/**
+ * One synchronous read-modify-write of the saved list (no await between the read and the write, so within a tab it is
+ * atomic; across tabs the exclusive intent save also runs under a Web Lock). Returns whether the write landed.
+ */
+function mutate(storage: Storage | null, f: (list: PendingTx[]) => PendingTx[]): boolean {
+  if (!storage) return false;
+  return writeStored(storage, f(readStored(storage)));
+}
 
 /** Pending transaction hashes survive reloads so a closed tab can recover its receipt. */
 export const pendingStore = {
   list(storage: Storage | null = safeStorage()): PendingTx[] {
     const stored = readStored(storage);
-    const extra = memFor(storage).filter((m) => !stored.some((t) => t.hash === m.hash));
-    return [...stored, ...extra];
-  },
-  /** Never throws: the entry is held in memory first, then saved; returns false when it could not be saved. */
-  add(tx: PendingTx, storage: Storage | null = safeStorage()): boolean {
     const mem = memFor(storage);
-    const i = mem.findIndex((t) => t.hash === tx.hash);
-    if (i >= 0) mem[i] = tx; else mem.push(tx);
-    let saved = false;
-    try {
-      if (storage) {
-        storage.setItem(PENDING_KEY, JSON.stringify([...readStored(storage).filter((t) => t.hash !== tx.hash), tx]));
-        saved = true;
-      }
-    } catch { /* kept in memory: this page stays locked on it, but a reload cannot recover it */ }
+    const ids = new Set(stored.map(attemptOf));
+    // prune overlays whose attempt storage no longer has: storage is authoritative once it saved
+    for (let i = mem.length - 1; i >= 0; i--) if (mem[i].overlay && !ids.has(attemptOf(mem[i].tx))) mem.splice(i, 1);
+    const over = new Map(mem.filter((m) => m.overlay).map((m) => [attemptOf(m.tx), m.tx] as const));
+    const extra = mem.filter((m) => !m.overlay && !ids.has(attemptOf(m.tx))).map((m) => m.tx);
+    return [...stored.map((t) => over.get(attemptOf(t)) ?? t), ...extra];
+  },
+  /** The saved entry of one attempt, if any. */
+  get(attempt: string, storage: Storage | null = safeStorage()): PendingTx | null {
+    return this.list(storage).find((t) => attemptOf(t) === attempt) ?? null;
+  },
+  /** Never throws: saved (replacing this attempt's entry only), or held in memory when the save fails. */
+  add(tx: PendingTx, storage: Storage | null = safeStorage()): boolean {
+    const id = attemptOf(tx);
+    const saved = mutate(storage, (l) => [...l.filter((t) => attemptOf(t) !== id), tx]);
+    if (saved) dropMem(storage, id); else keepMem(storage, tx);
     pendingChanged();
     return saved;
   },
-  /**
-   * Save an entry to storage or not at all: on failure nothing is kept in memory and false is returned. Used for the
-   * recovery intent, which must be in storage before the wallet is asked to sign.
-   */
+  /** Save an entry to storage or not at all: on failure nothing is kept in memory and false is returned. */
   persist(tx: PendingTx, storage: Storage | null = safeStorage()): boolean {
-    if (!storage) return false;
-    try {
-      storage.setItem(PENDING_KEY, JSON.stringify([...readStored(storage).filter((t) => t.hash !== tx.hash), tx]));
-    } catch {
-      return false;
-    }
-    const mem = memFor(storage);
-    const i = mem.findIndex((t) => t.hash === tx.hash);
-    if (i >= 0) mem[i] = tx; else mem.push(tx);
+    const id = attemptOf(tx);
+    if (!mutate(storage, (l) => [...l.filter((t) => attemptOf(t) !== id), tx])) return false;
+    dropMem(storage, id);
     pendingChanged();
     return true;
   },
@@ -125,43 +167,62 @@ export const pendingStore = {
    */
   persistExclusive(tx: PendingTx, conflicts: (t: PendingTx) => boolean, storage: Storage | null = safeStorage()): "saved" | "conflict" | "failed" {
     if (!storage) return "failed";
-    if (readStored(storage).some(conflicts) || memFor(storage).some(conflicts)) return "conflict";
+    const id = attemptOf(tx);
+    if (this.list(storage).some(conflicts)) return "conflict";
     if (!this.persist(tx, storage)) return "failed";
     const back = readStored(storage);
-    if (!back.some((t) => t.hash === tx.hash)) return "failed";
-    if (back.filter(conflicts).some((t) => t.hash !== tx.hash)) return "conflict";
+    if (!back.some((t) => attemptOf(t) === id)) return "failed";
+    if (back.filter(conflicts).some((t) => attemptOf(t) !== id)) {
+      this.removeAttempt(id, storage); // lost the race: withdraw only our own intent, never the other one
+      return "conflict";
+    }
     return "saved";
   },
   /**
-   * Replace a saved entry (the recovery intent) with the sent transaction in one write. Never throws: if the write
-   * fails the intent stays saved, so a reload still locks the form and resolves the purchase by its nonce, and this
-   * page holds the sent hash in memory. Returns whether the sent entry itself was saved.
+   * Replace this attempt's entry (its intent) with the sent transaction in one write. The intent and its sent hash
+   * share one attempt id, so no other attempt's entry is touched. Never throws: if the write fails the intent stays
+   * saved and this page holds the sent hash in memory. Returns whether the sent entry itself was saved.
    */
-  replace(oldHash: string, tx: PendingTx, storage: Storage | null = safeStorage()): boolean {
-    const mem = memFor(storage);
-    const j = mem.findIndex((t) => t.hash === oldHash);
-    if (j >= 0) mem.splice(j, 1);
-    const i = mem.findIndex((t) => t.hash === tx.hash);
-    if (i >= 0) mem[i] = tx; else mem.push(tx);
-    let saved = false;
-    try {
-      if (storage) {
-        storage.setItem(PENDING_KEY, JSON.stringify([...readStored(storage).filter((t) => t.hash !== tx.hash && t.hash !== oldHash), tx]));
-        saved = true;
-      }
-    } catch { /* the intent stays saved */ }
+  replace(attempt: string, tx: PendingTx, storage: Storage | null = safeStorage()): boolean {
+    const next = { ...tx, attempt };
+    const saved = mutate(storage, (l) => [...l.filter((t) => attemptOf(t) !== attempt), next]);
+    if (saved) dropMem(storage, attempt); else keepMem(storage, next);
     pendingChanged();
     return saved;
   },
+  /**
+   * Compare-and-update: change this attempt's entry only while it is still saved (and, when given, still has the
+   * expected hash). A settled or released attempt is never resurrected. "updated" | "missing" | "failed".
+   */
+  update(attempt: string, f: (cur: PendingTx) => PendingTx, storage: Storage | null = safeStorage(), expectHash?: string): "updated" | "missing" | "failed" {
+    const inMem = memFor(storage).find((m) => attemptOf(m.tx) === attempt)?.tx;
+    let found = false;
+    const ok = mutate(storage, (l) => l.map((t) => {
+      if (attemptOf(t) !== attempt || (expectHash !== undefined && t.hash.toLowerCase() !== expectHash.toLowerCase())) return t;
+      found = true;
+      return { ...f(t), attempt };
+    }));
+    if (!found && inMem && (expectHash === undefined || inMem.hash.toLowerCase() === expectHash.toLowerCase())) {
+      keepMem(storage, { ...f(inMem), attempt });
+      pendingChanged();
+      return "updated";
+    }
+    if (!found) return "missing";
+    if (ok) pendingChanged();
+    return ok ? "updated" : "failed";
+  },
+  /** Remove exactly one attempt (saved copy and memory fallback). Other attempts, even with the same placeholder hash, stay. */
+  removeAttempt(attempt: string, storage: Storage | null = safeStorage()) {
+    dropMem(storage, attempt);
+    mutate(storage, (l) => l.filter((t) => attemptOf(t) !== attempt));
+    pendingChanged();
+  },
+  /** Remove entries by transaction hash. Placeholder intent hashes are shared, so intents are never removed this way. */
   remove(hash: string, storage: Storage | null = safeStorage()) {
-    const mem = memFor(storage);
-    const i = mem.findIndex((t) => t.hash === hash);
-    if (i >= 0) mem.splice(i, 1);
-    try {
-      const rest = readStored(storage).filter((t) => t.hash !== hash);
-      if (rest.length) storage?.setItem(PENDING_KEY, JSON.stringify(rest));
-      else storage?.removeItem(PENDING_KEY);
-    } catch { /* nothing more to do */ }
+    const hit = (t: PendingTx) => t.hash.toLowerCase() === hash.toLowerCase() && !t.intent;
+    const m = memFor(storage);
+    for (let i = m.length - 1; i >= 0; i--) if (hit(m[i].tx)) m.splice(i, 1);
+    mutate(storage, (l) => l.filter((t) => !hit(t)));
     pendingChanged();
   },
   /** Can recovery data be saved right now? Checked before the wallet is asked to sign a purchase. */
@@ -192,6 +253,28 @@ function safeStorage(): Storage | null {
   }
 }
 
+/**
+ * Latest verified allowance: whichever read is newer wins (the wallet query or the read taken right after a confirmed
+ * approval). Never the larger of the two: after a revocation or reduction the newer, smaller value is shown and a
+ * fresh exact approval is requested.
+ */
+export function latestAllowance(read?: { allowance: bigint; at: number } | null, approval?: { allowance: bigint; at: number } | null): bigint | undefined {
+  if (read && approval) return approval.at > read.at ? approval.allowance : read.allowance;
+  return read?.allowance ?? approval?.allowance;
+}
+
+/** The wallet's live account and chain, read from the connector itself just before a request is sent. */
+export interface WalletState { account?: string; chainId?: number }
+export const WALLET_CHANGED_MESSAGE =
+  "Your wallet's account or network changed while this was being prepared. Nothing was sent from the new account; check the details and press the button again.";
+/** True only when the wallet is still on the initiating account and on Ethereum. */
+export async function walletStillBound(account: string, read?: () => Promise<WalletState>, fallbackChain?: () => number): Promise<boolean> {
+  if (!read) return fallbackChain ? fallbackChain() === 1 : false;
+  let w: WalletState | null = null;
+  try { w = await read(); } catch { w = null; }
+  return !!w && !!w.account && sameAddr(w.account, account) && w.chainId === 1;
+}
+
 export type Step =
   | { name: "checking" }
   | { name: "approve-wallet"; amount: bigint }
@@ -206,7 +289,7 @@ export type Step =
   | { name: "error"; message: string; hash?: Hash; approval?: ApprovalDone };
 
 /** An approval that confirmed in this attempt: its receipt and the allowance read afterwards. */
-export interface ApprovalDone { hash: Hash; allowance: bigint }
+export interface ApprovalDone { hash: Hash; allowance: bigint; at: number }
 export const APPROVED_NOT_SENT = "Approval confirmed; candle purchase not sent.";
 /** After a confirmed approval no message may say "Nothing was sent". */
 export const afterApproval = (m: string) => m.replace(/Nothing was sent/g, "The candle purchase was not sent");
@@ -280,27 +363,42 @@ export function settleBuy(r: Receipt, sent: Hash, account: string, quantity?: nu
  */
 let flowStep: Step | null = null;
 let flowAccount: string | null = null;
+let flowAttempt: string | null = null;
 const flowSubs = new Set<() => void>();
 const notifyFlow = () => flowSubs.forEach((f) => f());
 export const purchaseFlow = {
   get: () => flowStep,
   /** The account the current step belongs to (null for a step recorded without one). */
   account: () => flowAccount,
+  /** The attempt the current step belongs to. */
+  attempt: () => flowAttempt,
   /** The current step if it belongs to this account (or to no particular account), otherwise null. */
   for(account: string | null | undefined): Step | null {
     if (flowAccount === null) return flowStep;
     return account && sameAddr(account, flowAccount) ? flowStep : null;
   },
-  set(s: Step | null, account: string | null = null) {
+  set(s: Step | null, account: string | null = null, attempt: string | null = null) {
     flowStep = s;
     flowAccount = s === null ? null : account;
+    flowAttempt = s === null ? null : attempt;
     notifyFlow();
   },
+  /**
+   * A step reported by one attempt: applied only when the shown step is this attempt's, or no other attempt is
+   * running or uncertain. A delayed receipt or callback of an older attempt never overwrites a newer attempt.
+   */
+  report(attempt: string, s: Step, account: string): boolean {
+    if (flowAttempt !== null && flowAttempt !== attempt && isRunning(flowStep)) return false;
+    this.set(s, account, attempt);
+    return true;
+  },
   /** Drop the step of this account only (a released intent); another account's step is left alone. */
-  clear(account: string) {
+  clear(account: string, attempt?: string) {
     if (flowAccount !== null && !sameAddr(flowAccount, account)) return;
+    if (attempt !== undefined && flowAttempt !== null && flowAttempt !== attempt) return;
     flowStep = null;
     flowAccount = null;
+    flowAttempt = null;
     notifyFlow();
   },
   subscribe(f: () => void) {
@@ -308,6 +406,10 @@ export const purchaseFlow = {
     return () => { flowSubs.delete(f); };
   },
 };
+// another tab settled or matched this tab's uncertain attempt: release only that attempt's UI lock
+pendingStore.subscribe(() => {
+  if (flowAttempt && flowStep?.name === "buy-unknown" && !pendingStore.get(flowAttempt)) purchaseFlow.clear(flowAccount ?? "", flowAttempt);
+});
 export const isRunning = (s: Step | null) => s !== null && s.name !== "done" && s.name !== "error";
 
 /** Everything the purchase needs from a chain. The UI passes wagmi/viem; tests pass labelled mocks. */
@@ -335,6 +437,13 @@ export interface PurchaseDeps {
   storage?: Storage | null;
   /** Cross-tab mutual exclusion for saving the intent (Web Locks in the app); "busy" when another tab holds it. */
   withLock?: <T>(name: string, f: () => Promise<T> | T) => Promise<T | "busy">;
+  /**
+   * The wallet's live account and chain, re-read from the connector immediately before each wallet request (approve
+   * and buy). A different account or chain ends the attempt with nothing sent; a fresh click is required.
+   */
+  walletState?: () => Promise<WalletState>;
+  /** Attempt id factory (tests pass a fixed sequence). */
+  newAttempt?: () => string;
 }
 
 /**
@@ -346,15 +455,18 @@ export async function runPurchase(
   deps: PurchaseDeps,
   styles: number[],
   wishes: string[],
-  onStep: (s: Step) => void,
+  onStep: (s: Step, attempt: string) => void,
 ): Promise<Step> {
+  const attempt = (deps.newAttempt ?? newAttemptId)();
+  const step = (s: Step) => onStep(s, attempt);
   let approval: ApprovalDone | undefined;
   const fail = (message: string): Step => {
     const s: Step = approval ? { name: "error", message: afterApproval(message), approval } : { name: "error", message };
-    onStep(s);
+    step(s);
     return s;
   };
   if (deps.readOnly) return fail(FIXTURE_MESSAGE);
+  const bound = () => walletStillBound(deps.account, deps.walletState, deps.chainId);
   let sent: PendingTx | null = null;
   try {
     if (styles.length < 1 || styles.length > 50 || styles.length !== wishes.length) return fail("Choose between 1 and 50 candles.");
@@ -363,27 +475,30 @@ export async function runPurchase(
     const conflict = buyConflict(deps.account);
     const store = deps.storage === undefined ? undefined : deps.storage;
     if (pendingStore.list(store).some(conflict)) return fail(DUPLICATE_MESSAGE);
-    onStep({ name: "checking" });
+    step({ name: "checking" });
     if (!(await deps.salesOpen())) return fail("Sales are closed: the garden is not activated or purchases are paused.");
     const total = BigInt(styles.length) * 10n ** 18n;
     const [bal, allow, ethBal] = await Promise.all([deps.balance(), deps.allowance(), deps.ethBalance()]);
     if (bal < total) return fail(`You need ${styles.length} IMD; your wallet holds less. Add IMD on Ethereum and try again.`);
     if (ethBal === 0n) return fail("Your wallet has no ETH to pay gas on Ethereum.");
     if (allow < total) {
-      onStep({ name: "approve-wallet", amount: total });
+      // the approval is bound to the initiating account and Ethereum: re-read the wallet after the async checks
+      if (!(await bound())) return fail(WALLET_CHANGED_MESSAGE);
+      step({ name: "approve-wallet", amount: total });
+      const approveAttempt = (deps.newAttempt ?? newAttemptId)();
       const ah = await deps.approve(total);
-      pendingStore.add({ hash: ah, kind: "approve", account: deps.account, createdAt: Date.now() }, deps.storage);
-      onStep({ name: "approve-pending", hash: ah });
+      pendingStore.add({ hash: ah, kind: "approve", account: deps.account, createdAt: Date.now(), attempt: approveAttempt }, deps.storage);
+      step({ name: "approve-pending", hash: ah });
       const r = await deps.wait(ah);
-      pendingStore.remove(ah, deps.storage);
+      pendingStore.removeAttempt(approveAttempt, deps.storage); // only this approval's own entry
       if (r.status !== "success") return fail("The approval transaction reverted. No IMD was spent.");
       const now = await deps.allowance();
       if (now < total) return fail("The approval did not reach the required total. Approve again.");
       // tracked separately from the purchase: a later failure says the approval stands and the purchase was not sent
       // the receipt's own hash: a sped-up approval is mined under its replacement's hash, and that is the receipt linked
-      approval = { hash: r.hash ?? ah, allowance: now };
+      approval = { hash: r.hash ?? ah, allowance: now, at: Date.now() };
     }
-    onStep({ name: "simulating" });
+    step({ name: "simulating" });
     const request = await deps.simulate(styles, wishes);
     // recovery metadata comes first: without the sender's nonce and a submission block a replacement could not be
     // found after a reload, so the wallet is not asked to sign until both are read
@@ -393,13 +508,13 @@ export async function runPurchase(
     } catch {
       return fail(META_MESSAGE);
     }
-    // the purchase must be recoverable after a reload, so its recovery intent (exact draft, sender, nonce and
-    // submission block, with room for the hash) is saved before the wallet is asked to sign; if it cannot be saved,
+    // the purchase must be recoverable after a reload, so its recovery intent (exact draft, sender, preflight nonce and
+    // submission block, under this attempt's id) is saved before the wallet is asked to sign; if it cannot be saved,
     // nothing is sent
     const ih = buyIntentHash(deps.account);
     const intent: PendingTx = {
       hash: ih, kind: "buy", intent: true, account: deps.account, quantity: styles.length, createdAt: Date.now(),
-      from: deps.account, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false, styles: [...styles], wishes: [...wishes],
+      from: deps.account, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false, styles: [...styles], wishes: [...wishes], attempt,
     };
     // saved exclusively (under a per-account Web Lock, then read back): two tabs that both passed the first check
     // cannot both reach the wallet, and neither overwrites the other's intent
@@ -407,40 +522,44 @@ export async function runPurchase(
     const saved0 = deps.withLock ? await deps.withLock(`everlight-buy-${deps.account.toLowerCase()}`, write) : write();
     if (saved0 === "busy" || saved0 === "conflict") return fail(DUPLICATE_MESSAGE);
     if (saved0 !== "saved") return fail(STORAGE_MESSAGE);
-    onStep({ name: "buy-wallet" });
+    // last check before the signature request: still the initiating account, still Ethereum. Otherwise nothing is
+    // sent, this attempt's own intent is withdrawn and a fresh click is required
+    if (!(await bound())) {
+      pendingStore.removeAttempt(attempt, deps.storage);
+      return fail(WALLET_CHANGED_MESSAGE);
+    }
+    step({ name: "buy-wallet" });
     let hash: Hash;
     try {
       hash = await deps.buy(request);
     } catch (e) {
       if (isProvenRejection(e)) {
-        pendingStore.remove(ih, deps.storage); // proven: the wallet refused before signing, nothing to recover
+        pendingStore.removeAttempt(attempt, deps.storage); // proven: the wallet refused before signing; only this attempt
         throw e;
       }
-      // a disconnect (4900/4901), a timeout or an unknown failure: the wallet may have broadcast the purchase and lost
-      // its hash. The intent stays saved and the draft stays locked until the purchase is found, its hash is pasted
-      // and validated, or the user confirms the cancellation.
+      // a disconnect (4900/4901), a timeout or an unknown failure: the wallet may have broadcast the purchase (even at
+      // a higher or private nonce) and lost its hash. The intent stays saved and the draft stays locked until the
+      // purchase is found, or its hash is pasted and validated. An unrelated transaction at the preflight nonce is
+      // never taken as proof of cancellation.
       const s: Step = { name: "buy-unknown", hash: ih, message: AMBIGUOUS_MESSAGE };
-      onStep(s);
+      step(s);
       return s;
     }
     // from here on the purchase is broadcast: no failure may unlock the draft as if nothing had been sent
     sent = {
       hash, kind: "buy", account: deps.account, quantity: styles.length, createdAt: Date.now(),
-      from: deps.account, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false, styles: [...styles], wishes: [...wishes],
+      from: deps.account, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false, styles: [...styles], wishes: [...wishes], attempt,
     };
-    const saved = pendingStore.replace(ih, sent, deps.storage);
-    onStep({ name: "buy-pending", hash });
+    const saved = pendingStore.replace(attempt, sent, deps.storage);
+    step({ name: "buy-pending", hash });
     const checked = saved ? await reconcileSent(deps, sent) : await reconcileSent(deps, sent).catch(() => sent!);
-    const s = await awaitBuy(deps, checked, onStep);
-    // settled: an intent that could not be overwritten with the hash is no longer needed
-    if (s.name !== "buy-unknown") pendingStore.remove(ih, deps.storage);
-    return s;
+    return await awaitBuy(deps, checked, step);
   } catch (e) {
     if (sent) {
-      // a failure after broadcast (storage, RPC): keep the hash pending and the draft locked, never a plain error
-      pendingStore.replace(buyIntentHash(deps.account), sent, deps.storage);
+      // a failure after broadcast (storage, RPC): keep this attempt pending and the draft locked, never a plain error
+      if (pendingStore.update(attempt, (t) => (t.intent ? sent! : t), deps.storage) === "missing") pendingStore.add(sent, deps.storage);
       const s: Step = { name: "buy-unknown", hash: sent.hash, message: SENT_UNKNOWN_MESSAGE };
-      onStep(s);
+      step(s);
       return s;
     }
     return fail(deps.explain(e));
@@ -455,7 +574,7 @@ export const AMBIGUOUS_MESSAGE =
 export const STORAGE_MESSAGE =
   "This browser is not letting the site save recovery data (storage is full or blocked), so a sent purchase could not be recovered after a reload. Nothing was sent and your draft is kept. Free some site storage or leave private mode, then try again.";
 export const SENT_UNKNOWN_MESSAGE =
-  "Your purchase was sent, but the page could not finish tracking it. It stays locked on this transaction so it is not sent twice; check its receipt below.";
+  "Your purchase may have been sent, but the page could not finish tracking it. It stays locked on this transaction so it is not sent twice; check its receipt below.";
 
 export const INTENT_PENDING_MESSAGE =
   "A purchase was waiting for your wallet's confirmation when the page closed, and its nonce has not been used yet, so it may still be pending in your wallet. This draft stays locked so it is not sent twice. Check again, or release it if your wallet shows no pending purchase.";
@@ -480,7 +599,8 @@ export async function reconcileSent(
     const got = await deps.sentTx(tx.hash).catch(() => null);
     if (got) {
       const next: PendingTx = { ...tx, from: got.from, nonce: got.nonce, nonceChecked: true };
-      if (pendingStore.list(deps.storage).some((t) => t.hash === tx.hash)) pendingStore.add(next, deps.storage);
+      // compare-and-update: only while this attempt is still saved under this hash (never resurrect a settled one)
+      pendingStore.update(attemptOf(tx), () => next, deps.storage, tx.hash);
       return next;
     }
     if (i < tries - 1) await pause(1500);
@@ -507,8 +627,9 @@ export async function awaitBuy(
   }
   const draft = tx.styles && tx.wishes && tx.styles.length === tx.wishes.length ? { styles: tx.styles, wishes: tx.wishes } : undefined;
   const s = settleBuy(r, tx.hash, tx.account, tx.quantity, draft);
-  // an unverified receipt keeps the hash saved (and the draft locked) so verification can be retried
-  if (s.name !== "buy-unknown") pendingStore.remove(tx.hash, deps.storage);
+  // an unverified receipt keeps the attempt saved (and the draft locked) so verification can be retried; a settled
+  // receipt removes exactly this attempt, never a newer one saved by another tab under the same placeholder
+  if (s.name !== "buy-unknown") pendingStore.removeAttempt(attemptOf(tx), deps.storage);
   if (s.name === "done" && r.purchase) deps.remember?.(r.purchase.firstId, r.purchase.quantity, s.hash);
   onStep(s);
   return s;

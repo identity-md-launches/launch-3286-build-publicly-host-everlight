@@ -8,7 +8,7 @@ import { LightPanel, recoverBuy } from "./panels/LightPanel";
 import { countLine } from "./lib/counts";
 import { CandleDetail, HowPanel, MinePanel, Register, RewardsPanel, TreasuryPanel, checkClaim } from "./panels/Panels";
 import { FIXTURE, store, useCandles, useMyIds, useReducedMotion, useStatus } from "./hooks";
-import { INTENT_PENDING_MESSAGE, UNVERIFIED_MESSAGE, pendingStore, type PendingTx } from "./lib/purchase";
+import { INTENT_PENDING_MESSAGE, UNVERIFIED_MESSAGE, attemptOf, pendingStore, type PendingTx } from "./lib/purchase";
 import { settleReceipt } from "./lib/chain";
 import { settleClaim } from "./lib/receipt";
 import { imd } from "./lib/format";
@@ -63,7 +63,7 @@ function usePendingRecovery(push: (t: Toast) => void, onLit: (firstId: number, q
   useEffect(() => {
     const list = pendingStore.list();
     list.forEach((tx: PendingTx) => {
-      push({ id: tx.hash, text: `Checking a ${tx.kind === "buy" ? "purchase" : tx.kind} sent earlier…`, href: tx.intent ? undefined : `${ETHERSCAN}/tx/${tx.hash}` });
+      push({ id: tx.hash, text: `Checking a ${tx.kind === "buy" ? "purchase" : tx.kind} that may have been sent earlier…`, href: tx.intent ? undefined : `${ETHERSCAN}/tx/${tx.hash}` });
       if (tx.kind === "buy") {
         // a purchase is settled only by the garden's CandlesPurchased event in the mined (possibly replacement)
         // receipt; until then the Light a candle form stays locked on the same draft
@@ -91,10 +91,10 @@ function usePendingRecovery(push: (t: Toast) => void, onLit: (firstId: number, q
           const href = `${ETHERSCAN}/tx/${r.transactionHash}`;
           if (tx.kind === "claim") {
             const v = settleClaim(r, mined, tx.account);
-            if (!("unverified" in v && v.unverified)) pendingStore.remove(tx.hash); // unverified claims stay saved
+            if (!("unverified" in v && v.unverified)) pendingStore.removeAttempt(attemptOf(tx)); // unverified claims stay saved
             push({ id: tx.hash, bad: !v.ok, href, text: v.ok ? `Your earlier claim confirmed: ${imd(v.amount)} IMD claimed.` : v.message });
           } else {
-            pendingStore.remove(tx.hash);
+            pendingStore.removeAttempt(attemptOf(tx));
             const ok = r.status === "success" && r.transactionHash === tx.hash;
             push({ id: tx.hash, bad: !ok, href, text: ok ? "Your earlier approval confirmed." : "Your earlier approval was replaced or reverted; approve again when you light candles." });
           }

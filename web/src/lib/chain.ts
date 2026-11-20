@@ -1,6 +1,6 @@
 import type { Hash, TransactionReceipt } from "viem";
 import { ethClient } from "../config";
-import { INTENT_PENDING_MESSAGE, pendingStore, type PendingTx, type Receipt } from "./purchase";
+import { INTENT_PENDING_MESSAGE, attemptOf, pendingStore, type PendingTx, type Receipt } from "./purchase";
 import { readReceipt, type MinedTx } from "./receipt";
 import { locateMined, type RecoveryClient } from "./recovery";
 import { INTENT_NOT_FOUND, matchesIntent, resolveIntent, type IntentClient, type SeenTx } from "./intent";
@@ -31,7 +31,11 @@ export const intentClient: IntentClient = {
   },
 };
 
-/** Thrown when a saved intent has no matching transaction and nothing is pending: the UI offers a confirmed release. */
+/**
+ * Thrown when no matching transaction was found for a saved intent. This is NOT proof of cancellation: the preflight
+ * nonce is not the wallet's verified broadcast nonce, and a wallet may have broadcast at a higher or private nonce and
+ * then returned an error (e.g. 4900). The attempt stays saved; the UI offers check-again and hash recovery.
+ */
 export class IntentNotFoundError extends Error {
   constructor() { super(INTENT_NOT_FOUND); }
 }
@@ -49,8 +53,10 @@ export async function attachHash(intent: PendingTx, hash: string, client: Pick<I
   if (!t) return { ok: false, reason: "That transaction was not found on Ethereum (yet). Check the hash, or wait a moment and try again." };
   const m = matchesIntent(intent, t);
   if (!m.ok) return m;
-  const next: PendingTx = { ...intent, hash: t.hash, intent: undefined, from: t.from, nonce: t.nonce, nonceChecked: true };
-  pendingStore.replace(intent.hash, next, storage);
+  const attempt = attemptOf(intent);
+  const next: PendingTx = { ...intent, attempt, hash: t.hash, intent: undefined, from: t.from, nonce: t.nonce, nonceChecked: true };
+  // the same attempt now carries the real hash; the caller checks this returned entry at once (not the placeholder)
+  pendingStore.replace(attempt, next, storage);
   return { ok: true, tx: next };
 }
 
@@ -146,7 +152,7 @@ export async function completeMeta(tx: PendingTx): Promise<PendingTx> {
     const ago = BigInt(Math.ceil(Math.max(0, Date.now() - tx.createdAt) / 12_000) + 25);
     next = { ...next, block: (head > ago ? head - ago : 0n).toString() };
   }
-  if (next !== tx && pendingStore.list().some((t) => t.hash === tx.hash)) pendingStore.add(next);
+  if (next !== tx) pendingStore.update(attemptOf(tx), () => next, undefined, tx.hash); // compare-and-update
   return next;
 }
 
@@ -154,17 +160,15 @@ export type CancelCheck = { ok: true; tx: PendingTx } | { ok: false; reason: str
 
 /** The saved entry for exactly this attempt (same placeholder or hash, account, start time and nonce), if still saved. */
 export function savedAttempt(tx: PendingTx, storage?: Storage | null): PendingTx | null {
-  return pendingStore.list(storage).find((t) => t.hash === tx.hash && t.kind === tx.kind && t.account.toLowerCase() === tx.account.toLowerCase()
-    && t.createdAt === tx.createdAt && t.nonce === tx.nonce) ?? null;
+  return pendingStore.get(attemptOf(tx), storage);
 }
 
 /**
- * Verified cancellation of one saved attempt that has no known transaction hash. It holds only when the chain shows
- * the attempt can no longer be mined: every nonce from the saved one up to the account's mined count was consumed by a
- * transaction that is not this call (a cancel or another transaction replaced it), and nothing is pending. A nonce
- * that is still unused, a pending transaction, an unreadable RPC or a matching transaction never counts: missing
- * evidence is not proof that nothing was sent. An attempt with a known hash is never released here; Check again
- * settles it from its own or its replacement's receipt.
+ * Cancellation of an attempt WITHOUT a known hash is never inferred from nonces: the saved nonce was read before
+ * signing, so an unrelated transaction consuming it says nothing about this attempt, and a wallet may have broadcast
+ * it at a higher or private nonce before failing (4900). Release needs evidence tied to the submitted transaction
+ * itself: its hash (pasted, or found as a matching garden call), whose receipt then settles it. Until then this always
+ * answers "stays locked" with the reason.
  */
 export async function verifyCancelled(tx: PendingTx, client: IntentClient = intentClient): Promise<CancelCheck> {
   if (!tx.intent) return { ok: false, reason: "This transaction's hash is known, so it is settled from its receipt: use Check again. A cancellation in your wallet is recognised there." };
@@ -172,24 +176,19 @@ export async function verifyCancelled(tx: PendingTx, client: IntentClient = inte
   try {
     at = await resolveIntent(client, tx);
   } catch {
-    return { ok: false, reason: "Your account's transactions could not be read from Ethereum, so a cancellation cannot be verified. It stays locked; try again in a moment." };
+    return { ok: false, reason: "Your account's transactions could not be read from Ethereum. It stays locked; try again in a moment." };
   }
-  if (at.kind === "not-found") return { ok: true, tx };
   if (at.kind === "found") return { ok: false, reason: "A matching transaction was mined from your account, so this was sent. Use Check again to follow its receipt." };
-  if (at.kind === "pending") return { ok: false, reason: `Nonce ${tx.nonce ?? "?"} of your account has not been used by a mined transaction yet, so this may still be pending in your wallet. To cancel it, use your wallet's cancel (or send any transaction from this account); once that is mined, verify again.` };
+  if (at.kind === "not-found") return { ok: false, reason: INTENT_NOT_FOUND };
+  if (at.kind === "pending") return { ok: false, reason: INTENT_PENDING_MESSAGE };
   return { ok: false, reason: `${at.reason} It stays locked.` };
 }
 
-/**
- * Release a saved attempt only after re-validating it: the exact saved entry must still be there, and its cancellation
- * is verified again against the chain at the moment of release. Returns why it stays locked otherwise.
- */
+/** Kept for callers of earlier builds: an attempt without hash evidence is never released (see verifyCancelled). */
 export async function releaseVerified(tx: PendingTx, remove: (t: PendingTx) => void, client: IntentClient = intentClient, storage?: Storage | null): Promise<CancelCheck> {
   const cur = savedAttempt(tx, storage);
   if (!cur) return { ok: false, reason: "This attempt is no longer saved in this browser (another tab may have settled it)." };
   const v = await verifyCancelled(cur, client);
-  if (!v.ok) return v;
-  if (!savedAttempt(cur, storage)) return { ok: false, reason: "This attempt changed while it was being checked; check again." };
-  remove(cur);
+  if (v.ok && savedAttempt(cur, storage)) remove(cur);
   return v;
 }

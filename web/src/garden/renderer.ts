@@ -1,7 +1,7 @@
 import type { Candle } from "../lib/candles";
 import { HOLDER_TOP, HORIZON_CUT, SECTOR_H, SECTOR_MARGIN, SECTOR_W, SLOTS_PER_SECTOR, cameraBounds, horizonY, positionOf, sectorAt, sectorCount, sectorOrigin, streamX } from "./layout";
 import { BASE_PAD, PX, TREE_SPOTS, drawSectorBase, drawSectorUpright, springY, streamHalf, streamHalfAt, type Sheet } from "./scenery";
-import { ACTOR_BOX, actorFrames, actorsOf, drawActor, frogAtlas, type ActorFrame } from "./ambient";
+import { ACTOR_BOX, FRAME_INDEX, actorFrames, actorsOf, drawActor, frogAtlas, type ActorFrame } from "./ambient";
 import { ignition } from "./ignite";
 import { CASTLE_BOXES, CASTLE_W, MOON_AT, MOON_R, VISTA_CASTLE_X, VISTA_FOOT, VISTA_H, VISTA_TOP, VISTA_W, makeVista, type Vista } from "./vista";
 
@@ -91,6 +91,7 @@ export class GardenRenderer {
     this.glow = makeGlow();
     frogAtlas(); // the frogs' one shared sprite atlas, built once
     (window as any).__gardenRenderer = this; // read-only inspection hook for the browser checks
+    (window as any).__gardenAmbient = { atlas: frogAtlas, actorsOf, actorFrames, frameIndex: FRAME_INDEX }; // read-only, for the browser checks
     this.vista = makeVista();
     Promise.all([...CANDLE_ART, ...FLAME_ART, ...LAYERS].map(loadImage)).then((imgs) => {
       this.candleImgs = imgs.slice(0, 7);

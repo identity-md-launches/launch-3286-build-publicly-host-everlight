@@ -103,7 +103,9 @@ export function drawSectorBase(g: CanvasRenderingContext2D, index: number, sheet
       if (gy === 0) {
         const q = Math.hypot((x - bx) / BR, (y - by) / (BR * 0.62));
         if (q < 1) pool = Math.min(pool, q * q);
-        else if (q < 1.42 && y > by - BR) {
+        // the rim is notched where the stream leaves the basin: the channel and its banks run straight through it, so
+        // basin and river are one connected water shape (no dry stone strip across the outlet)
+        else if (q < 1.42 && y > by - BR && !(hasStream && y > by && ds < hw + 3)) {
           // ring of rounded stones (lit from the upper left), with reeds standing on the far side
           const a = Math.atan2(y - by, x - bx), cell = Math.floor((a + Math.PI) / 0.42), lc = ((a + Math.PI) % 0.42) / 0.42;
           const rq = (q - 1) / 0.42;
@@ -255,6 +257,10 @@ export function drawSectorUpright(g: CanvasRenderingContext2D, index: number, sh
   const openGround = (x: number, y: number, own: number) => Math.abs(y - pathY(gy, x)) > 30 && Math.abs(x - streamX(gx, y)) > streamHalf(y) + 6
     && !plan.slots.some((sl) => Math.abs(sl[0] - x) < 18 && y - sl[1] > -12 && y - sl[1] < 80) && !onStairs(x, y, 6)
     && !onTerrace(plan, x, y, [own]);
+  // shared hillside: the ground between two stacked candle beds is one continuous terrace mass (lawn on a common
+  // stone footing, joined by return walls at the ends of the overlap), drawn after the upper bed and under the lower
+  if (!wild) for (const j of terraceJoins(plan.terraces, flush)) items.push({ y: j.y, draw: () => drawJoin(g, j, wallPat, lawnPat, put, (x, y) =>
+    Math.abs(y - pathY(gy, x)) > 12 && Math.abs(x - streamX(gx, y)) > streamHalf(y) + 6 && !onStairs(x, y, 4)) });
   if (!wild) plan.terraces.forEach((t, ti) => items.push({ y: t.cy + t.rx * TILT, draw: () => drawTerrace(g, t, plan.slots, im, wallPat, lawnPat, pathPat, put, r, stairOf.get(ti), flush.has(ti), arrangement, (x, y) => openGround(x, y, ti)) }));
   const onStairs = (x: number, y: number, rad: number) => {
     const all = stairs.gazebo?.stair ? [...stairs.terraces, stairs.gazebo.stair] : stairs.terraces;
@@ -410,6 +416,70 @@ function drawBridge(
   // decorative lamps at the bridge heads: green glass on iron posts, steady, never a candle
   if (!wild) for (const side of [-1, 1]) put("lamp", b.x + side * (half + 6), pathY(gy, b.x + side * (half + 6)) + deck + 2);
   void im;
+}
+
+/** Column profile of one terrace bed: outer coping row yo, inner lawn edge yi and the foot of its wall. */
+function terraceProfile(t: Terrace, pad: number): Map<number, { yo: number; yi: number; foot: number }> {
+  const out = new Map<number, { yo: number; yi: number; foot: number }>();
+  if (t.rx <= 0) return out;
+  const depth = 46 * t.scale, R = t.rx + 16 * t.scale, wall = snap(t.wall);
+  for (let a = t.a0 - pad; a <= t.a1 + pad; a += 0.5 / R) {
+    const X = snap(t.cx + Math.cos(a) * R);
+    const yo = snap(t.cy + Math.sin(a) * R * TILT), yi = snap(t.cy + Math.sin(a) * (R - depth) * TILT);
+    const c = out.get(X);
+    if (!c || yo > c.yo) out.set(X, { yo, yi: Math.min(yi, yo - 6), foot: yo + wall + PX * 2 });
+  }
+  return out;
+}
+interface Join { y: number; cols: [number, number, number][]; scale: number }
+/**
+ * Pairs of beds stacked above one another (overlapping in x, a small vertical gap): for every shared column the
+ * ground from the upper wall's foot down to the lower bed's lawn edge becomes one landing. Gaps wider than a single
+ * terrace step are left to the hillside contours.
+ */
+export function terraceJoins(ts: Terrace[], flush: Set<number> = new Set()): Join[] {
+  const prof = ts.map((t, i) => (flush.has(i) ? new Map() : terraceProfile(t, 0.16)));
+  const out: Join[] = [];
+  ts.forEach((u, i) => ts.forEach((l, k) => {
+    if (i === k || !(u.cy < l.cy) || !prof[i].size || !prof[k].size) return;
+    const cols: [number, number, number][] = [];
+    for (const [X, a] of prof[i]) {
+      const b = prof[k].get(X);
+      if (!b) continue;
+      const gap = b.yi - a.foot;
+      if (gap > PX * 2 && gap < 150) cols.push([X, a.foot, b.yi]);
+    }
+    if (cols.length * PX >= 40) out.push({ y: u.cy + u.rx * TILT + 0.5, cols: cols.sort((p, q) => p[0] - q[0]), scale: u.scale });
+  }));
+  return out;
+}
+function drawJoin(g: CanvasRenderingContext2D, j: Join, wallPat: CanvasPattern | null, lawnPat: CanvasPattern | null,
+  put: (n: string, x: number, y: number, flip?: boolean) => void, open: (x: number, y: number) => boolean) {
+  const first = j.cols[0][0], last = j.cols[j.cols.length - 1][0];
+  for (const [X, top, bot] of j.cols) {
+    for (let y = top; y < bot; y += PX) {
+      if (!open(X, y)) continue;
+      const f = (y - top) / Math.max(PX, bot - top);
+      // lawn, shaded under the upper wall, with moss tufts; a shared footing course where it meets the lower bed
+      g.fillStyle = lawnPat ?? "#1c3a26"; g.fillRect(X, y, PX, PX);
+      if (f < 0.25 && dither(X / PX, y / PX, 0.55 - f * 2)) { g.fillStyle = "rgba(5,10,8,0.45)"; g.fillRect(X, y, PX, PX); }
+      else if (hash2(X, y, 51) < 0.05) { g.fillStyle = "#3f7a3c"; g.fillRect(X, y, PX, PX); }
+    }
+    // return walls close the landing at both ends of the overlap, joining the two retaining faces
+    if ((X === first || X === last) && open(X, (top + bot) / 2)) {
+      for (let k = 0; k < 3; k++) {
+        const XX = X + (X === first ? -k : k) * PX;
+        g.fillStyle = wallPat ?? "#3f413a"; g.fillRect(XX, top - PX * 2, PX, bot - top);
+        g.fillStyle = k === 0 ? "#6aa84f" : "#c4bb98"; g.fillRect(XX, top - PX * 3, PX, PX);
+      }
+    }
+  }
+  // a few flowers and moss stones on the shared landing
+  for (let k = PX * 7; k < j.cols.length; k += 23) {
+    const [X, top, bot] = j.cols[k];
+    const y = snap(top + (bot - top) * 0.55);
+    if (bot - top > 24 && open(X, y)) put(hash2(X, y, 52) < 0.5 ? "flowers" : "rock", X, y, hash2(X, y, 53) < 0.5);
+  }
 }
 
 function drawTerrace(

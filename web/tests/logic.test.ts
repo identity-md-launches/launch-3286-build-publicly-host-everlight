@@ -12,7 +12,7 @@ class MemStorage {
   setItem(k: string, v: string) { this.m.set(k, v); }
   removeItem(k: string) { this.m.delete(k); }
   clear() { this.m.clear(); }
-  key() { return null; }
+  key(i: number) { return [...this.m.keys()][i] ?? null; }
   get length() { return this.m.size; }
 }
 

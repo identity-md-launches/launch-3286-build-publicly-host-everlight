@@ -133,25 +133,52 @@ export class CandleStore {
   }
 }
 
-/** Paginate candleIdsOf(owner, offset, 100) until the contract returns the end offset. */
+/**
+ * The owner's register ended before the verified onchain count: the IDs read so far are valid and kept, and a retry
+ * resumes at the first missing offset. Never shown as a complete register.
+ */
+export class IncompleteIdsError extends Error {
+  constructor(public ids: number[], public expected: number, public nextOffset: bigint) {
+    super(`Only ${ids.length} of your ${expected} candles could be read; the rest did not arrive.`);
+    this.name = "IncompleteIdsError";
+  }
+}
+
+/**
+ * Paginate candleIdsOf(owner, offset, 100). With `expected` (candleCountOf, read at the same block where the client
+ * allows it) the pages are reconciled with that count: an empty, short or stalled page before the count is reached
+ * throws IncompleteIdsError carrying the IDs read and the first missing offset. `from` resumes an earlier partial read.
+ */
 export async function readAllIds(
   read: (offset: bigint, limit: bigint) => Promise<readonly [readonly bigint[], bigint]>,
+  expected?: number,
+  from: { ids: number[]; offset: bigint } = { ids: [], offset: 0n },
 ): Promise<number[]> {
-  const out: number[] = [];
-  let offset = 0n;
+  const out: number[] = [...from.ids];
+  let offset = from.offset;
   for (let guard = 0; guard < 10_000; guard++) {
+    if (expected !== undefined && out.length >= expected) break;
     const [ids, nextOffset] = await read(offset, BigInt(PAGE_SIZE));
     out.push(...ids.map(Number));
-    if (ids.length < PAGE_SIZE || nextOffset === offset) break;
-    offset = nextOffset;
+    const end = ids.length < PAGE_SIZE || nextOffset === offset;
+    const reached = offset + BigInt(ids.length);
+    if (end) {
+      if (expected !== undefined && out.length < expected) throw new IncompleteIdsError(out, expected, reached);
+      break;
+    }
+    offset = nextOffset > reached ? reached : nextOffset;
   }
-  return out;
+  return expected !== undefined ? out.slice(0, expected) : out;
 }
 
 export function liveSource(client: {
   readContract: (args: any) => Promise<any>;
+  getBlockNumber?: () => Promise<bigint>;
 }, abi: readonly unknown[]): CandleSource {
-  const read = (functionName: string, args: unknown[] = []) => client.readContract({ address: GARDEN, abi, functionName, args });
+  const read = (functionName: string, args: unknown[] = [], blockNumber?: bigint) =>
+    client.readContract(blockNumber === undefined ? { address: GARDEN, abi, functionName, args } : { address: GARDEN, abi, functionName, args, blockNumber });
+  /** Partial owner registers kept for a retry that resumes at the first missing offset (same verified count only). */
+  const partial = new Map<string, { count: number; ids: number[]; offset: bigint }>();
   return {
     kind: "live",
     async total() {
@@ -173,9 +200,22 @@ export function liveSource(client: {
       return { id, purchaser: r.purchaser as string, style: Number(r.style), createdAt: Number(r.createdAt), position: Number(r.position), wish: r.wish as string };
     },
     async idsOf(owner) {
-      const count = Number(await read("candleCountOf", [owner as Address]));
-      if (count === 0) return [];
-      return readAllIds((o, l) => read("candleIdsOf", [owner as Address, o, l]));
+      const key = owner.toLowerCase();
+      // count and pages from one block where the client allows it, so the count verifies exactly these pages
+      let block: bigint | undefined;
+      try { block = client.getBlockNumber ? await client.getBlockNumber() : undefined; } catch { block = undefined; }
+      const count = Number(await read("candleCountOf", [owner as Address], block));
+      if (count === 0) { partial.delete(key); return []; }
+      const prev = partial.get(key);
+      const from = prev && prev.count === count ? { ids: prev.ids, offset: prev.offset } : undefined;
+      try {
+        const ids = await readAllIds((o, l) => read("candleIdsOf", [owner as Address, o, l], block), count, from);
+        partial.delete(key);
+        return ids;
+      } catch (e) {
+        if (e instanceof IncompleteIdsError) partial.set(key, { count, ids: e.ids, offset: e.nextOffset });
+        throw e;
+      }
     },
   };
 }

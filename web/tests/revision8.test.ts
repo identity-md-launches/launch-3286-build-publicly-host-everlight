@@ -16,7 +16,7 @@ class QuotaStorage {
   setItem(k: string, v: string) { if (v.length > this.limit || this.failIf(v)) throw new DOMException("full", "QuotaExceededError"); this.m.set(k, v); }
   removeItem(k: string) { this.m.delete(k); }
   clear() { this.m.clear(); }
-  key() { return null; }
+  key(i: number) { return [...this.m.keys()][i] ?? null; }
   get length() { return this.m.size; }
 }
 // purchase intents are saved per account (review 658d1824); this is account 0x…a1's key

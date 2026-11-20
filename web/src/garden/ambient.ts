@@ -1,5 +1,6 @@
 /**
- * Ambient garden frogs: small decorative characters (an original round emerald frog design made for this garden)
+ * Ambient garden Pepes: small decorative characters, original pixel sprites drawn in code for this garden that depict
+ * Pepe (broad green face, heavy-lidded side-glancing eyes, wide two-tone lips, blue shirt)
  * that read, carry a lantern, roll in the grass, walk to trees and rest, dance, and hold a gentle light ritual.
  *
  * They are scenery, not users or agents: they never create candles, wishes, rewards or chain activity, are never
@@ -16,6 +17,8 @@ const PAL: Record<string, string> = {
   K: "#050a08", G: "#3f7a3c", L: "#6aa84f", H: "#a7d36a", D: "#2a5233", W: "#f0efe6", P: "#050a08", B: "#cdbf9c",
   C: "#d79a32", M: "#12251b", N: "#efe6cc", T: "#646453", Y: "#d79a32", Q: "#fff2b0", R: "#9a5f1c", E: "#7dffb0", F: "#c8ffe0",
   S: "#6a4424", O: "#9a6a3a",
+  // Pepe: upper and lower lip, eyelid line, shirt and its shade
+  U: "#c4644c", V: "#8a3a2c", J: "#35609a", I: "#25466f", Z: "#5a9a44",
 };
 type Grid = (string | null)[][];
 const blank = (): Grid => Array.from({ length: CELL }, () => Array<string | null>(CELL).fill(null));
@@ -45,54 +48,65 @@ interface Pose {
   sit?: boolean; mouth?: "smile" | "o";
   prop?: (g: Grid, b: { cx: number; cy: number; hl: [number, number]; hr: [number, number] }) => void;
 }
+/**
+ * One Pepe pose, facing right (flipped at draw time). Head: a broad face wider than tall with two big eyes bulging over
+ * its top edge, heavy upper lids and pupils glancing to the side; wide salmon upper and dark lower lips that run past
+ * the cheek on the facing side. Body: a blue shirt over short green legs and arms.
+ */
 function frog(p: Pose): Grid {
   const g = blank();
   const bob = p.bob ?? 0;
-  const cx = 9.5, cy = (p.sit ? 12 : 10) + bob, base = 17;
-  // feet and legs first (the body covers their tops)
+  const cy = (p.sit ? 12 : 10) + bob, base = 17;
+  const hy = cy - 2.5; // head centre
+  // feet and legs first (the shirt covers their tops)
   const [ldx, lup, rdx, rup] = p.feet ?? [0, 0, 0, 0];
-  if (p.sit) { rect(g, 4, 16, 4, 1, "D"); rect(g, 12, 16, 4, 1, "D"); }
+  if (p.sit) { rect(g, 4, 16, 5, 1, "G"); rect(g, 11, 16, 5, 1, "G"); rect(g, 4, 17, 2, 1, "D"); rect(g, 14, 17, 2, 1, "D"); }
   else {
-    rect(g, 6 + ldx, cy + 3, 2, base - (cy + 3) - lup, "D"); rect(g, 5 + ldx, base - lup, 3, 1, "L");
-    rect(g, 12 + rdx, cy + 3, 2, base - (cy + 3) - rup, "D"); rect(g, 12 + rdx, base - rup, 3, 1, "L");
+    rect(g, 7 + ldx, cy + 4, 2, base - (cy + 4) - lup, "G"); rect(g, 6 + ldx, base - lup, 3, 1, "D");
+    rect(g, 11 + rdx, cy + 4, 2, base - (cy + 4) - rup, "G"); rect(g, 11 + rdx, base - rup, 3, 1, "D");
   }
-  // body: a squat round frog with a cream belly
-  ell(g, cx, cy, 5.2, 4.2, "G");
-  ell(g, cx, cy + 1.6, 3.2, 2.2, "B");
-  for (let x = 6; x <= 13; x++) if (g[Math.round(cy - 3)]?.[x] === "G") set(g, x, Math.round(cy - 3), "L");
-  // eyes: two domes on top of the head
-  const ey = Math.round(cy - 4);
-  for (const ex of [6, 13]) {
-    ell(g, ex, ey, 1.8, 1.6, "G");
+  // shirt
+  ell(g, 9.5, cy + 3.2, 3.6, 2.4, "J");
+  rect(g, 7, Math.round(cy + 4.6), 6, 1, "I");
+  // head: broad face, lighter crown
+  ell(g, 9.5, hy, 6.2, 3.4, "G");
+  for (let x = 5; x <= 14; x++) if (g[Math.round(hy - 3)]?.[x] === "G") set(g, x, Math.round(hy - 3), "Z");
+  // two big eyes bulging over the top of the head
+  const ey = Math.round(hy - 2);
+  for (const ex of [6.5, 12.5]) {
+    ell(g, ex, ey, 2.3, 1.9, "G");
+    const x0 = Math.round(ex - 2);
     if (p.eyes === "back") continue;
-    if (p.eyes === "closed") { rect(g, ex - 1, ey, 3, 1, "M"); continue; }
-    rect(g, ex - 1, ey - 1, 2, 2, "W");
-    const off = p.eyes === "left" ? -1 : p.eyes === "right" ? 0 : 0;
-    set(g, ex + off + (p.eyes === "left" || p.eyes === "right" ? 0 : 0), ey + (p.eyes === "up" ? -1 : 0), "P");
-    if (p.eyes === "right") set(g, ex, ey, "P");
+    if (p.eyes === "closed") { rect(g, x0, ey, 4, 1, "D"); continue; }
+    // whites under a heavy lid (the lid covers the top half: Pepe's half-closed look)
+    rect(g, x0, ey, 4, 2, "W");
+    rect(g, x0, ey - 1, 4, 1, "D");
+    const look = p.eyes === "left" ? 0 : p.eyes === "up" ? 1 : 2; // default glance: to the side (facing direction)
+    rect(g, x0 + look, p.eyes === "up" ? ey : ey + 1 - 1, 2, p.eyes === "up" ? 1 : 2, "P");
   }
   if (p.eyes !== "back") {
-    // mouth and amber cheeks
-    if (p.mouth === "o") rect(g, 9, Math.round(cy), 2, 1, "M");
-    else { rect(g, 7, Math.round(cy), 6, 1, "M"); set(g, 6, Math.round(cy) - 1, "M"); set(g, 13, Math.round(cy) - 1, "M"); }
-    set(g, 5, Math.round(cy) + 1, "C"); set(g, 14, Math.round(cy) + 1, "C");
+    // wide two-tone lips across the lower face, protruding past the cheek on the facing side
+    const ly = Math.round(hy + 1.6);
+    if (p.mouth === "o") { rect(g, 9, ly, 4, 2, "U"); rect(g, 10, ly, 2, 1, "M"); set(g, 13, ly, "U"); }
+    else { rect(g, 5, ly, 11, 1, "U"); set(g, 16, ly, "U"); rect(g, 6, ly + 1, 9, 1, "V"); set(g, 15, ly + 1, "V"); }
   }
-  // arms: short limbs from the shoulders to the given hand positions
-  const sh: [number, number][] = [[5, Math.round(cy) + 1], [14, Math.round(cy) + 1]];
-  const hands: [number, number][] = [[3, Math.round(cy) + 3], [16, Math.round(cy) + 3]];
+  // arms: short green limbs from the shoulders to the given hand positions
+  const sy = Math.round(cy + 2);
+  const sh: [number, number][] = [[6, sy], [13, sy]];
+  const hands: [number, number][] = [[4, sy + 2], [15, sy + 2]];
   [p.armL, p.armR].forEach((a, i) => {
     if (a === null) return;
     const [dx, dy] = a ?? [i ? 1 : -1, 2];
-    const [sx, sy] = sh[i];
+    const [sx, sy0] = sh[i];
     const steps = Math.max(Math.abs(dx), Math.abs(dy));
-    for (let k = 1; k <= steps; k++) set(g, Math.round(sx + (dx * k) / steps), Math.round(sy + (dy * k) / steps), "L");
-    hands[i] = [sx + dx, sy + dy];
+    for (let k = 1; k <= steps; k++) set(g, Math.round(sx + (dx * k) / steps), Math.round(sy0 + (dy * k) / steps), "L");
+    hands[i] = [sx + dx, sy0 + dy];
   });
-  p.prop?.(g, { cx, cy, hl: hands[0], hr: hands[1] });
+  p.prop?.(g, { cx: 9.5, cy, hl: hands[0], hr: hands[1] });
   return outline(g);
 }
 const paper = (fold: number) => (g: Grid, b: { cy: number }) => {
-  const y = Math.round(b.cy) - 1, w = [7, 5, 3, 5][fold], x = 10 - Math.floor(w / 2);
+  const y = Math.round(b.cy) + 1, w = [7, 5, 3, 5][fold], x = 10 - Math.floor(w / 2);
   rect(g, x - (fold === 3 ? 2 : 0), y, w, 5, "N");
   for (let k = 0; k < w - 1; k += 2) rect(g, x + k - (fold === 3 ? 2 : 0), y + 1, 1, 3, "T");
   if (fold === 1 || fold === 2) rect(g, x + w, y - 1, 2, 4, "N"); // the page lifting over
@@ -103,7 +117,7 @@ const lantern = (swing: number) => (g: Grid, b: { hr: [number, number] }) => {
   rect(g, hx - 1 + swing, hy + 2, 3, 3, "Y"); set(g, hx + swing, hy + 3, "Q");
 };
 const ritualLight = (raised: boolean) => (g: Grid, b: { cy: number }) => {
-  const y = Math.round(b.cy) + (raised ? -7 : -1);
+  const y = Math.max(0, Math.round(b.cy) + (raised ? -10 : 2));
   rect(g, 9, y, 2, 2, "E"); set(g, 9, y, "F");
 };
 const bench = (g: Grid) => { rect(g, 2, 15, 16, 1, "O"); rect(g, 3, 16, 1, 2, "S"); rect(g, 16, 16, 1, 2, "S"); };
@@ -158,7 +172,12 @@ export const frameCount = (k: string) => FRAMES[k]?.length ?? 0;
 export type Activity = "reader" | "lantern" | "roller" | "walker" | "dancer" | "ritual";
 export interface Actor { kind: Activity; sector: number; seed: number; x: number; y: number; flip?: boolean;
   /** walkers / lantern: waypoints [x, y, pauseMs, poseWhilePaused] */
-  route?: [number, number, number, string][]; ring?: number }
+  route?: Waypoint[]; ring?: number }
+/**
+ * [x, y, pauseMs, poseWhilePaused, pathOffset?]. A waypoint with a path offset sits on the winding path; a leg between
+ * two such waypoints follows the path curve itself (y = pathY(x) + offset), so the feet never cut across a wall face.
+ */
+export type Waypoint = [number, number, number, string, number?];
 export interface ActorFrame { x: number; y: number; frame: string; flip: boolean; glow?: "warm" | "mint" }
 
 const stream = (gx: number, x: number, y: number) => {
@@ -184,6 +203,20 @@ export function freeSpot(plan: SectorPlan, x: number, y: number, r: number, offP
   return true;
 }
 /** Is the straight walk between two points dry (no water) the whole way? */
+/**
+ * A straight off-path leg is walkable only when every sample is dry (no stream or pool) and on level ground: a wall
+ * face or its coping is crossed only inside the path's stair corridor.
+ */
+function walkable(plan: SectorPlan, x0: number, y0: number, x1: number, y1: number) {
+  if (!dryWalk(plan, x0, y0, x1, y1)) return false;
+  const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 6);
+  for (let i = 0; i <= n; i++) {
+    const x = x0 + ((x1 - x0) * i) / n, y = y0 + ((y1 - y0) * i) / n;
+    const c = contourAt(x, y);
+    if (c.d > -6 && c.d < CONTOUR_WALL + 6 && Math.abs(y - pathY(plan.gy, x)) > 8) return false;
+  }
+  return true;
+}
 function dryWalk(plan: SectorPlan, x0: number, y0: number, x1: number, y1: number) {
   const n = Math.ceil(Math.hypot(x1 - x0, y1 - y0) / 12);
   for (let i = 0; i <= n; i++) {
@@ -237,10 +270,11 @@ export function actorsOf(index: number): Actor[] {
   const ro = place("roller", 50); if (ro) out.push({ kind: "roller", sector: index, seed: seed(), x: ro[0], y: ro[1] });
   const dn = place("dancer", 24); if (dn) out.push({ kind: "dancer", sector: index, seed: seed(), x: dn[0], y: dn[1] });
   const lr = pathRun(plan, r, 360 + r() * 200);
-  if (lr) out.push({ kind: "lantern", sector: index, seed: seed(), x: lr[0], y: pathY(plan.gy, lr[0]), route: [[lr[0], pathY(plan.gy, lr[0]) + 4, 2600, "lift"], [lr[1], pathY(plan.gy, lr[1]) + 4, 1800, "lift"]] });
+  if (lr) out.push({ kind: "lantern", sector: index, seed: seed(), x: lr[0], y: pathY(plan.gy, lr[0]), route: [[lr[0], pathY(plan.gy, lr[0]) + 2, 2600, "lift", 2], [lr[1], pathY(plan.gy, lr[1]) + 2, 1800, "lift", 2]] });
   for (let w = 0; w < 2; w++) {
     const run = pathRun(plan, r, 260 + r() * 260);
-    if (run) out.push({ kind: "walker", sector: index, seed: seed(), x: run[0], y: pathY(plan.gy, run[0]), route: [[run[0], pathY(plan.gy, run[0]) + (w ? -6 : 8), 1200, "idle"], [run[1], pathY(plan.gy, run[1]) + (w ? -6 : 8), 1600, "idle"]] });
+    const off = w ? -4 : 4; // inside the path (and its stair corridor), one walker on each side
+    if (run) out.push({ kind: "walker", sector: index, seed: seed(), x: run[0], y: pathY(plan.gy, run[0]), route: [[run[0], pathY(plan.gy, run[0]) + off, 1200, "idle", off], [run[1], pathY(plan.gy, run[1]) + off, 1600, "idle", off]] });
   }
   actorCache.set(index, out);
   return out;
@@ -250,7 +284,7 @@ export function actorsOf(index: number): Actor[] {
  * Walkers gain tree visits once the cell's scenery has been painted (its tree positions are then known): each walk
  * goes to the foot of a reachable tree off the path, rests beneath it, and returns. Trees across water are skipped.
  */
-function walkerRoute(a: Actor): [number, number, number, string][] {
+function walkerRoute(a: Actor): Waypoint[] {
   const base = a.route!;
   if (a.kind !== "walker") return base;
   const trees = TREE_SPOTS.get(a.sector);
@@ -258,21 +292,40 @@ function walkerRoute(a: Actor): [number, number, number, string][] {
   const plan = sectorPlan(a.sector);
   const [p0, p1] = base;
   const pick = (px: number, py: number, salt: number) => {
-    const c = trees.filter((t) => Math.abs(t.x - px) < 160 && Math.abs(t.y - py) < 150 && Math.abs(t.y - py) > 30 && dryWalk(plan, px, py, t.x, t.y + 8) && freeSpot(plan, t.x + 6, t.y + 8, 6, false));
+    // both straight legs (path -> tree foot -> back onto the path) must cross only walkable ground: no water, pool or wall
+    const c = trees.filter((t) => {
+      if (!(Math.abs(t.x - px) < 160 && Math.abs(t.y - py) < 150 && Math.abs(t.y - py) > 30)) return false;
+      const fx = t.x + (salt === 1 ? 8 : -8), fy = t.y + 8, bx = px + (salt === 1 ? 20 : -20), by = pathY(plan.gy, bx) + (p0[4] ?? 0);
+      return freeSpot(plan, fx, fy, 6, false) && walkable(plan, px, py, fx, fy) && walkable(plan, fx, fy, bx, by);
+    });
     return c.length ? c[Math.floor(hash2(a.seed, salt, 7) * c.length)] : null;
   };
   const t0 = pick(p0[0], p0[1], 1), t1 = pick(p1[0], p1[1], 2);
   const route = [p0];
-  if (t0) route.push([t0.x + 8, t0.y + 8, 5200 + hash2(a.seed, 3, 1) * 3000, "rest"], [p0[0] + 20, p0[1], 400, "idle"]);
+  const back = (x: number, o: number | undefined): Waypoint => [x, pathY(plan.gy, x) + (o ?? 0), 400, "idle", o ?? 0];
+  if (t0) route.push([t0.x + 8, t0.y + 8, 5200 + hash2(a.seed, 3, 1) * 3000, "rest"], back(p0[0] + 20, p0[4]));
   route.push(p1);
-  if (t1) route.push([t1.x - 8, t1.y + 8, 4800 + hash2(a.seed, 4, 1) * 3000, "rest"], [p1[0] - 20, p1[1], 400, "idle"]);
+  if (t1) route.push([t1.x - 8, t1.y + 8, 4800 + hash2(a.seed, 4, 1) * 3000, "rest"], back(p1[0] - 20, p1[4]));
   return route;
 }
 
 const SPEED = 0.026; // world units per ms (about a slow stroll)
 /** Position along a closed route with pauses, as a function of time; varied by seed so no two loop in step. */
-function along(route: [number, number, number, string][], t: number, seed: number, frames: string): ActorFrame {
-  const legs = route.map((p, i) => { const q = route[(i + 1) % route.length]; return { p, q, walk: Math.hypot(q[0] - p[0], q[1] - p[1]) / SPEED }; });
+export function along(route: Waypoint[], t: number, seed: number, frames: string, gy?: number): ActorFrame {
+  // a leg between two on-path waypoints follows the path curve (its length measured along the curve)
+  const onPath = (p: Waypoint, q: Waypoint) => gy !== undefined && p[4] !== undefined && q[4] !== undefined;
+  const at = (p: Waypoint, q: Waypoint, f: number): [number, number] => {
+    const x = p[0] + (q[0] - p[0]) * f;
+    if (!onPath(p, q)) return [x, p[1] + (q[1] - p[1]) * f];
+    return [x, pathY(gy!, x) + p[4]! + (q[4]! - p[4]!) * f];
+  };
+  const len = (p: Waypoint, q: Waypoint) => {
+    if (!onPath(p, q)) return Math.hypot(q[0] - p[0], q[1] - p[1]);
+    let d = 0, [x0, y0] = at(p, q, 0);
+    for (let k = 1; k <= 16; k++) { const [x1, y1] = at(p, q, k / 16); d += Math.hypot(x1 - x0, y1 - y0); x0 = x1; y0 = y1; }
+    return d;
+  };
+  const legs = route.map((p, i) => { const q = route[(i + 1) % route.length]; return { p, q, walk: len(p, q) / SPEED }; });
   const total = legs.reduce((s, l) => s + l.p[2] + l.walk, 0);
   let u = (t + seed % 100000) % total;
   for (const l of legs) {
@@ -283,8 +336,8 @@ function along(route: [number, number, number, string][], t: number, seed: numbe
     }
     u -= l.p[2];
     if (u < l.walk) {
-      const f = u / l.walk;
-      return { x: l.p[0] + (l.q[0] - l.p[0]) * f, y: l.p[1] + (l.q[1] - l.p[1]) * f, frame: `${frames}:${Math.floor(u / 140) % 4}`, flip: l.q[0] < l.p[0] };
+      const [x, y] = at(l.p, l.q, u / l.walk);
+      return { x, y, frame: `${frames}:${Math.floor(u / 140) % 4}`, flip: l.q[0] < l.p[0] };
     }
     u -= l.walk;
   }
@@ -332,11 +385,11 @@ export function actorFrames(a: Actor, t: number, still: boolean): ActorFrame[] {
       });
     }
     case "lantern": {
-      const f = still ? { x: a.route![0][0], y: a.route![0][1], frame: "lift:0", flip: false } : along(a.route!, T, s, "lantern");
+      const f = still ? { x: a.route![0][0], y: a.route![0][1], frame: "lift:0", flip: false } : along(a.route!, T, s, "lantern", sectorPlan(a.sector).gy);
       return [{ ...f, glow: "warm" }];
     }
     case "walker":
-      return [still ? { x: a.route![0][0], y: a.route![0][1], frame: "idle:0", flip: false } : along(walkerRoute(a), T, s, "walk")];
+      return [still ? { x: a.route![0][0], y: a.route![0][1], frame: "idle:0", flip: false } : along(walkerRoute(a), T, s, "walk", sectorPlan(a.sector).gy)];
   }
 }
 

@@ -1,3 +1,23 @@
+# DESIGN: revision 13 changes (current source, 2026-11-20)
+
+These notes supersede the revision 12 frog notes below wherever they differ. Everything else is unchanged.
+
+## Tokens changed
+- Ambient character palette (`web/src/garden/ambient.ts`, `PAL`): skin `#3f7a3c` (G), crown highlight `#5a9a44` (Z), limbs `#6aa84f` (L), eyelids and feet `#2a5233` (D), ink and pupils `#050a08`, eye whites `#f0efe6`, upper lip `#c4644c` (U), lower lip `#8a3a2c` (V), shirt `#35609a` (J) with hem shade `#25466f` (I). The props are unchanged: paper `#efe6cc`, lantern `#d79a32`/`#fff2b0`, ritual light `#7dffb0`/`#c8ffe0`. Ritual lights stay mint so they never read as purchased amber candles.
+- Typography, spacing and the UI colour tokens are unchanged from the revision 12 and pixel revision sections below.
+
+## Components changed
+- **Ambient Pepes** (`frog()` in `ambient.ts`; the function name was kept so the diff stays small): an original 20x20 pixel sprite of Pepe. It has a broad face wider than tall, two large eyes bulging over the top of the head with heavy lids and pupils glancing towards the facing side, wide two-tone lips that run past the cheek, a blue shirt, and short green legs and arms. The same body is used for every pose: walk 4, idle 3, read 5 (newspaper held at chest height on a bench), lantern 4, lift 1, roll 4, curl 1, getup 1, dance 5, ritual 2 (the light is raised above the head) and rest 2. Everything is still built once into one shared atlas.
+- **Path-following routes**: a waypoint is `[x, y, pauseMs, pose, pathOffset?]`. A leg between two on-path waypoints follows `pathY(x) + offset`, with offsets of ±4 for walkers and +2 for the lantern carrier, all inside the stair corridor. The length of such a leg is measured along the curve. Off-path legs to trees pass only when `walkable()` holds: every 6 world units the point must be dry and must not lie on a wall face or coping outside the path corridor.
+- **Shared terrace landings** (`terraceJoins()` / `drawJoin()` in `scenery.ts`): two candle beds stacked above each other (overlapping by at least 40 world units, with a gap under 150) get one continuous lawn mass. It runs from the foot of the upper wall to the back edge of the lower bed, is shaded under the upper wall and carries moss, flowers and rocks. Three-pixel return walls close it at both ends of the overlap. The path, the stream and the stairs are left uncovered, and slot coordinates are not changed.
+- **Spring outlet**: the rounded stone rim has a notch where the stream leaves (`y > basin centre` and inside the channel half-width plus 3). The basin water and the channel are therefore one connected water shape.
+- **Purchase form**: the button reads "Approve exactly N IMD and light N candles" whenever an approval is needed. A purchase-only click that finds a revoked allowance shows "Allowance now: X IMD" and sends nothing. An approval that may have been sent shows the shared recovery box (Check again, Search my account's transactions, paste a hash and Match).
+- **My candles**: an incomplete register shows "Incomplete: X of your Y candles were read" with Try again, and lists the IDs it did read.
+
+## Responsive behaviour
+- Unchanged: the Pepes scale with the world at the same pixel density as the scenery, are not drawn below zoom 0.34, and never take pointer input.
+- The new landings are world-space terrain, so they scale and pan with the garden.
+
 # DESIGN: revision 12 additions (current source, 2026-11-20)
 
 The tokens, type scale and components further down still apply. This revision adds only what is listed here.

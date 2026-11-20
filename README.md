@@ -1,3 +1,27 @@
+## Current revision (2026-11-20, revision 13): read first
+
+This round fixes the 11 high findings and 1 medium finding from the review. Each one is answered in `.imd-responses.json`. Commands, run from `web/`:
+
+| Command | Result |
+|---|---|
+| `npm ci` | installed from the committed lockfile |
+| `npx tsc --noEmit` | 0 errors |
+| `npx vitest run` | 16 files, **181 tests passed** (165 earlier, plus 16 new in `tests/revision13.test.ts`) |
+| `npm run build` | `tsc --noEmit && vite build`, built in about 8 s, exported to `dist/` with relative `./` asset URLs |
+| taste probe (`node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste`) | **did not run**: Chromium could not start here (`libnspr4.so` is missing) |
+
+All tests here are **mocked**: labelled in-memory storage shared by simulated tabs, mock wallets and mock RPC clients. None of them touches a chain, a wallet or real funds. **No live checks ran this round**: no browser screenshots, no measured frame times, no live RPC reads. The browser evidence and performance figures in `artifacts/rev12/` are from the previous build and do not show this round's sprites, landings or spring notch. Those visual changes are still unverified in a browser.
+
+What changed:
+- **Pending-transaction storage**: each attempt is saved under its own key, `everlight:v2:pending:<garden>:a:<attempt>`. Settling an attempt writes a tombstone and then removes that attempt's key. Compare-and-update re-checks the tombstone after it writes. Because of this, one tab's delayed cleanup can no longer erase another tab's newer attempt, and a delayed callback can no longer bring back a settled one. Lists saved by earlier builds are migrated.
+- **Approvals**: a durable approval intent (account, chain 1, IMD token, garden spender, exact amount, preflight nonce and block) is saved before the wallet is asked. An ambiguous outcome such as 4900 keeps it saved, keeps the form locked and offers recovery. A proven rejection clears only that attempt.
+- **Match**: compare-and-swap on the attempt ID and its placeholder hash. If the attempt was settled while the lookup ran, nothing is recreated.
+- **Wallet binding**: the click captures a wallet-state revision and the connector. Any account, chain or connector change before the wallet request invalidates the click, even if the wallet was switched back. This applies to purchases and claims.
+- **Allowance**: a purchase-only quote that finds a lower live allowance sends nothing. It shows the new allowance and asks for an explicit approve click.
+- **My candles**: the pages are reconciled with `candleCountOf`, read at the same block. A short register is shown as incomplete, and Try again resumes from the first missing offset.
+- **Rewards**: claim steps are tied to their attempt ID. A step is released when its attempt settles in any tab. Check again keeps the mined receipt link.
+- **Garden**: original Pepe sprites, walkers and lantern carriers that follow the path, a notched spring rim, and shared landings between stacked candle beds.
+
 ## Current revision (2026-11-20, revision 12): read first
 
 Website only: no contract, address, ABI or economics change, and nothing was sent on chain.

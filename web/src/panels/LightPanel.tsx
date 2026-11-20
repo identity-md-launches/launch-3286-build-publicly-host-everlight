@@ -8,9 +8,11 @@ import { ETHERSCAN, GARDEN, IMD, MAX_BATCH, TX_GAS_CAP, config, ethClient } from
 import { checkWish, gasBound } from "../lib/wish";
 import { STYLE_NAMES, eth, imd } from "../lib/format";
 import { explainError, isGasCapError } from "../lib/errors";
-import { FIXTURE_MESSAGE, INTENT_PENDING_MESSAGE, attemptOf, buyConflict, awaitBuy, isRunning, latestAllowance, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step, type WalletState } from "../lib/purchase";
+import { APPROVAL_SENT_UNKNOWN_MESSAGE, FIXTURE_MESSAGE, INTENT_PENDING_MESSAGE, attemptOf, buyConflict, awaitBuy, isRunning, latestAllowance, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step, type WalletState } from "../lib/purchase";
 import { readReceipt } from "../lib/receipt";
-import { attachHash, minedTx, NONCE_UNVERIFIED, sentTx, settleBuyReceipt, submissionMeta, verifyCancelled, type CancelCheck } from "../lib/chain";
+import { attachHash, minedTx, NONCE_UNVERIFIED, sentTx, settleBuyReceipt, settleReceipt, submissionMeta, verifyCancelled, type CancelCheck } from "../lib/chain";
+import { isGardenApproval } from "../lib/intent";
+import { watchAccount } from "wagmi/actions";
 import { APPROVED_NOT_SENT } from "../lib/purchase";
 import { rememberTx } from "../lib/txhash";
 import { webLock } from "../lib/claim";
@@ -31,6 +33,7 @@ const inFlight = new Set<string>(); // per account: another account's open reque
 
 /** Recover a purchase sent before a reload: the form stays locked on it until its receipt settles. */
 export function recoverBuy(tx: PendingTx): Promise<Step> {
+  if (tx.kind === "approve") return recoverApproval(tx);
   const attempt = attemptOf(tx);
   const onStep = (s: Step) => {
     // a confirmed purchase removes exactly its candles from the saved draft; a split draft keeps the rest
@@ -54,6 +57,36 @@ export function recoverBuy(tx: PendingTx): Promise<Step> {
     tx,
     onStep,
   );
+}
+
+/**
+ * Settle an approval that may have been sent (no hash returned, or no receipt read): found from its saved nonce or a
+ * pasted hash, then verified as this account's exact IMD approve(garden, amount). Only that verified outcome removes
+ * this attempt's record; anything unverifiable keeps it saved and the form locked.
+ */
+export async function recoverApproval(tx: PendingTx): Promise<Step> {
+  const attempt = attemptOf(tx);
+  let s: Step;
+  try {
+    const { receipt, mined } = await settleReceipt(tx.hash, tx);
+    if (!mined) throw new Error(APPROVAL_SENT_UNKNOWN_MESSAGE);
+    const mine = mined.from.toLowerCase() === tx.account.toLowerCase();
+    const approved = receipt.status === "success" && mine && mined.to?.toLowerCase() === (tx.token ?? IMD).toLowerCase() && isGardenApproval(mined.input, tx.amount);
+    if (!pendingStore.get(attempt)) return purchaseFlow.get() ?? { name: "error", message: "This approval was already resolved in another tab." };
+    pendingStore.removeAttempt(attempt); // verified outcome of this attempt only
+    if (approved) {
+      const allowance = await ethClient.readContract({ address: IMD, abi: erc20Abi, functionName: "allowance", args: [tx.account as Hash, GARDEN] }).catch(() => undefined);
+      s = allowance === undefined
+        ? { name: "error", message: "Your earlier approval confirmed. Its allowance could not be re-read; press the button again to check it.", hash: receipt.transactionHash }
+        : { name: "error", message: "Your earlier approval confirmed. Review the purchase, then press the button to light it.", approval: { hash: receipt.transactionHash, allowance, at: Date.now() } };
+    } else {
+      s = { name: "error", message: receipt.status === "success" ? "Your earlier approval was cancelled or replaced in your wallet, so no allowance was set. Press the button to approve again." : "The earlier approval reverted onchain; no allowance was set and no IMD was spent.", hash: receipt.transactionHash };
+    }
+  } catch (e) {
+    s = { name: "approve-unknown", hash: tx.hash, message: e instanceof Error && e.message ? e.message : APPROVAL_SENT_UNKNOWN_MESSAGE };
+  }
+  purchaseFlow.report(attempt, s, tx.account);
+  return s;
 }
 
 const ART = (i: number) => `./art/px/candle-${i}.png`;
@@ -89,6 +122,7 @@ const STEP_TEXT: Record<Step["name"], string> = {
   checking: "Checking sales status, balance and approval…",
   "approve-wallet": "Confirm the exact IMD approval in your wallet.",
   "approve-pending": "Approval sent. Waiting for its receipt…",
+  "approve-unknown": "",
   simulating: "Checking the purchase against the contract…",
   "buy-wallet": "Confirm the purchase in your wallet.",
   "buy-pending": "Purchase sent. Waiting for its receipt; this draft stays locked until it settles…",
@@ -163,7 +197,8 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
   const split = plan.length > 1;
   const bound = next ? next.bound : gasBound(qty, wishBytes);
   // the latest verified allowance (newer read wins; never the larger of an old approval and the current read)
-  const approvedNow = step?.name === "error" && step.approval ? step.approval : null;
+  // also the live allowance read by a purchase-only click that found it revoked or reduced after the quote
+  const approvedNow = step?.name === "error" ? step.approval ?? step.allowance ?? null : null;
   const allowanceKnown = latestAllowance(wallet.data ? { allowance: wallet.data.allowance, at: wallet.dataUpdatedAt } : null, approvedNow);
   const needApproval = allowanceKnown === undefined || allowanceKnown < BigInt(nextQty) * 10n ** 18n;
   // A gas quote is current only while the query has fresh data; a failed refetch withdraws it.
@@ -196,6 +231,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
     inFlight.add(account.toLowerCase());
     const batch = next.items;
     const key = itemsKey;
+    const quotedApproval = needApproval;
     try {
       await runPurchase(
         {
@@ -203,6 +239,10 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
           // the live connector state, re-read right before each wallet request (not this render's stale values)
           chainId: () => getAccount(config).chainId ?? 0,
           walletState: liveWallet,
+          // bound to this click: any account, chain or connector change before a request (even one switched back) ends it
+          binding: { revision: walletRevision, connector: getAccount(config).connector?.uid },
+          // the quote this click was made on: "already covered" never turns into an approval request from this click
+          expectApproval: quotedApproval,
           salesOpen: async () => {
             const [a, p] = await Promise.all([
               ethClient.readContract({ address: GARDEN, abi: wishGardenAbi, functionName: "activated" }),
@@ -259,7 +299,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
           // a confirmed purchase removes its candles from the draft; errors and replacements keep every item
           if (s.name === "done") consumeSavedDraft(batch.map((i) => i.style), batch.map((i) => i.wish));
           if (!purchaseFlow.report(attempt, s, account)) return;
-          if (s.name === "approve-pending" || (s.name === "error" && s.approval)) qc.invalidateQueries();
+          if (s.name === "approve-pending" || (s.name === "error" && (s.approval || s.allowance))) qc.invalidateQueries();
           if (s.name === "done") {
             store.sync().then(() => onLit(s.firstId, s.quantity ?? batch.length));
             qc.invalidateQueries();
@@ -377,12 +417,12 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
       {isConnected && (
         <button type="button" className="cta wide" disabled={disabled} aria-disabled={disabled} onClick={submit}>
           {pendingBuy && !isRunning(step) ? "Waiting for the earlier purchase" : running ? "Working…" : !qtyValid ? "Enter 1 to 50 candles"
-            : `${needApproval && address ? "Approve and light" : "Light"} ${nextQty} candle${nextQty > 1 ? "s" : ""}${split ? ` (purchase 1 of ${plan.length})` : ""}`}
+            : `${needApproval && address ? `Approve exactly ${nextQty} IMD and light` : "Light"} ${nextQty} candle${nextQty > 1 ? "s" : ""}${split ? ` (purchase 1 of ${plan.length})` : ""}`}
         </button>
       )}
       <p className="net-line">Ethereum · gas paid separately</p>
       <div aria-live="polite" className="steps">
-        {step && step.name !== "error" && step.name !== "buy-unknown" && (
+        {step && step.name !== "error" && step.name !== "buy-unknown" && step.name !== "approve-unknown" && (
           <p>
             {STEP_TEXT[step.name]}{" "}
             {"hash" in step && <a href={`${ETHERSCAN}/tx/${step.hash}`} target="_blank" rel="noreferrer">View transaction</a>}
@@ -402,18 +442,21 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
         {step?.name === "error" && !step.approval && (
           <p className="bad" role="alert">
             {step.message}{" "}
+            {step.allowance && <><strong>Allowance now: {imd(step.allowance.allowance)} IMD.</strong>{" "}</>}
             {step.hash && <a href={`${ETHERSCAN}/tx/${step.hash}`} target="_blank" rel="noreferrer">View the confirmed transaction</a>}
           </p>
         )}
-        {pendingBuy && (step?.name === "buy-unknown" || !isRunning(step)) && (
+        {pendingBuy && (step?.name === "buy-unknown" || step?.name === "approve-unknown" || !isRunning(step)) && (
           <div className="pending-box" role="status">
             <p>
-              {step?.name === "buy-unknown" ? step.message : "A purchase you sent earlier has no receipt yet. This draft stays locked so it is not sent twice."}{" "}
+              {step?.name === "buy-unknown" || step?.name === "approve-unknown" ? step.message
+                : pendingBuy.kind === "approve" ? "An approval started earlier may have been sent. This form stays locked so a second approval is not requested."
+                : "A purchase you sent earlier has no receipt yet. This draft stays locked so it is not sent twice."}{" "}
               {pendingBuy.intent
                 ? <a href={`${ETHERSCAN}/address/${pendingBuy.account}`} target="_blank" rel="noreferrer">View your wallet's transactions</a>
                 : <a href={`${ETHERSCAN}/tx/${pendingBuy.hash}`} target="_blank" rel="noreferrer">View pending transaction</a>}
             </p>
-            <IntentRecovery tx={pendingBuy} what="purchase" onCheck={(t) => recoverBuy(t ?? pendingBuy)} />
+            <IntentRecovery key={attemptOf(pendingBuy)} tx={pendingBuy} what={pendingBuy.kind === "approve" ? "approval" : "purchase"} onCheck={(t) => recoverBuy(t ?? pendingBuy)} />
           </div>
         )}
       </div>
@@ -474,7 +517,7 @@ export function CandlePreview({ style }: { style: number }) {
  * without evidence tied to the submitted transaction: a nonce consumed by an unrelated transaction never unlocks it.
  */
 export function IntentRecovery({ tx, what, onCheck, verify = verifyCancelled }: {
-  tx: PendingTx; what: "purchase" | "claim"; onCheck: (t?: PendingTx) => Promise<unknown> | void;
+  tx: PendingTx; what: "purchase" | "claim" | "approval"; onCheck: (t?: PendingTx) => Promise<unknown> | void;
   verify?: (t: PendingTx) => Promise<CancelCheck>;
 }) {
   const [hash, setHash] = useState("");
@@ -488,8 +531,10 @@ export function IntentRecovery({ tx, what, onCheck, verify = verifyCancelled }: 
     try {
       const r = await attachHash(tx, hash);
       setMsg(r.ok ? { ok: true, text: "Transaction matched. Checking its receipt now…" } : { ok: false, text: r.reason });
-      // the matched entry (real hash, verified nonce), never the stale placeholder this render captured
+      // the matched entry (real hash, verified nonce) returned by the compare-and-swap, never the stale placeholder;
+      // a delayed Match of an attempt that was resolved meanwhile recreates nothing and checks nothing
       if (r.ok) { setHash(""); await onCheck(r.tx); }
+      else if (r.settled && r.current && !r.current.intent) { setHash(""); await onCheck(r.current); }
     } finally { setBusy(false); }
   }
   async function search() {
@@ -524,11 +569,25 @@ export function IntentRecovery({ tx, what, onCheck, verify = verifyCancelled }: 
   );
 }
 
-/** The connector's own current account and chain (not React state), read just before a wallet request. */
+/** The connector's own current account, chain and connector id (not React state), read just before a wallet request. */
 export async function liveWallet(): Promise<WalletState> {
   const a = getAccount(config);
   const c = a.connector;
   if (!c) return { account: a.address, chainId: a.chainId };
   const [accounts, chainId] = await Promise.all([c.getAccounts(), c.getChainId()]);
-  return { account: accounts[0] ?? undefined, chainId };
+  return { account: accounts[0] ?? undefined, chainId, connector: c.uid };
 }
+
+/**
+ * Wallet-state revision: incremented on every observed account, chain, connector or status change. A click captures it;
+ * any change before a wallet request (even a switch away and back) invalidates that click's preparation.
+ */
+let walletRev = 0;
+try {
+  watchAccount(config, {
+    onChange(a, prev) {
+      if (a.address !== prev.address || a.chainId !== prev.chainId || a.connector?.uid !== prev.connector?.uid || a.status !== prev.status) walletRev++;
+    },
+  });
+} catch { /* no wallet config (tests) */ }
+export const walletRevision = () => walletRev;

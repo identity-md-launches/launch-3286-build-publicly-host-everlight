@@ -188,7 +188,7 @@ describe("finding 2: a claim intent is saved before the wallet is asked", () => 
     st.failWrites = true;
     let sent = 0;
     const s = await runClaim(claimDeps(st, { send: async () => { sent++; return H("c"); } }), () => {});
-    expect(s).toEqual({ s: "error", msg: CLAIM_STORAGE_MESSAGE });
+    expect(s).toMatchObject({ s: "error", msg: CLAIM_STORAGE_MESSAGE });
     expect(sent).toBe(0);
   });
 
@@ -208,7 +208,7 @@ describe("finding 2: a claim intent is saved before the wallet is asked", () => 
     expect(s.s).toBe("uncertain");
     let sent = 0;
     const again = await runClaim(claimDeps(new FakeStorage(map), { send: async () => { sent++; return H("d"); } }), () => {});
-    expect(again).toEqual({ s: "error", msg: CLAIM_BUSY_MESSAGE });
+    expect(again).toMatchObject({ s: "error", msg: CLAIM_BUSY_MESSAGE });
     expect(sent).toBe(0);
     // a different account is not locked by this one (locks are per account)
     const other = await runClaim(claimDeps(new FakeStorage(map), { account: OTHER }), () => {});
@@ -223,7 +223,7 @@ describe("finding 2: a claim intent is saved before the wallet is asked", () => 
     await new Promise((r) => setTimeout(r, 10));
     let sentB = 0;
     const b = await runClaim(claimDeps(new FakeStorage(map), { send: async () => { sentB++; return H("d"); } }), () => {});
-    expect(b).toEqual({ s: "error", msg: CLAIM_BUSY_MESSAGE });
+    expect(b).toMatchObject({ s: "error", msg: CLAIM_BUSY_MESSAGE });
     expect(sentB).toBe(0);
     release(H("c"));
     expect((await a).s).toBe("done");

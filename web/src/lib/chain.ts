@@ -45,19 +45,39 @@ export class IntentNotFoundError extends Error {
  * Ethereum and be this account calling the same garden function with the same draft at or after the saved nonce.
  * On success the intent is replaced by the hash (verified sender and nonce) and recovery follows its receipt.
  */
-export async function attachHash(intent: PendingTx, hash: string, client: Pick<IntentClient, "tx"> = intentClient, storage?: Storage | null): Promise<{ ok: true; tx: PendingTx } | { ok: false; reason: string }> {
+export type AttachResult =
+  | { ok: true; tx: PendingTx }
+  /** settled: the attempt was resolved (or changed) while the lookup ran; nothing was recreated. current: its record now. */
+  | { ok: false; reason: string; settled?: boolean; current?: PendingTx | null };
+
+export const ALREADY_RESOLVED = "This attempt was already resolved (in this or another tab) while the hash was being checked. Nothing was changed.";
+
+export async function attachHash(intent: PendingTx, hash: string, client: Pick<IntentClient, "tx"> = intentClient, storage?: Storage | null): Promise<AttachResult> {
   const h = hash.trim();
   if (!/^0x[0-9a-fA-F]{64}$/.test(h)) return { ok: false, reason: "A transaction hash is 0x followed by 64 hexadecimal characters." };
+  const attempt = attemptOf(intent);
   let t: SeenTx | null;
   try { t = await client.tx(h as Hash); } catch { t = null; }
   if (!t) return { ok: false, reason: "That transaction was not found on Ethereum (yet). Check the hash, or wait a moment and try again." };
   const m = matchesIntent(intent, t);
   if (!m.ok) return m;
-  const attempt = attemptOf(intent);
-  const next: PendingTx = { ...intent, attempt, hash: t.hash, intent: undefined, from: t.from, nonce: t.nonce, nonceChecked: true };
-  // the same attempt now carries the real hash; the caller checks this returned entry at once (not the placeholder)
-  pendingStore.replace(attempt, next, storage);
-  return { ok: true, tx: next };
+  const seen = t;
+  // compare-and-swap after the asynchronous lookup: attach only while this attempt is still saved with the placeholder
+  // the lookup started from. A removed (settled) attempt is never recreated; a changed one is returned as it is now.
+  const res = pendingStore.update(
+    attempt,
+    (cur) => ({ ...cur, attempt, hash: seen.hash, intent: undefined, from: seen.from, nonce: seen.nonce, nonceChecked: true }),
+    storage,
+    intent.hash,
+  );
+  if (res === "updated") {
+    const now = pendingStore.get(attempt, storage);
+    if (now && now.hash.toLowerCase() === seen.hash.toLowerCase()) return { ok: true, tx: now };
+    return { ok: false, settled: true, reason: ALREADY_RESOLVED, current: now };
+  }
+  if (res === "failed") return { ok: false, reason: "This browser could not save the matched hash. Nothing was changed; try again." };
+  const current = pendingStore.get(attempt, storage);
+  return { ok: false, settled: true, reason: ALREADY_RESOLVED, current };
 }
 
 export async function minedTx(hash: Hash): Promise<MinedTx | null> {

@@ -1,6 +1,6 @@
 import type { Hash } from "viem";
 import { intentHash, isProvenRejection } from "./intent";
-import { WALLET_CHANGED_MESSAGE, attemptOf, newAttemptId, pendingStore, reconcileSent, walletStillBound, type PendingTx, type WalletState } from "./purchase";
+import { WALLET_CHANGED_MESSAGE, attemptOf, newAttemptId, pendingStore, reconcileSent, walletStillBound, type PendingTx, type WalletBinding, type WalletState } from "./purchase";
 
 /**
  * Manual reward claim with a durable intent. Order (the fix for "claims sent before an intent was recorded"):
@@ -11,14 +11,16 @@ import { WALLET_CHANGED_MESSAGE, attemptOf, newAttemptId, pendingStore, reconcil
  *  5. send; a proven rejection releases the intent, anything else keeps it (the wallet may have broadcast);
  *  6. replace the intent with the hash (a failed write keeps the intent saved), then settle from the receipt.
  */
-export type ClaimStep =
+/** attempt: the durable claim attempt a step belongs to; the panel reconciles its step with that attempt's record. */
+export type ClaimStep = (
   | { s: "idle" }
   | { s: "wallet" }
   | { s: "pending"; hash: Hash }
   /** The claim may have been sent: the intent stays saved and Claim stays off until it is reconciled. */
   | { s: "uncertain"; msg: string }
   | { s: "done"; hash: Hash; amount: bigint }
-  | { s: "error"; msg: string };
+  | { s: "error"; msg: string }
+) & { attempt?: string };
 
 export interface ClaimVerdictLike { ok: boolean; amount?: bigint; message?: string; unverified?: boolean; hash: Hash }
 
@@ -37,6 +39,8 @@ export interface ClaimDeps {
   /** Live wallet account and chain, re-read immediately before the claim is sent. */
   walletState?: () => Promise<WalletState>;
   newAttempt?: () => string;
+  /** The initiating click's wallet binding (revision and connector): any change before the send ends it. */
+  binding?: WalletBinding;
 }
 
 export const CLAIM_STORAGE_MESSAGE =
@@ -47,9 +51,12 @@ export const CLAIM_UNCERTAIN_MESSAGE =
 
 export const claimConflict = (account: string) => (t: PendingTx) => t.kind === "claim" && t.account.toLowerCase() === account.toLowerCase();
 
-export async function runClaim(deps: ClaimDeps, onStep: (s: ClaimStep) => void): Promise<ClaimStep> {
-  const end = (s: ClaimStep) => { onStep(s); return s; };
+export async function runClaim(deps: ClaimDeps, onStep0: (s: ClaimStep) => void): Promise<ClaimStep> {
+  const attemptId = (deps.newAttempt ?? newAttemptId)();
+  const onStep = (s: ClaimStep) => onStep0({ ...s, attempt: attemptId });
+  const end = (s: ClaimStep) => { const t = { ...s, attempt: attemptId }; onStep0(t); return t; };
   const { account, storage } = deps;
+  const binding = { ...deps.binding, at: deps.binding?.revision?.() };
   const conflict = claimConflict(account);
   if (pendingStore.list(storage).some(conflict)) return end({ s: "error", msg: CLAIM_BUSY_MESSAGE });
   if (!pendingStore.writable(storage)) return end({ s: "error", msg: CLAIM_STORAGE_MESSAGE });
@@ -68,7 +75,7 @@ export async function runClaim(deps: ClaimDeps, onStep: (s: ClaimStep) => void):
   }
   const intent: PendingTx = {
     hash: intentHash("claim", account), kind: "claim", intent: true, account, createdAt: Date.now(),
-    from: account, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false, attempt: (deps.newAttempt ?? newAttemptId)(),
+    from: account, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false, attempt: attemptId,
   };
   const attempt = attemptOf(intent);
   const write = () => pendingStore.persistExclusive(intent, conflict, storage);
@@ -76,7 +83,7 @@ export async function runClaim(deps: ClaimDeps, onStep: (s: ClaimStep) => void):
   if (saved === "busy" || saved === "conflict") return end({ s: "error", msg: CLAIM_BUSY_MESSAGE });
   if (saved !== "saved") return end({ s: "error", msg: CLAIM_STORAGE_MESSAGE });
 
-  if (deps.walletState && !(await walletStillBound(account, deps.walletState))) {
+  if ((deps.walletState || binding.revision) && !(await walletStillBound(account, deps.walletState, deps.walletState ? undefined : () => 1, binding))) {
     pendingStore.removeAttempt(attempt, storage);
     return end({ s: "error", msg: WALLET_CHANGED_MESSAGE });
   }

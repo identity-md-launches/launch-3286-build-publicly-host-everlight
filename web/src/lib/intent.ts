@@ -1,6 +1,6 @@
-import { BaseError, decodeFunctionData, type Hash, type Hex } from "viem";
+import { BaseError, decodeFunctionData, erc20Abi, type Hash, type Hex } from "viem";
 import { wishGardenAbi } from "../abi/WishGarden";
-import { GARDEN } from "../config";
+import { GARDEN, IMD } from "../config";
 import type { PendingTx } from "./purchase";
 import { locateMined, type RecoveryClient } from "./recovery";
 
@@ -42,11 +42,23 @@ export function isProvenRejection(e: unknown): boolean {
 }
 
 /** The placeholder hash an intent is stored under: one per kind and account, so locks are scoped correctly. */
-export function intentHash(kind: "buy" | "claim", account: string): Hash {
+export function intentHash(kind: "buy" | "claim" | "approve", account: string): Hash {
   const a = account.toLowerCase().replace(/^0x/, "").padStart(40, "0").slice(-40);
-  return `0x${kind === "buy" ? "00000000" : "00000001"}${"0".repeat(16)}${a}` as Hash;
+  return `0x${kind === "buy" ? "00000000" : kind === "claim" ? "00000001" : "00000002"}${"0".repeat(16)}${a}` as Hash;
 }
-export const isIntentHash = (h: string) => /^0x0000000[01]0{16}[0-9a-f]{40}$/i.test(h) || /^0x0{64}$/.test(h);
+export const isIntentHash = (h: string) => /^0x0000000[012]0{16}[0-9a-f]{40}$/i.test(h) || /^0x0{64}$/.test(h);
+
+/** Is this calldata ERC-20 approve(spender, amount) for the garden (and, when given, exactly this amount)? */
+export function isGardenApproval(input: Hex, amount?: string, garden: string = GARDEN): boolean {
+  try {
+    const d = decodeFunctionData({ abi: erc20Abi, data: input });
+    if (d.functionName !== "approve") return false;
+    const [spender, value] = d.args as unknown as [string, bigint];
+    return spender.toLowerCase() === garden.toLowerCase() && (amount === undefined || value.toString() === amount);
+  } catch {
+    return false;
+  }
+}
 
 /** A transaction read by its hash (from getTransaction). */
 export interface SeenTx { hash: Hash; from: string; to: string | null; input: Hex; nonce: number; chainId?: number }
@@ -68,6 +80,11 @@ function callOf(input: Hex): { fn: string; styles?: number[]; wishes?: string[] 
 export function matchesIntent(intent: PendingTx, tx: SeenTx, garden: string = GARDEN): { ok: true } | { ok: false; reason: string } {
   if (tx.from.toLowerCase() !== (intent.from ?? intent.account).toLowerCase()) return { ok: false, reason: "That transaction was sent from a different account." };
   if (tx.chainId !== undefined && tx.chainId !== 1) return { ok: false, reason: "That transaction is not on Ethereum mainnet." };
+  if (intent.kind === "approve") {
+    if (!tx.to || tx.to.toLowerCase() !== (intent.token ?? IMD).toLowerCase()) return { ok: false, reason: "That transaction was not sent to the IMD token contract." };
+    if (intent.nonce !== undefined && tx.nonce < intent.nonce) return { ok: false, reason: "That transaction was sent before this action started (its nonce is older)." };
+    return isGardenApproval(tx.input, intent.amount, intent.spender ?? garden) ? { ok: true } : { ok: false, reason: "That transaction is not this exact IMD approval for the garden." };
+  }
   if (!tx.to || tx.to.toLowerCase() !== garden.toLowerCase()) return { ok: false, reason: "That transaction was not sent to the Everlight garden contract." };
   if (intent.nonce !== undefined && tx.nonce < intent.nonce) return { ok: false, reason: "That transaction was sent before this action started (its nonce is older)." };
   const c = callOf(tx.input);

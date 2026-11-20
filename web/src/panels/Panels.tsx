@@ -2,8 +2,9 @@ import { minedTx, sentTx, settleReceipt, submissionMeta } from "../lib/chain";
 import { settleClaim } from "../lib/receipt";
 import { WrongNetwork } from "../components/WrongNetwork";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { Hash } from "viem";
 import { useAccount } from "wagmi";
-import { simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
+import { getAccount, simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
 import { useQueryClient } from "@tanstack/react-query";
 import { wishGardenAbi } from "../abi/WishGarden";
 import { BASESCAN, BASE_IMD, BASE_RECEIVER, ETHERSCAN, GARDEN, GARDEN_DEPLOY_BLOCK, IMD, LEGACY_GARDEN, OWNER, SOURCE_REPO, config } from "../config";
@@ -11,8 +12,8 @@ import { STYLE_NAMES, date, imd, short, safeChecksum } from "../lib/format";
 import { explainError } from "../lib/errors";
 import { FIXTURE_MESSAGE, attemptOf, pendingStore, type PendingTx } from "../lib/purchase";
 import { claimConflict, runClaim, webLock, type ClaimStep } from "../lib/claim";
-import { IntentRecovery, liveWallet } from "./LightPanel";
-import type { Candle } from "../lib/candles";
+import { IntentRecovery, liveWallet, walletRevision } from "./LightPanel";
+import { IncompleteIdsError, type Candle } from "../lib/candles";
 import { ConnectButton } from "../components/ConnectSheet";
 import { FIXTURE, useActivity, useCandleTx, useMyIds, useRewards, useTreasury } from "../hooks";
 
@@ -75,7 +76,10 @@ export function MinePanel({ candles, onJump, highlight, setHighlight }: { candle
   const ids = useMyIds(address);
   const [page, setPage] = useState(0);
   const per = 25;
-  const pages = Math.max(1, Math.ceil((ids.data?.length ?? 0) / per));
+  // an incomplete register keeps the IDs that were read, is labelled incomplete and resumes at the missing page
+  const incomplete = ids.error instanceof IncompleteIdsError ? ids.error : null;
+  const list = incomplete ? incomplete.ids : ids.data ?? [];
+  const pages = Math.max(1, Math.ceil(list.length / per));
   // A different wallet starts on its first page; a shrinking list never leaves the view past its end.
   useEffect(() => setPage(0), [address]);
   useEffect(() => setPage((p) => Math.min(p, pages - 1)), [pages]);
@@ -87,15 +91,15 @@ export function MinePanel({ candles, onJump, highlight, setHighlight }: { candle
         <ConnectButton />
       </section>
     );
-  const list = ids.data ?? [];
   const current = Math.min(page, pages - 1);
   const shown = list.slice(current * per, current * per + per);
   return (
     <section aria-labelledby="mine-title">
       <h2 id="mine-title">My candles</h2>
       {ids.isLoading && <p role="status">Reading your candles…</p>}
-      {ids.isError && <p className="bad" role="alert">Your candles could not be read. <button className="link" onClick={() => ids.refetch()}>Try again</button></p>}
-      {ids.data && list.length === 0 && <p>This wallet has not lit a candle yet. Open Light a candle to add the first.</p>}
+      {ids.isError && incomplete && <p className="bad" role="alert">Incomplete: {incomplete.ids.length} of your {incomplete.expected} candles were read; the rest did not arrive. <button className="link" onClick={() => ids.refetch()} disabled={ids.isFetching}>{ids.isFetching ? "Retrying…" : "Try again"}</button></p>}
+      {ids.isError && !incomplete && <p className="bad" role="alert">Your candles could not be read. <button className="link" onClick={() => ids.refetch()}>Try again</button></p>}
+      {ids.data && !ids.isError && list.length === 0 && <p>This wallet has not lit a candle yet. Open Light a candle to add the first.</p>}
       {list.length > 0 && (
         <>
           <label className="check">
@@ -190,15 +194,15 @@ export function Register({ candles, info, onRetry, onJump }: { candles: Candle[]
  * nonce, and counts it only with the garden's RewardsClaimed event for this account. The saved hash is removed only
  * once the outcome is known; an unverified or missing receipt keeps it, so Claim stays locked on it.
  */
-export async function checkClaim(tx: PendingTx): Promise<{ ok: boolean; text: string; href: string; settled: boolean }> {
+export async function checkClaim(tx: PendingTx): Promise<{ ok: boolean; text: string; href: string; settled: boolean; hash?: Hash; amount?: bigint }> {
   try {
     const { receipt: r, mined } = await settleReceipt(tx.hash, tx);
     const v = settleClaim(r, mined, tx.account);
     const unverified = "unverified" in v && !!v.unverified;
     if (!unverified) pendingStore.removeAttempt(attemptOf(tx)); // this attempt only
-    return { ok: v.ok, settled: !unverified, href: `${ETHERSCAN}/tx/${r.transactionHash}`, text: v.ok ? `Your earlier claim confirmed: ${imd(v.amount)} IMD claimed.` : v.message };
+    return { ok: v.ok, settled: !unverified, hash: r.transactionHash, amount: v.ok ? v.amount : undefined, href: `${ETHERSCAN}/tx/${r.transactionHash}`, text: v.ok ? `Your earlier claim confirmed: ${imd(v.amount)} IMD claimed.` : v.message };
   } catch {
-    return { ok: false, settled: false, href: `${ETHERSCAN}/tx/${tx.hash}`, text: "The claim sent earlier has no receipt yet. It is still saved and Claim stays off until it settles." };
+    return { ok: false, settled: false, href: `${ETHERSCAN}/tx/${tx.hash}`, text: "This claim may have been sent. Check again, or paste the transaction hash from your wallet's activity. Claim stays locked until the transaction can be verified." };
   }
 }
 
@@ -221,13 +225,29 @@ export function RewardsPanel() {
     [pendingVersion, address],
   );
   const [checking, setChecking] = useState(false);
+  // the local step is keyed by its claim attempt: once that attempt's record settles (here or in another tab) its
+  // uncertain step is released and the reward read refreshed; a newer saved attempt still locks Claim by itself
+  useEffect(() => {
+    if (!stOf || stOf.step.s !== "uncertain" || !stOf.step.attempt) return;
+    if (pendingStore.get(stOf.step.attempt)) return;
+    setStOf({ account: stOf.account, step: { s: "error", msg: "That claim attempt was resolved in another tab or by its receipt. Your rewards were re-read.", attempt: stOf.step.attempt } });
+    qc.invalidateQueries();
+  }, [pendingVersion, stOf]);
   async function recheck(matched?: PendingTx) {
     const target = matched ?? pendingClaim; // after Match: the returned entry with its real hash
     if (!target || checking) return;
+    const attempt = attemptOf(target);
     setChecking(true);
     const v = await checkClaim(target);
     setChecking(false);
-    setStFor(target.account)(v.settled ? (v.ok ? { s: "idle" } : { s: "error", msg: v.text }) : { s: "uncertain", msg: v.text });
+    // only this attempt's outcome: a newer attempt's step in this tab is never overwritten by an older receipt
+    setStOf((cur) => {
+      if (cur && cur.step.attempt && cur.step.attempt !== attempt && (cur.step.s === "wallet" || cur.step.s === "pending")) return cur;
+      const step: ClaimStep = v.settled
+        ? (v.ok && v.hash ? { s: "done", hash: v.hash, amount: v.amount ?? 0n, attempt } : { s: "error", msg: v.text, attempt })
+        : { s: "uncertain", msg: v.text, attempt };
+      return { account: target.account, step };
+    });
     qc.invalidateQueries();
   }
   async function claim() {
@@ -242,6 +262,7 @@ export function RewardsPanel() {
         submission: () => submissionMeta(address),
         send: (request) => writeContract(config, { ...(request as any), account, chainId: 1 }),
         walletState: liveWallet,
+        binding: { revision: walletRevision, connector: getAccount(config).connector?.uid },
         sentTx,
         wait: async (hash) => {
           // follows a sped-up or cancelled replacement; only a verified RewardsClaimed from the garden shows Claimed

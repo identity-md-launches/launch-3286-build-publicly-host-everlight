@@ -24,7 +24,7 @@ vi.mock("../src/lib/chain", async (orig) => {
 
 import {
   AMBIGUOUS_MESSAGE, DUPLICATE_MESSAGE, PENDING_STORAGE_KEY, SENT_UNKNOWN_MESSAGE, WALLET_CHANGED_MESSAGE,
-  attemptOf, awaitBuy, buyIntentHash, latestAllowance, pendingStore, purchaseFlow, runPurchase,
+  attemptOf, awaitBuy, storedEntries, buyIntentHash, latestAllowance, pendingStore, purchaseFlow, runPurchase,
   type PendingTx, type PurchaseDeps, type Receipt, type Step,
 } from "../src/lib/purchase";
 import { resolveIntent, intentHash, type IntentClient } from "../src/lib/intent";
@@ -47,7 +47,9 @@ class SharedStorage {
   clear() { this.m.clear(); }
 }
 const asS = (s: SharedStorage) => s as unknown as Storage;
-const saved = (s: SharedStorage): PendingTx[] => JSON.parse(s.getItem(PENDING_STORAGE_KEY) ?? "[]");
+const saved = (s: SharedStorage): PendingTx[] => storedEntries(asS(s));
+/** Another tab settling every saved attempt by writing storage directly (each attempt's own key). */
+const otherTabSettlesAll = (s: SharedStorage) => { for (const k of [...s.m.keys()]) if (k.startsWith(`${PENDING_STORAGE_KEY}:a:`)) s.m.delete(k); };
 const ME = "0x00000000000000000000000000000000000000a1";
 const OTHER = "0x00000000000000000000000000000000000000b2";
 const H = (c: string) => (`0x${c.repeat(64)}`.slice(0, 66)) as Hash;
@@ -213,7 +215,7 @@ describe("4. successfully persisted storage is authoritative", () => {
     const st = new SharedStorage();
     pendingStore.add({ hash: H("a"), kind: "approve", account: ME, createdAt: 1, attempt: "ap" }, asS(st));
     // other tab settles it: writes storage directly
-    st.setItem(PENDING_STORAGE_KEY, "[]");
+    otherTabSettlesAll(st);
     expect(pendingStore.list(asS(st))).toHaveLength(0);
   });
   it("memory fallback only for a failed save; it still blocks a duplicate send", async () => {
@@ -236,7 +238,7 @@ describe("4. successfully persisted storage is authoritative", () => {
     expect(s.name).toBe("buy-unknown");
     expect(pendingStore.list(asS(st)).map((t) => t.hash)).toEqual([H("d")]); // this page locks on the real hash
     st.failSet = null;
-    st.setItem(PENDING_STORAGE_KEY, "[]"); // another tab matched and settled it
+    otherTabSettlesAll(st); // another tab matched and settled it
     expect(pendingStore.list(asS(st))).toHaveLength(0);
   });
 });

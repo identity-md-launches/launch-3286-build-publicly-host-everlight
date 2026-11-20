@@ -25,7 +25,7 @@ export function springY(gx: number): number {
 }
 
 const snap = (v: number) => Math.round(v / PX) * PX;
-export const streamHalf = (y: number) => 26 + 6 * Math.sin(y / 90);
+export const streamHalf = (y: number) => 32 + 7 * Math.sin(y / 90) + 3 * Math.sin(y / 37);
 const B4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
 const dither = (X: number, Y: number, t: number) => B4[(Y & 3) * 4 + (X & 3)] / 16 < t;
 
@@ -65,15 +65,35 @@ export function drawSectorBase(g: CanvasRenderingContext2D, index: number, sheet
       const ds = hasStream ? Math.abs(x - sx) : Infinity;
       let pool = Infinity;
       for (const p of pools) { const q = ((x - p.x) / p.rx) ** 2 + ((y - p.y) / (p.rx * TILT)) ** 2; if (q < pool) pool = q; }
-      if (ds < hw || pool < 1) { put(o, water, X + (Y >> 2), Y, [18, 105, 91], ds < hw - 8 || pool < 0.7 ? 1 : 0.8); continue; }
-      if (ds < hw + 6 || pool < 1.18) { put(o, moss, X, Y, [63, 122, 60]); continue; }
+      // natural banks: an irregular earth-and-moss margin whose width wanders along the stream (world-space noise)
+      const wob = 3 + 4 * (0.5 + 0.5 * Math.sin(y / 23 + gx * 1.7)) + 3 * (0.5 + 0.5 * Math.sin(y / 9.5 + x / 31));
+      if (ds < hw || pool < 1) {
+        // deep water: darker in the channel, lighter toward the banks, with sky reflections in long soft streaks
+        const edge = hasStream && ds < hw ? ds / hw : Math.sqrt(Math.max(0, pool));
+        const depth = 0.62 + 0.38 * edge;
+        const sheen = (Math.sin(y / 5.3 + Math.sin(x / 19) * 2) > 0.93 ? 1.18 : 1);
+        put(o, water, X + (Y >> 2), Y, [18, 105, 91], depth * sheen);
+        continue;
+      }
+      if (ds < hw + 2 || pool < 1.06) { put(o, null, X, Y, [16, 30, 24]); continue; } // wet edge line
+      if (ds < hw + 2 + wob || pool < 1.06 + wob / 60) {
+        const stone = hash2(X >> 1, Y >> 1, 9) > 0.62; // scattered mossy bank stones
+        put(o, stone ? moss : null, X, Y, stone ? [63, 122, 60] : [38, 46, 30], stone ? 0.7 : 0.9 + 0.1 * (hash2(X, Y, 4) - 0.5));
+        continue;
+      }
       const dp = Math.abs(y - pathY(gy, x));
       if (dp < 20) { put(o, path, X, Y, [100, 100, 83], 0.85); continue; }
       if (dp < 24) { put(o, dither(X, Y, 0.5) ? moss : dark, X, Y, [42, 82, 51]); continue; }
-      // grass: two tiles mixed by a slow world-space field with ordered dithering; wild woodland is darker
-      const f = 0.5 + 0.25 * Math.sin(x / 173 + y / 97) + 0.25 * Math.sin(x / 61 - y / 133) - (wild ? 0.35 : 0);
-      const horizonFade = gy === 0 ? Math.max(0, 1 - (y - horizonY(x)) / 160) : 0;
-      put(o, dither(X, Y, f) ? grass : dark, X, Y, [28, 58, 38], 1 - 0.45 * horizonFade);
+      // quiet dark ground: one deep emerald with a slow tonal field and only a faint trace of the grass tile, so the
+      // terraces, paths, water and candles carry the detail (replaces the earlier two-tile dither noise)
+      const f = 0.5 * Math.sin(x / 173 + y / 97) + 0.5 * Math.sin(x / 61 - y / 133);
+      const ti = ((Y & 15) * 16 + (X & 15)) * 4;
+      const tex = dark ? (dark[ti + 1] - 60) / 255 : 0;
+      const lum = 1 + 0.07 * f + 0.12 * tex - (wild ? 0.14 : 0);
+      // atmospheric perspective: toward the skyline the ground lifts into a cool blue-green haze
+      const haze = gy === 0 ? Math.max(0, 1 - (y - horizonY(x)) / 220) : 0;
+      const r0 = 20 * lum, g0 = 40 * lum, b0 = 29 * lum;
+      d[o] = r0 + (34 - r0) * haze * 0.7; d[o + 1] = g0 + (58 - g0) * haze * 0.7; d[o + 2] = b0 + (62 - b0) * haze * 0.7; d[o + 3] = 255;
     }
   }
   g.putImageData(img, 0, 0);
@@ -172,7 +192,7 @@ export function drawSectorUpright(g: CanvasRenderingContext2D, index: number, sh
     const x = ox - 20 + r() * (W + 40), y = oy + r() * H;
     if (!fits(y + 4, 24) || !clear(x, y, 24)) continue;
     placed++;
-    const v = r(), n = v < 0.35 ? "bush-flower" : v < 0.6 ? "bush" : v < 0.85 ? "flowers" : "rock", flip = r() < 0.5;
+    const v = r(), n = v < 0.22 ? "bush-flower" : v < 0.62 ? "bush" : v < 0.72 ? "flowers" : "rock", flip = r() < 0.5;
     items.push({ y, draw: () => put(n, x, y + 4, flip) });
   }
   // lily pads and water flowers on the pools and stream

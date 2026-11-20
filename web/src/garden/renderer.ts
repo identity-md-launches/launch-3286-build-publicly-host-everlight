@@ -325,7 +325,7 @@ export class GardenRenderer {
     for (let p = first; p < first + count; p++) {
       const pos = positionOf(p);
       const k = pos.scale;
-      g.globalAlpha = 0.3;
+      g.globalAlpha = 0.2;
       g.drawImage(this.glow, pos.x - ox - 60 * k, pos.y - oy - 104 * k, 120 * k, 120 * k);
     }
     g.globalCompositeOperation = "source-over";
@@ -453,11 +453,12 @@ export class GardenRenderer {
       const warm = g >= 1 ? 1 : smoothstep(0.2, 1, g);
       const flick = input.reducedMotion ? 1 : 0.88 + 0.12 * Math.sin(time / 260 + c.id * 1.7);
       // stepped pixel glow: halo around the flame and a warm pool (its reflection) on the ground below
-      ctx.globalAlpha = 0.34 * flick * warm;
-      const r = 48 * Math.max(1, k * 0.8);
+      // restrained amber: a modest halo and a small pool of light on the stones nearby
+      ctx.globalAlpha = 0.17 * flick * warm;
+      const r = 38 * Math.max(1, k * 0.8);
       ctx.drawImage(this.glow, x - r, y - 44 * k - r, r * 2, r * 2);
-      ctx.globalAlpha = 0.3 * flick * warm;
-      ctx.drawImage(this.glow, x - 40 * k, y - 10 * k, 80 * k, 24 * k);
+      ctx.globalAlpha = 0.15 * flick * warm;
+      ctx.drawImage(this.glow, x - 34 * k, y - 8 * k, 68 * k, 20 * k);
       if (g < 1 && g > 0.12) {
         // the catch: a brief bloom that swells as the wick takes and fades into the steady glow
         const b = Math.sin(Math.PI * ((g - 0.12) / 0.88));

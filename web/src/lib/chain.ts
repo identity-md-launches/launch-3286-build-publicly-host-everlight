@@ -3,6 +3,7 @@ import { ethClient } from "../config";
 import { INTENT_PENDING_MESSAGE, pendingStore, type PendingTx, type Receipt } from "./purchase";
 import { readReceipt, type MinedTx } from "./receipt";
 import { locateMined, type RecoveryClient } from "./recovery";
+import { INTENT_NOT_FOUND, matchesIntent, resolveIntent, type IntentClient, type SeenTx } from "./intent";
 
 /** Live Ethereum adapter for the bounded replacement search. */
 export const recoveryClient: RecoveryClient = {
@@ -15,6 +16,43 @@ export const recoveryClient: RecoveryClient = {
     return b.transactions.map((t) => ({ hash: t.hash, from: t.from, nonce: t.nonce }));
   },
 };
+
+/** Recovery client plus pending nonces and transactions by hash, for resolving intents saved before signing. */
+export const intentClient: IntentClient = {
+  ...recoveryClient,
+  pendingNonce: (address) => ethClient.getTransactionCount({ address: address as Hash, blockTag: "pending" }),
+  tx: async (hash) => {
+    try {
+      const t = await ethClient.getTransaction({ hash });
+      return { hash: t.hash, from: t.from, to: t.to ?? null, input: t.input, nonce: t.nonce, chainId: t.chainId };
+    } catch {
+      return null;
+    }
+  },
+};
+
+/** Thrown when a saved intent has no matching transaction and nothing is pending: the UI offers a confirmed release. */
+export class IntentNotFoundError extends Error {
+  constructor() { super(INTENT_NOT_FOUND); }
+}
+
+/**
+ * Reconcile a saved intent with a transaction hash the user pasted from their wallet: the transaction must exist on
+ * Ethereum and be this account calling the same garden function with the same draft at or after the saved nonce.
+ * On success the intent is replaced by the hash (verified sender and nonce) and recovery follows its receipt.
+ */
+export async function attachHash(intent: PendingTx, hash: string, client: Pick<IntentClient, "tx"> = intentClient, storage?: Storage | null): Promise<{ ok: true; tx: PendingTx } | { ok: false; reason: string }> {
+  const h = hash.trim();
+  if (!/^0x[0-9a-fA-F]{64}$/.test(h)) return { ok: false, reason: "A transaction hash is 0x followed by 64 hexadecimal characters." };
+  let t: SeenTx | null;
+  try { t = await client.tx(h as Hash); } catch { t = null; }
+  if (!t) return { ok: false, reason: "That transaction was not found on Ethereum (yet). Check the hash, or wait a moment and try again." };
+  const m = matchesIntent(intent, t);
+  if (!m.ok) return m;
+  const next: PendingTx = { ...intent, hash: t.hash, intent: undefined, from: t.from, nonce: t.nonce, nonceChecked: true };
+  pendingStore.replace(intent.hash, next, storage);
+  return { ok: true, tx: next };
+}
 
 export async function minedTx(hash: Hash): Promise<MinedTx | null> {
   try {
@@ -38,8 +76,9 @@ export async function settleReceipt(hash: Hash, tx?: PendingTx, timeout = 10 * 6
   if (tx?.intent) {
     // a recovery intent saved before signing: no hash is known, so the purchase is found from the sender's nonce
     // (its calldata and events are then checked against the saved draft before anything counts as lit)
-    const at = await locateMined(recoveryClient, tx);
+    const at = await resolveIntent(intentClient, tx);
     if (at.kind === "pending") throw new Error(INTENT_PENDING_MESSAGE);
+    if (at.kind === "not-found") throw new IntentNotFoundError();
     if (at.kind === "unknown") throw new Error(at.reason);
     const receipt = await ethClient.getTransactionReceipt({ hash: at.hash });
     return { receipt, mined: await minedTx(receipt.transactionHash) };

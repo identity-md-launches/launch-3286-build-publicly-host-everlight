@@ -1,3 +1,20 @@
+## Current revision (2026-11-20, revision 9): read first
+
+Live site: https://everlight.imd.site/ (static export in `dist/`, pinned by the publishing plane). Contracts, ABIs, config, economics, candle IDs, wishes and records are unchanged: Ethereum garden `0x33a514c5e2028f1affd70b82f170e8193df030a5`, Base receiver `0x4FdE47d5b574F9F18bC86D9878A460e6b1373D1E`. Nothing was deployed, activated or spent.
+
+This revision closes the final review's four findings and starts the garden visual rebuild:
+
+1. **Purchase intents** (`web/src/lib/purchase.ts`, `web/src/lib/intent.ts`): an ambiguous wallet failure (4900/4901 disconnect, timeout, unknown) keeps the durable intent and locks the draft; only a proven 4001 rejection releases it. Intents resolve by account, chain, garden target, nonce and exact calldata; users can paste and validate a transaction hash, and a release needs explicit confirmation.
+2. **Claims** (`web/src/lib/claim.ts`): storage preflight and an exclusive, read-back claim intent are saved before the wallet is asked; storage failure sends nothing; pending or uncertain claims lock Claim per account across reloads, networks and tabs.
+3. **Counts** (`web/src/lib/counts.ts`): "N lit" is the contract's `totalCandles`; loaded records show separately as "loaded X of Y", incomplete data has Retry, and an unknown total reads "unavailable", never 0.
+4. **Approval then re-plan**: "Approval confirmed; candle purchase not sent." with the approval link, the allowance read afterwards and the revised total; no second approval when the allowance already covers the revised purchase.
+
+Garden: quiet dark ground, haze toward the skyline, wider river with natural banks and reflections, restrained amber glow. Open visual items are listed in `artifacts/rev9/validation.md`.
+
+How it works, in short: 1 IMD per candle; 30% burn allocation, 60% shared among earlier paid candles, 5% operations, 5% founder, no ecosystem share; the first-ever candle sends 90% to the burn allocation. Rewards come only from later purchases and are claimed by hand: no guaranteed yield. Wishes are public, immutable plaintext on Ethereum (up to 280 characters / 1,120 bytes); the chain keeps them even if this website goes offline.
+
+Install, preview, rebuild: `cd web && npm ci && npm run build` (typecheck + Vite build into `../dist`), `npm run preview` to serve the export, `npm test` for the 131 unit/regression tests. Results of this revision: `artifacts/rev9/validation.md` (commands, test counts, browser screenshots at 1600x1000 and 390x844, design-probe result, live read-only vs mock separation).
+
 ## Current revision (2026-11-19, revision 8 of job 12f1426d): read first
 
 Revision 8 answers six review findings (answers in `.imd-responses.json`):

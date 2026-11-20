@@ -10,7 +10,8 @@ import { STYLE_NAMES, eth, imd } from "../lib/format";
 import { explainError, isGasCapError } from "../lib/errors";
 import { FIXTURE_MESSAGE, INTENT_HASH, INTENT_PENDING_MESSAGE, awaitBuy, isRunning, pendingStore, purchaseFlow, runPurchase, type PendingTx, type Step } from "../lib/purchase";
 import { readReceipt } from "../lib/receipt";
-import { minedTx, NONCE_UNVERIFIED, sentTx, settleBuyReceipt, submissionMeta } from "../lib/chain";
+import { attachHash, minedTx, NONCE_UNVERIFIED, sentTx, settleBuyReceipt, submissionMeta } from "../lib/chain";
+import { APPROVED_NOT_SENT } from "../lib/purchase";
 import { rememberTx } from "../lib/txhash";
 import { parseQuantity } from "../lib/quantity";
 import { DRAFT_KEY, consumeSavedDraft, fittingPrefix, planBatches } from "../lib/split";
@@ -43,7 +44,7 @@ export function recoverBuy(tx: PendingTx): Promise<Step> {
       // locates a replacement from the saved sender, nonce and submission block, then verifies its calldata and events
       wait: (hash, saved) => settleBuyReceipt(hash, saved),
       remember: rememberTx,
-      explain: (e) => e instanceof Error && (e.message === NONCE_UNVERIFIED || e.message === INTENT_PENDING_MESSAGE)
+      explain: (e) => e instanceof Error && (tx.intent || e.message === NONCE_UNVERIFIED || e.message === INTENT_PENDING_MESSAGE)
         ? e.message
         : "The receipt of the purchase you sent could not be read yet. It is still saved and this form stays locked so it is not sent twice.",
     },
@@ -159,7 +160,9 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
   const nextQty = next ? next.items.length : qty;
   const split = plan.length > 1;
   const bound = next ? next.bound : gasBound(qty, wishBytes);
-  const needApproval = !wallet.data || wallet.data.allowance < BigInt(nextQty) * 10n ** 18n;
+  const approvedNow = step?.name === "error" && step.approval ? step.approval.allowance : 0n;
+  const allowanceKnown = wallet.data ? (wallet.data.allowance > approvedNow ? wallet.data.allowance : approvedNow) : approvedNow > 0n ? approvedNow : undefined;
+  const needApproval = allowanceKnown === undefined || allowanceKnown < BigInt(nextQty) * 10n ** 18n;
   // A gas quote is current only while the query has fresh data; a failed refetch withdraws it.
   const gasOk = gas.data !== undefined && !gas.isError;
   const gasEth = gasOk ? (bound + (needApproval ? 60_000n : 0n)) * gas.data! : undefined;
@@ -241,7 +244,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
             return { ...request, gas: withRoom > TX_GAS_CAP ? TX_GAS_CAP : withRoom };
           },
           buy: (request) => writeContract(config, request as any),
-          explain: explainError,
+          explain: (e) => explainError(e),
         },
         batch.map((i) => i.style),
         batch.map((i) => i.wish),
@@ -249,6 +252,7 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
           // a confirmed purchase removes its candles from the draft; errors and replacements keep every item
           if (s.name === "done") consumeSavedDraft(batch.map((i) => i.style), batch.map((i) => i.wish));
           setStep(s);
+          if (s.name === "approve-pending" || (s.name === "error" && s.approval)) qc.invalidateQueries();
           if (s.name === "done") {
             store.sync().then(() => onLit(s.firstId, s.quantity ?? batch.length));
             qc.invalidateQueries();
@@ -377,7 +381,18 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
             {"hash" in step && <a href={`${ETHERSCAN}/tx/${step.hash}`} target="_blank" rel="noreferrer">View transaction</a>}
           </p>
         )}
-        {step?.name === "error" && (
+        {step?.name === "error" && step.approval && (
+          <div className="approved-box" role="alert">
+            <p><strong>{APPROVED_NOT_SENT}</strong> {step.message}</p>
+            <dl className="summary">
+              <div><dt>Approval receipt</dt><dd><a href={`${ETHERSCAN}/tx/${step.approval.hash}`} target="_blank" rel="noreferrer">View approval</a></dd></div>
+              <div><dt>Allowance now</dt><dd>{imd(allowanceKnown ?? step.approval.allowance)} IMD</dd></div>
+              <div><dt>Revised total</dt><dd>{qtyValid ? `${nextQty} IMD${split ? ` (purchase 1 of ${plan.length})` : ""}` : "—"}</dd></div>
+            </dl>
+            <p className="fine">{needApproval ? "The allowance no longer covers the revised purchase, so a new exact approval is needed." : "Your allowance already covers the revised purchase: no second approval is requested."} Review the revised purchase, then press the button to confirm it in your wallet.</p>
+          </div>
+        )}
+        {step?.name === "error" && !step.approval && (
           <p className="bad" role="alert">
             {step.message}{" "}
             {step.hash && <a href={`${ETHERSCAN}/tx/${step.hash}`} target="_blank" rel="noreferrer">View the confirmed transaction</a>}
@@ -391,12 +406,8 @@ export function LightPanel({ onLit }: { onLit: (firstId: number | null, quantity
                 ? <a href={`${ETHERSCAN}/address/${pendingBuy.account}`} target="_blank" rel="noreferrer">View your wallet's transactions</a>
                 : <a href={`${ETHERSCAN}/tx/${pendingBuy.hash}`} target="_blank" rel="noreferrer">View pending transaction</a>}
             </p>
-            <div className="pending-acts">
-              <button type="button" className="btn" onClick={() => recoverBuy(pendingBuy)}>Check again</button>
-              <button type="button" className="link" onClick={() => { pendingStore.remove(pendingBuy.hash); pendingStore.remove(INTENT_HASH); setStep(null); }}>
-                Forget it: my wallet shows it was dropped
-              </button>
-            </div>
+            <IntentRecovery tx={pendingBuy} what="purchase" onCheck={() => recoverBuy(pendingBuy)}
+              onRelease={() => { pendingStore.remove(pendingBuy.hash); pendingStore.remove(INTENT_HASH); setStep(null); }} />
           </div>
         )}
       </div>
@@ -446,6 +457,55 @@ export function CandlePreview({ style }: { style: number }) {
       {[0, 1, 2, 3].map((k) => (
         <img key={k} className={`px pv-flame f${k}`} src={`./art/px/flame-${k}.png`} alt="" style={{ bottom: `${116 - (WICK[style] ?? 1) * 3 - 3}px` }} />
       ))}
+    </div>
+  );
+}
+
+/**
+ * Recovery controls for a saved transaction or intent: check again, reconcile by pasting the transaction hash from
+ * the wallet (validated against account, chain, target, nonce and call), and a release that needs an explicit
+ * confirmation that the wallet shows nothing sent.
+ */
+export function IntentRecovery({ tx, what, onCheck, onRelease }: { tx: PendingTx; what: "purchase" | "claim"; onCheck: () => Promise<unknown> | void; onRelease: () => void }) {
+  const [hash, setHash] = useState("");
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const id = `reconcile-${what}`;
+  async function reconcile(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    const r = await attachHash(tx, hash);
+    setBusy(false);
+    setMsg(r.ok ? { ok: true, text: "Transaction matched. Following its receipt…" } : { ok: false, text: r.reason });
+    if (r.ok) { setHash(""); await onCheck(); }
+  }
+  return (
+    <div className="recovery">
+      <div className="pending-acts">
+        <button type="button" className="btn" disabled={busy} onClick={async () => { setBusy(true); try { await onCheck(); } finally { setBusy(false); } }}>{busy ? "Checking…" : "Check again"}</button>
+      </div>
+      {tx.intent && (
+        <form className="reconcile" onSubmit={reconcile}>
+          <label htmlFor={id}>Transaction hash from your wallet</label>
+          <div className="reconcile-row">
+            <input id={id} value={hash} onChange={(e) => setHash(e.target.value)} placeholder="0x…" autoComplete="off" spellCheck={false} aria-describedby={msg ? `${id}-msg` : undefined} />
+            <button type="submit" className="btn" disabled={busy || hash.trim() === ""}>Match</button>
+          </div>
+          {msg && <p id={`${id}-msg`} className={msg.ok ? "fine" : "bad"}>{msg.text}</p>}
+        </form>
+      )}
+      {!confirming ? (
+        <button type="button" className="link" onClick={() => setConfirming(true)}>My wallet shows this {what} was never sent or was cancelled</button>
+      ) : (
+        <div className="confirm-release" role="group" aria-label="Confirm release">
+          <p>Release only if your wallet's activity shows no sent or pending {what}. If it was sent, releasing could let you {what === "purchase" ? "buy the same candles twice" : "send a second claim"}.</p>
+          <div className="pending-acts">
+            <button type="button" className="btn danger" onClick={onRelease}>Release the {what}</button>
+            <button type="button" className="link" onClick={() => setConfirming(false)}>Keep it locked</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

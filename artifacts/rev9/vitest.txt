@@ -1,0 +1,141 @@
+
+ RUN  v2.1.9 /root/.identitymd/work/689d8862-e6cd-4253-86a5-92072cdd5394/4cb8ac42-cc54-45de-8639-f10751ffba00/web
+
+ ✓ tests/activity.test.ts > recent activity scan > reads whole 5,000-block windows when the host allows them
+ ✓ tests/activity.test.ts > recent activity scan > narrows to 50-block chunks on a range error instead of repeating 5,000-block requests (reviewer mock)
+ ✓ tests/activity.test.ts > recent activity scan > keeps the verified recent windows when an older window is archive-only (live PublicNode/dRPC/1RPC/Merkle pattern)
+ ✓ tests/activity.test.ts > recent activity scan > throws only when no block at all was verified
+ ✓ tests/activity.test.ts > recent activity scan > stops at the deployment block and reports completeness
+ ✓ tests/activity.test.ts > recent activity scan > classifies the live provider answers
+ ✓ tests/popup.test.ts > anchored popup placement > sits above the flame when there is room
+ ✓ tests/popup.test.ts > anchored popup placement > flips below the flame instead of sliding under the header
+ ✓ tests/popup.test.ts > anchored popup placement > prefers the side that keeps clear of the headline
+ ✓ tests/popup.test.ts > anchored popup placement > is hidden while the flame is under the header or the strip
+ ✓ tests/popup.test.ts > anchored popup placement > never leaves the band between header and strip
+ ✓ tests/popup.test.ts > anchored popup placement > clamps horizontally to the viewport
+ ✓ tests/popup.test.ts > popup keeps the selection ring visible (Find on a short band) > goes beside the ring when neither above nor below fits (1440x900, #37 centred)
+ ✓ tests/popup.test.ts > popup keeps the selection ring visible (Find on a short band) > scrolls in the roomier band when no side fits
+ ✓ tests/popup.test.ts > popup keeps the selection ring visible (Find on a short band) > above and below keep clear of the ring when they fit
+ ✓ tests/verify.test.ts > replacement purchases are verified against the exact signed draft (mock) > decodes buyCandles calldata and rejects other calls
+ ✓ tests/verify.test.ts > replacement purchases are verified against the exact signed draft (mock) > accepts a sped-up replacement with identical calldata and events
+ ✓ tests/verify.test.ts > replacement purchases are verified against the exact signed draft (mock) > rejects a replacement that bought with a different wish, style or quantity
+ ✓ tests/verify.test.ts > replacement purchases are verified against the exact signed draft (mock) > rejects matching events when the calldata differs, and events from another contract
+ ✓ tests/verify.test.ts > replacement purchases are verified against the exact signed draft (mock) > matching events without the mined transaction (lookup failed) are not a verified purchase
+ ✓ tests/verify.test.ts > replacement purchases are verified against the exact signed draft (mock) > a zero-value self-transfer cancel never lights candles
+ ✓ tests/verify.test.ts > replacement purchases are verified against the exact signed draft (mock) > awaitBuy passes the saved draft (from a reload) into verification
+ ✓ tests/verify.test.ts > bounded replacement recovery from sender, nonce and submission block (mock client) > returns the sent hash when it has its own receipt
+ ✓ tests/verify.test.ts > bounded replacement recovery from sender, nonce and submission block (mock client) > stays pending while the nonce is unused
+ ✓ tests/verify.test.ts > bounded replacement recovery from sender, nonce and submission block (mock client) > binary-searches the block that consumed the nonce and returns the replacement
+ ✓ tests/verify.test.ts > bounded replacement recovery from sender, nonce and submission block (mock client) > falls back to a bounded linear scan on nodes without historical state
+ ✓ tests/verify.test.ts > bounded replacement recovery from sender, nonce and submission block (mock client) > reports unknown when the nonce was used outside the window
+ ✓ tests/verify.test.ts > bounded replacement recovery from sender, nonce and submission block (mock client) > reports unknown for an entry saved without sender and nonce
+ ✓ tests/verify.test.ts > claims show Claimed only with a verified RewardsClaimed (mock) > verified claim
+ ✓ tests/verify.test.ts > claims show Claimed only with a verified RewardsClaimed (mock) > cancelled claim (self-transfer replacement) is never Claimed
+ ✓ tests/verify.test.ts > claims show Claimed only with a verified RewardsClaimed (mock) > claimRewards with no event, an event for someone else or from another contract is not Claimed
+ ✓ tests/revision9.test.ts > finding 1: an ambiguous wallet failure keeps a durable purchase intent > broadcast-then-4900: the intent survives, the draft stays locked and a reload cannot buy again
+ ✓ tests/revision9.test.ts > finding 1: an ambiguous wallet failure keeps a durable purchase intent > a timeout is ambiguous; only a 4001 rejection releases the intent
+ ✓ tests/revision9.test.ts > finding 1: an ambiguous wallet failure keeps a durable purchase intent > resolves by account, chain, target, nonce and exact calldata (also when the wallet used a later nonce)
+ ✓ tests/revision9.test.ts > finding 1: an ambiguous wallet failure keeps a durable purchase intent > transaction-hash reconciliation validates before replacing the intent
+ ✓ tests/revision9.test.ts > finding 2: a claim intent is saved before the wallet is asked > storage quota: nothing is sent
+ ✓ tests/revision9.test.ts > finding 2: a claim intent is saved before the wallet is asked > the intent is in storage when the wallet is asked; a validated receipt clears it
+ ✓ tests/revision9.test.ts > finding 2: a claim intent is saved before the wallet is asked > broadcast-then-4900 and reload: the claim stays uncertain and no second claim is offered
+ ✓ tests/revision9.test.ts > finding 2: a claim intent is saved before the wallet is asked > two tabs: while tab A waits for the wallet, tab B cannot claim
+ ✓ tests/revision9.test.ts > finding 2: a claim intent is saved before the wallet is asked > saving the hash fails after submission: the earlier intent is retained for reconciliation
+ ✓ tests/revision9.test.ts > finding 3: the lit total is the contract's totalCandles, not loaded records > partial RPC failure keeps the verified total and labels the loaded share as incomplete
+ ✓ tests/revision9.test.ts > finding 3: the lit total is the contract's totalCandles, not loaded records > an unknown total is unavailable, never zero; a verified zero is zero
+ ✓ tests/revision9.test.ts > finding 4: approval confirmed, then the purchase was re-planned > reports the approval separately, never says nothing was sent, and does not approve again
+ ✓ tests/revision8.test.ts > recovery intent before signing (finding 2fe5f5a4) > a 64-character quota (the reviewer's scenario) blocks the send: the intent cannot be saved, so nothing is signed
+ ✓ tests/revision8.test.ts > recovery intent before signing (finding 2fe5f5a4) > a failed post-broadcast save keeps the intent; after a reload (fresh module) the form guard stays locked and one send is made
+ ✓ tests/revision8.test.ts > recovery intent before signing (finding 2fe5f5a4) > a wallet rejection removes the intent; a settled purchase leaves nothing saved
+ ✓ tests/revision8.test.ts > contract gas estimate re-plans the batch (finding 39004380) > finds the largest ordered prefix under the cap and re-plans purchase 1 to it
+ ✓ tests/revision8.test.ts > contract gas estimate re-plans the batch (finding 39004380) > an RPC gas-cap refusal is a gas error, never an IMD approval error
+ ✓ tests/revision8.test.ts > every raised terrace has a path connection (finding 7b461b68) > terraces without a connected flight are ground-level beds; holder coordinates are unchanged 484ms
+ ✓ tests/logic.test.ts > wish limits mirror Utf8Wish.validate > accepts 280 ASCII code points and rejects 281
+ ✓ tests/logic.test.ts > wish limits mirror Utf8Wish.validate > counts astral emoji as one code point and four bytes
+ ✓ tests/logic.test.ts > wish limits mirror Utf8Wish.validate > 280 emoji = 1120 bytes passes; 280 code points over 1120 bytes is impossible but bytes are enforced
+ ✓ tests/logic.test.ts > wish limits mirror Utf8Wish.validate > rejects lone surrogates (invalid UTF-8 onchain)
+ ✓ tests/logic.test.ts > wish limits mirror Utf8Wish.validate > gas bound follows the contract docs
+ ✓ tests/logic.test.ts > candle store: paginated incremental reads on fixtures > loads 0 candles in pages of at most 100
+ ✓ tests/logic.test.ts > candle store: paginated incremental reads on fixtures > loads 100 candles in pages of at most 100
+ ✓ tests/logic.test.ts > candle store: paginated incremental reads on fixtures > loads 3000 candles in pages of at most 100
+ ✓ tests/logic.test.ts > candle store: paginated incremental reads on fixtures > loads 10000 candles in pages of at most 100
+ ✓ tests/logic.test.ts > candle store: paginated incremental reads on fixtures > rejects pages over 100 like the contract
+ ✓ tests/logic.test.ts > candle store: paginated incremental reads on fixtures > candleIdsOf pagination stops at the end
+ ✓ tests/logic.test.ts > garden layout > is deterministic and unique per position
+ ✓ tests/logic.test.ts > garden layout > the empty garden already holds at least 10,000 unlit holders, then grows one sector ahead
+ ✓ tests/logic.test.ts > garden layout > hit test covers the flame and holder, not only the body (founding candle at 2.1x)
+ ✓ tests/logic.test.ts > garden layout > hit test finds the candle under the pointer
+ ✓ tests/logic.test.ts > garden layout > inverts the sector spiral in closed form with no cap
+ ✓ tests/logic.test.ts > garden layout > hit test works past 4,096 sectors (400,000 candles)
+ ✓ tests/logic.test.ts > garden layout > fills every sector with holders that avoid the stream and path
+ ✓ tests/logic.test.ts > garden layout > is not a repeated tile: sectors differ and terraces are curved arcs
+ ✓ tests/logic.test.ts > garden layout > streams and paths join across sector edges
+ ✓ tests/logic.test.ts > garden layout > world bounds contain every sector
+ ✓ tests/logic.test.ts > purchase flow (labelled mock chain, no real funds) > approves exactly the total, waits, simulates, then buys
+ ✓ tests/logic.test.ts > purchase flow (labelled mock chain, no real funds) > skips approval when allowance covers the total
+ ✓ tests/logic.test.ts > purchase flow (labelled mock chain, no real funds) > stops when sales are closed
+ ✓ tests/logic.test.ts > purchase flow (labelled mock chain, no real funds) > stops on the wrong network
+ ✓ tests/logic.test.ts > purchase flow (labelled mock chain, no real funds) > stops on insufficient IMD
+ ✓ tests/logic.test.ts > purchase flow (labelled mock chain, no real funds) > reports wallet cancellation without buying
+ ✓ tests/logic.test.ts > purchase flow (labelled mock chain, no real funds) > reports a reverted purchase and keeps no pending hash
+ ✓ tests/logic.test.ts > purchase flow (labelled mock chain, no real funds) > keeps the pending hash and stays locked when the RPC fails while waiting (reload recovery)
+ ✓ tests/logic.test.ts > purchase flow (labelled mock chain, no real funds) > a successful replacement without the garden event is not a purchase (cancelled in the wallet)
+ ✓ tests/logic.test.ts > purchase flow (labelled mock chain, no real funds) > a sped-up purchase links the mined replacement hash, not the sent one
+ ✓ tests/logic.test.ts > purchase flow (labelled mock chain, no real funds) > an event for another buyer or quantity does not complete the purchase
+ ✓ tests/logic.test.ts > purchase flow (labelled mock chain, no real funds) > fixture pages are read-only: nothing reaches the wallet
+ ✓ tests/logic.test.ts > purchase flow (labelled mock chain, no real funds) > a failed nonce/block read stops before the wallet signs (no unrecoverable pending purchase)
+ ✓ tests/logic.test.ts > purchase flow (labelled mock chain, no real funds) > persists sender, nonce and block, then reconciles the nonce with the submitted transaction
+ ✓ tests/revision8.test.ts > register discloses a known total while the first page is missing (finding 6fcf22b8) > loading and failed first page both show 0 of the known total
+ ✓ tests/txhash.test.ts > candle -> transaction mapping > finds the purchase transaction of a candle inside a batch
+ ✓ tests/txhash.test.ts > candle -> transaction mapping > returns null when no matching log exists
+ ✓ tests/txhash.test.ts > candle -> transaction mapping > rememberTx ignores malformed input
+ ✓ tests/receipt.test.ts > purchase receipts (labelled encoded logs, no chain) > reads the garden's CandlesPurchased event and the mined hash
+ ✓ tests/receipt.test.ts > purchase receipts (labelled encoded logs, no chain) > ignores a look-alike event from another contract and an empty receipt
+ ✓ tests/stairs.test.ts > garden stairs > recur across the garden and stay clear of every slot 659ms
+ ✓ tests/stairs.test.ts > garden stairs > the opening view connects the path to the twin arches and a terrace to the path
+ ✓ tests/stairs.test.ts > garden stairs > does not move any slot (ID-to-position mapping unchanged)
+ ✓ tests/escape.test.ts > wish rendering > renders HTML in a wish as inert text
+ ✓ tests/quantity.test.ts > parseQuantity: only whole numbers 1-50, never clamped or rounded > accepts 1
+ ✓ tests/quantity.test.ts > parseQuantity: only whole numbers 1-50, never clamped or rounded > accepts 7
+ ✓ tests/quantity.test.ts > parseQuantity: only whole numbers 1-50, never clamped or rounded > accepts 50
+ ✓ tests/quantity.test.ts > parseQuantity: only whole numbers 1-50, never clamped or rounded > accepts  12 
+ ✓ tests/quantity.test.ts > parseQuantity: only whole numbers 1-50, never clamped or rounded > rejects 51 visibly
+ ✓ tests/quantity.test.ts > parseQuantity: only whole numbers 1-50, never clamped or rounded > rejects 0 visibly
+ ✓ tests/quantity.test.ts > parseQuantity: only whole numbers 1-50, never clamped or rounded > rejects 2.5 visibly
+ ✓ tests/quantity.test.ts > parseQuantity: only whole numbers 1-50, never clamped or rounded > rejects -3 visibly
+ ✓ tests/quantity.test.ts > parseQuantity: only whole numbers 1-50, never clamped or rounded > rejects abc visibly
+ ✓ tests/quantity.test.ts > parseQuantity: only whole numbers 1-50, never clamped or rounded > rejects  visibly
+ ✓ tests/quantity.test.ts > parseQuantity: only whole numbers 1-50, never clamped or rounded > rejects 1e1 visibly
+ ✓ tests/quantity.test.ts > parseQuantity: only whole numbers 1-50, never clamped or rounded > rejects +5 visibly
+ ✓ tests/quantity.test.ts > parseQuantity: only whole numbers 1-50, never clamped or rounded > rejects 100 visibly
+ ✓ tests/quantity.test.ts > parseQuantity: only whole numbers 1-50, never clamped or rounded > rejects 0x10 visibly
+ ✓ tests/nonce.test.ts > replacement recovery uses only a verified nonce (finding 139cd715) > does not attribute an unrelated nonce-9 self-transfer to a purchase whose nonce was never verified 3008ms
+ ✓ tests/nonce.test.ts > replacement recovery uses only a verified nonce (finding 139cd715) > claims follow the same rule: an unverified claim nonce never settles on another transaction
+ ✓ tests/nonce.test.ts > replacement recovery uses only a verified nonce (finding 139cd715) > once the sent transaction is readable its actual nonce (11) is reconciled and the real replacement B is found
+ ✓ tests/nonce.test.ts > replacement recovery uses only a verified nonce (finding 139cd715) > a verified nonce still recovers a replacement mined while the tab was closed
+ ✓ tests/logic.test.ts > purchase flow (labelled mock chain, no real funds) > keeps the preflight nonce and block when the sent transaction cannot be read yet 3004ms
+ ✓ tests/logic.test.ts > purchase recovery after a reload (labelled mock chain) > settles a verified purchase from the replacement receipt and clears the pending hash
+ ✓ tests/logic.test.ts > purchase recovery after a reload (labelled mock chain) > a cancelled purchase is a failure that releases the draft for retry
+ ✓ tests/logic.test.ts > purchase recovery after a reload (labelled mock chain) > a receipt whose transaction could not be read stays pending (no settle without calldata)
+ ✓ tests/logic.test.ts > purchase recovery after a reload (labelled mock chain) > no receipt keeps the hash pending (the form stays locked)
+ ✓ tests/logic.test.ts > purchase recovery after a reload (labelled mock chain) > a failing simulation never requests the purchase
+ ✓ tests/logic.test.ts > Find beyond the streamed pages > uses the onchain total, not the loaded count, and reads the record with getCandle
+ ✓ tests/logic.test.ts > Find beyond the streamed pages > throws (retryable) when the record cannot be read, instead of claiming it does not exist
+ ✓ tests/logic.test.ts > ignition after a verified purchase > runs once from unlit to lit; candles never ignited are drawn fully lit
+ ✓ tests/revision7.test.ts > split purchases (finding b12a45f5) > splits 50 candles with 280-character wishes into ordered batches that each fit the gas cap
+ ✓ tests/revision7.test.ts > split purchases (finding b12a45f5) > keeps short drafts in one purchase and splits the largest legal wishes too
+ ✓ tests/revision7.test.ts > split purchases (finding b12a45f5) > a confirmed purchase removes exactly its candles from the front of the saved draft
+ ✓ tests/revision7.test.ts > water motion (finding b649ce8e) > animates water with zero candles and at the default mobile zoom
+ ✓ tests/revision7.test.ts > water motion (finding b649ce8e) > stops for reduced motion and hidden tabs, and caps the frame rate
+ ✓ tests/revision7.test.ts > storage failures around a purchase (finding 1adfd347) > does not ask the wallet to sign when recovery data cannot be saved
+ ✓ tests/revision7.test.ts > storage failures around a purchase (finding 1adfd347) > a storage failure after broadcast keeps the hash pending and the draft locked
+ ✓ tests/revision7.test.ts > candle register count (finding 4bbfc677) > an RPC failure leaves the total unknown, never zero
+ ✓ tests/revision7.test.ts > terraces are joined to the paths (finding 2fd0db9a) > most raised terraces carry steps, and most flights reach the path directly or through neighbours 6682ms
+ ✓ tests/revision7.test.ts > RewardAllocated names its last field fallbackToBurn, as in the pinned ABI (finding 81cb0dd6)
+
+ Test Files  13 passed (13)
+      Tests  131 passed (131)
+   Start at  08:21:00
+   Duration  8.51s (transform 689ms, setup 0ms, collect 9.46s, tests 14.92s, environment 4.84s, prepare 854ms)
+
+tsc --noEmit: exit 0

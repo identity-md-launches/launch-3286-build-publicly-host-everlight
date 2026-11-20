@@ -150,3 +150,21 @@
 .split-plan ol { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-1); }
 .split-plan li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 var(--space-3); padding: var(--space-1) var(--space-2); border-left: 3px solid transparent; }
 .split-plan li.next { border-left-color: var(--px-gold, #e8b44a); color: var(--color-text); }
+
+/* Revision 9: recovery, reconciliation and approval states share the panel language (emerald surface, gold rule). */
+.approved-box { border: 1px solid var(--color-line); border-left: 3px solid var(--gold-400); background: rgb(242 195 95 / 0.06); padding: var(--space-3); border-radius: 6px; display: grid; gap: var(--space-2); }
+.approved-box p { margin: 0; }
+.approved-box strong { color: var(--gold-300); }
+.approved-box .summary { margin: 0; }
+.recovery { display: grid; gap: var(--space-2); margin-top: var(--space-2); }
+.reconcile { display: grid; gap: var(--space-1, 4px); }
+.reconcile label { font-size: var(--text-sm); color: var(--ivory-100); }
+.reconcile-row { display: flex; gap: var(--space-2); }
+.reconcile-row input { flex: 1; min-width: 0; min-height: 44px; font-family: ui-monospace, monospace; font-size: var(--text-sm); background: rgb(3 10 7 / 0.9); color: var(--ivory-100); border: 1px solid var(--color-line); border-radius: 4px; padding: 0 var(--space-2); }
+.reconcile-row input:focus-visible { outline: 2px solid var(--gold-400); outline-offset: 1px; }
+.reconcile-row .btn { min-height: 44px; }
+.confirm-release { border: 1px solid var(--color-danger); border-radius: 6px; padding: var(--space-2) var(--space-3); display: grid; gap: var(--space-2); }
+.confirm-release p { margin: 0; font-size: var(--text-sm); }
+.btn.danger { border-color: var(--color-danger); color: var(--ivory-100); background: #3a1610; }
+.status-line .lit-count { color: var(--gold-300); font-weight: 600; }
+.status-line .loaded-count { color: inherit; opacity: 0.85; }

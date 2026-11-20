@@ -261,3 +261,12 @@ Positions depend only on a candle's position (id − 1), so they are stable acro
 - **Light panel**: a second `.costs` disclosure, "Where your 1 IMD goes", sits under Cost details and links to How it works.
 - **Style names** follow the contract: Purity, Hope, Love, Success, Health, Wealth, Happiness.
 - No new tokens or type sizes. Responsive behaviour is unchanged: the split collapses into its "Split of 1 IMD" disclosure on narrow screens.
+
+
+## Revision 9 additions (final source)
+
+- **Ground** (`web/src/garden/scenery.ts`, `drawSectorBase`): one deep emerald (`rgb(20 40 29)`) with a slow tonal field (±7%) and a faint trace of `tile-grass-dark` (±12%); woodland cells 14% darker. Toward the skyline the ground blends up to 70% into haze `rgb(34 58 62)` over 220 world px (atmospheric perspective).
+- **River**: half-width `32 + 7·sin(y/90) + 3·sin(y/37)` world px; depth shading 0.62→1.0 from channel to bank with sky-reflection streaks (×1.18); a 2 px wet edge `rgb(16 30 24)`; an irregular bank of 3–10 px of earth `rgb(38 46 30)` and scattered `tile-moss-stone` stones. Water ripples animate at any candle count and stop under reduced motion.
+- **Light** (`web/src/garden/renderer.ts`): per-candle halo alpha 0.17 (radius 38·scale) and ground pool 0.15 (68×20·scale); overview light layer 0.2. Flicker stays bounded (0.88–1.0) and is fixed under reduced motion.
+- **Components** (`web/src/everlight.css`, end of file): `.approved-box` (gold left rule, 6% gold tint), `.recovery`, `.reconcile` (monospace hash input, 44 px min height, gold focus ring), `.confirm-release` (coral border), `.btn.danger`, `.status-line .lit-count` (gold, 600) and `.loaded-count`.
+- **Responsive**: the new boxes are single-column grids that fit the 390 px purchase sheet and the docked 1600 px panel; the hash row is a flex row whose input shrinks (`min-width: 0`). Tokens, type scale (13/15/17/20/28/44 px, Iowan Old Style + system-ui) and breakpoints are unchanged from the sections above.

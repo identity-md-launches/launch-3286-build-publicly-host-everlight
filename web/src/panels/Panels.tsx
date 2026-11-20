@@ -9,7 +9,9 @@ import { wishGardenAbi } from "../abi/WishGarden";
 import { BASESCAN, BASE_IMD, BASE_RECEIVER, ETHERSCAN, GARDEN, GARDEN_DEPLOY_BLOCK, IMD, LEGACY_GARDEN, OWNER, SOURCE_REPO, config } from "../config";
 import { STYLE_NAMES, date, imd, short, safeChecksum } from "../lib/format";
 import { explainError } from "../lib/errors";
-import { FIXTURE_MESSAGE, pendingStore, reconcileSent, type PendingTx } from "../lib/purchase";
+import { FIXTURE_MESSAGE, pendingStore, type PendingTx } from "../lib/purchase";
+import { claimConflict, runClaim, webLock, type ClaimStep } from "../lib/claim";
+import { IntentRecovery } from "./LightPanel";
 import type { Candle } from "../lib/candles";
 import { ConnectButton } from "../components/ConnectSheet";
 import { FIXTURE, useActivity, useCandleTx, useMyIds, useRewards, useTreasury } from "../hooks";
@@ -200,19 +202,17 @@ export async function checkClaim(tx: PendingTx): Promise<{ ok: boolean; text: st
   }
 }
 
-type ClaimState = { s: "idle" } | { s: "wallet" } | { s: "pending"; hash: string } | { s: "done"; hash: string; amount: bigint } | { s: "error"; msg: string };
-
 export function RewardsPanel() {
   const { address, chainId } = useAccount();
   const r = useRewards(address);
   const qc = useQueryClient();
-  const [st, setSt] = useState<ClaimState>({ s: "idle" });
+  const [st, setSt] = useState<ClaimStep>({ s: "idle" });
   const busy = useRef(false);
-  // a claim sent earlier by this wallet to this garden (this page or before a reload) that has not settled yet:
-  // Claim stays off until it does, so the same rewards are never requested twice
+  // a claim (or claim intent) saved by this wallet in any tab or before a reload that has not settled: Claim stays
+  // off until it does, so the same rewards are never requested twice. Locks are per account, across networks.
   const pendingVersion = useSyncExternalStore(pendingStore.subscribe, pendingStore.version);
   const pendingClaim = useMemo(
-    () => (address ? pendingStore.list().filter((t) => t.kind === "claim" && t.account.toLowerCase() === address.toLowerCase()).at(-1) ?? null : null),
+    () => (address ? pendingStore.list().filter(claimConflict(address)).at(-1) ?? null : null),
     [pendingVersion, address],
   );
   const [checking, setChecking] = useState(false);
@@ -221,34 +221,30 @@ export function RewardsPanel() {
     setChecking(true);
     const v = await checkClaim(pendingClaim);
     setChecking(false);
-    if (v.settled) setSt(v.ok ? { s: "idle" } : { s: "error", msg: v.text });
+    setSt(v.settled ? (v.ok ? { s: "idle" } : { s: "error", msg: v.text }) : { s: "uncertain", msg: v.text });
     qc.invalidateQueries();
   }
   async function claim() {
     if (busy.current || !address) return;
-    if (pendingStore.list().some((t) => t.kind === "claim" && t.account.toLowerCase() === address.toLowerCase())) return; // duplicate-claim guard
     if (FIXTURE !== null) return setSt({ s: "error", msg: FIXTURE_MESSAGE }); // fixture pages never reach the wallet
     busy.current = true;
     try {
-      setSt({ s: "wallet" });
-      const { request } = await simulateContract(config, { address: GARDEN, abi: wishGardenAbi, functionName: "claimRewards", account: address, chainId: 1 });
-      // the nonce and submission block are read before signing: without them a replaced claim could not be recovered
-      const sub = await submissionMeta(address).catch(() => null);
-      if (!sub) { setSt({ s: "error", msg: "Your account's nonce and the current block could not be read. Nothing was sent; try the claim again." }); return; }
-      const hash = await writeContract(config, request);
-      const saved = { hash, kind: "claim" as const, account: address, createdAt: Date.now(), from: address, nonce: sub.nonce, block: sub.block.toString(), nonceChecked: false };
-      pendingStore.add(saved);
-      setSt({ s: "pending", hash });
-      // reconcile the preflight nonce with the submitted transaction's own, for recovery after a reload
-      await reconcileSent({ sentTx }, saved);
-      // follows a sped-up or cancelled replacement; only a verified RewardsClaimed from the garden shows Claimed
-      const rec = await waitForTransactionReceipt(config, { hash, chainId: 1 });
-      const v = settleClaim(rec, await minedTx(rec.transactionHash), address);
-      if (!("unverified" in v && v.unverified)) pendingStore.remove(hash); // unverified: kept and re-checked on reload
-      setSt(v.ok ? { s: "done", hash: rec.transactionHash, amount: v.amount } : { s: "error", msg: v.message });
+      await runClaim({
+        account: address,
+        simulate: async () => (await simulateContract(config, { address: GARDEN, abi: wishGardenAbi, functionName: "claimRewards", account: address, chainId: 1 })).request,
+        submission: () => submissionMeta(address),
+        send: (request) => writeContract(config, request as any),
+        sentTx,
+        wait: async (hash) => {
+          // follows a sped-up or cancelled replacement; only a verified RewardsClaimed from the garden shows Claimed
+          const rec = await waitForTransactionReceipt(config, { hash, chainId: 1 });
+          const v = settleClaim(rec, await minedTx(rec.transactionHash), address);
+          return { ...v, hash: rec.transactionHash, unverified: "unverified" in v && !!v.unverified, message: v.ok ? undefined : v.message, amount: v.ok ? v.amount : undefined };
+        },
+        withLock: webLock,
+        explain: (e) => explainError(e),
+      }, setSt);
       qc.invalidateQueries();
-    } catch (e) {
-      setSt({ s: "error", msg: explainError(e) });
     } finally {
       busy.current = false;
     }
@@ -270,7 +266,7 @@ export function RewardsPanel() {
         </dl>
       )}
       {d && (
-        <button className="cta wide" onClick={claim} disabled={FIXTURE !== null || d.claimable === 0n || chainId !== 1 || st.s === "wallet" || st.s === "pending" || pendingClaim !== null}>
+        <button className="cta wide" onClick={claim} disabled={FIXTURE !== null || d.claimable === 0n || chainId !== 1 || st.s === "wallet" || st.s === "pending" || st.s === "uncertain" || pendingClaim !== null}>
           {st.s === "wallet" ? "Confirm in your wallet…" : st.s === "pending" ? "Claiming…" : pendingClaim ? "Waiting for the earlier claim" : d.claimable === 0n ? "Nothing to claim yet" : `Claim ${imd(d.claimable)} IMD`}
         </button>
       )}
@@ -279,18 +275,18 @@ export function RewardsPanel() {
         {st.s === "pending" && <p>Claim sent. Waiting for its receipt… <a href={`${ETHERSCAN}/tx/${st.hash}`} target="_blank" rel="noreferrer">View transaction</a></p>}
         {st.s === "done" && <p>Claimed {imd(st.amount)} IMD. <a href={`${ETHERSCAN}/tx/${st.hash}`} target="_blank" rel="noreferrer">View transaction</a></p>}
         {st.s === "error" && <p className="bad" role="alert">{st.msg}</p>}
+        {st.s === "uncertain" && !pendingClaim && <p className="bad" role="alert">{st.msg}</p>}
         {pendingClaim && st.s !== "pending" && st.s !== "wallet" && (
           <div className="pending-box" role="status">
             <p>
-              A claim sent earlier has no settled receipt yet. Claim stays off until it settles, so the same rewards are not requested twice.{" "}
-              <a href={`${ETHERSCAN}/tx/${pendingClaim.hash}`} target="_blank" rel="noreferrer">View pending claim</a>
+              {st.s === "uncertain" ? st.msg : pendingClaim.intent
+                ? "A claim was started (in this or another tab, or before a reload) and may have been sent. Claim stays off until it is matched or released, so the same rewards are not requested twice."
+                : "A claim sent earlier has no settled receipt yet. Claim stays off until it settles, so the same rewards are not requested twice."}{" "}
+              {pendingClaim.intent
+                ? <a href={`${ETHERSCAN}/address/${pendingClaim.account}`} target="_blank" rel="noreferrer">View your wallet's transactions</a>
+                : <a href={`${ETHERSCAN}/tx/${pendingClaim.hash}`} target="_blank" rel="noreferrer">View pending claim</a>}
             </p>
-            <div className="pending-acts">
-              <button type="button" className="btn" onClick={recheck} disabled={checking}>{checking ? "Checking…" : "Check again"}</button>
-              <button type="button" className="link" onClick={() => { pendingStore.remove(pendingClaim.hash); setSt({ s: "idle" }); }}>
-                Forget it: my wallet shows it was dropped
-              </button>
-            </div>
+            <IntentRecovery tx={pendingClaim} what="claim" onCheck={recheck} onRelease={() => { pendingStore.remove(pendingClaim.hash); setSt({ s: "idle" }); }} />
           </div>
         )}
       </div>

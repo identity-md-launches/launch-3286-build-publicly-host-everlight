@@ -5,6 +5,7 @@ import { ETHERSCAN } from "./config";
 import { Garden, SHEET_QUERY, type GardenHandle } from "./garden/Garden";
 import { ConnectSheet } from "./components/ConnectSheet";
 import { LightPanel, recoverBuy } from "./panels/LightPanel";
+import { countLine } from "./lib/counts";
 import { CandleDetail, HowPanel, MinePanel, Register, RewardsPanel, TreasuryPanel, checkClaim } from "./panels/Panels";
 import { FIXTURE, store, useCandles, useMyIds, useReducedMotion, useStatus } from "./hooks";
 import { INTENT_PENDING_MESSAGE, UNVERIFIED_MESSAGE, pendingStore, type PendingTx } from "./lib/purchase";
@@ -130,6 +131,7 @@ export default function App() {
   const garden = useRef<GardenHandle | null>(null);
   const panelHeading = useRef<HTMLDivElement>(null);
   const cs = useCandles();
+  const counts = countLine({ total: cs.total, loaded: cs.candles.length, loading: cs.loading, error: cs.error });
   const status = useStatus();
   const reduced = useReducedMotion();
   const { address } = useAccount();
@@ -306,10 +308,15 @@ export default function App() {
             <p className="intro-line">Write a wish and light a permanent candle in the garden for 1 IMD on Ethereum.</p>
             <a className="cta intro-cta" href="#/light">{"Light a candle\u00a0· 1\u00a0IMD"}</a>
             <p className="status-line" role="status">
-              <span className={`dot ${status.data?.open ? "on" : ""}`} aria-hidden="true" /> {salesLine} · {cs.total === null ? "counting candles…" : `${total} lit`}
-              {cs.loading && cs.total !== null && total < cs.total ? ` (loading ${total} of ${cs.total})` : ""}
+              <span className={`dot ${status.data?.open ? "on" : ""}`} aria-hidden="true" /> {salesLine} · <strong className="lit-count">{counts.lit}</strong>
+              {counts.loaded && <span className="loaded-count"> · {counts.loaded}{counts.incomplete ? " (incomplete)" : ""}</span>}
             </p>
-            {cs.error && <p className="bad" role="alert">Candles could not be read: the RPCs did not answer. Retrying every 30 seconds.</p>}
+            {cs.error && (
+              <p className="bad" role="alert">
+                {counts.incomplete || cs.total === null ? "Some candle records could not be read: the RPCs did not answer." : "The latest candle records could not be refreshed."}{" "}
+                <button type="button" className="link" onClick={() => store.sync()}>Retry</button>
+              </p>
+            )}
             {FIXTURE !== null && <p className="fixture">{FIXTURE_NOTE}</p>}
           </div>
         )}

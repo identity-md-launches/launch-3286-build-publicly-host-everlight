@@ -1,5 +1,6 @@
 import type { Hash } from "viem";
 import { GARDEN } from "../config";
+import { isProvenRejection } from "./intent";
 
 export type TxKind = "approve" | "buy" | "claim";
 
@@ -37,6 +38,11 @@ const PENDING_KEY = "everlight:v2:pending:0x33a514c5e2028f1affd70b82f170e8193df0
 const pendingSubs = new Set<() => void>();
 let pendingVersion = 0;
 const pendingChanged = () => { pendingVersion++; pendingSubs.forEach((f) => f()); };
+// another tab saving or settling a transaction updates this tab's locks at once (claims, purchases, intents)
+try {
+  if (typeof window !== "undefined") window.addEventListener("storage", (e) => { if (e.key === null || e.key === PENDING_KEY) pendingChanged(); });
+} catch { /* no window */ }
+export const PENDING_STORAGE_KEY = PENDING_KEY;
 
 /**
  * In-memory copy of every pending entry, per storage object. A hash is kept here the moment it is known, so even if
@@ -97,6 +103,19 @@ export const pendingStore = {
     if (i >= 0) mem[i] = tx; else mem.push(tx);
     pendingChanged();
     return true;
+  },
+  /**
+   * Save an intent only when no saved entry conflicts with it (e.g. another tab's claim for the same account), then
+   * read it back so a write that did not land is never trusted. "saved" | "conflict" | "failed".
+   */
+  persistExclusive(tx: PendingTx, conflicts: (t: PendingTx) => boolean, storage: Storage | null = safeStorage()): "saved" | "conflict" | "failed" {
+    if (!storage) return "failed";
+    if (readStored(storage).some(conflicts) || memFor(storage).some(conflicts)) return "conflict";
+    if (!this.persist(tx, storage)) return "failed";
+    const back = readStored(storage);
+    if (!back.some((t) => t.hash === tx.hash)) return "failed";
+    if (back.filter(conflicts).some((t) => t.hash !== tx.hash)) return "conflict";
+    return "saved";
   },
   /**
    * Replace a saved entry (the recovery intent) with the sent transaction in one write. Never throws: if the write
@@ -169,7 +188,13 @@ export type Step =
   | { name: "buy-unknown"; hash: Hash; message: string }
   | { name: "done"; hash: Hash; firstId: number | null; quantity?: number }
   /** hash: a mined transaction the message refers to (a different confirmed purchase), linked in the UI. */
-  | { name: "error"; message: string; hash?: Hash };
+  | { name: "error"; message: string; hash?: Hash; approval?: ApprovalDone };
+
+/** An approval that confirmed in this attempt: its receipt and the allowance read afterwards. */
+export interface ApprovalDone { hash: Hash; allowance: bigint }
+export const APPROVED_NOT_SENT = "Approval confirmed; candle purchase not sent.";
+/** After a confirmed approval no message may say "Nothing was sent". */
+export const afterApproval = (m: string) => m.replace(/Nothing was sent/g, "The candle purchase was not sent");
 
 /** The garden CandlesPurchased event found in a receipt, read from the garden contract's own logs only. */
 export interface PurchaseEvent { purchaser: string; firstId: number; quantity: number }
@@ -285,8 +310,9 @@ export async function runPurchase(
   wishes: string[],
   onStep: (s: Step) => void,
 ): Promise<Step> {
+  let approval: ApprovalDone | undefined;
   const fail = (message: string): Step => {
-    const s: Step = { name: "error", message };
+    const s: Step = approval ? { name: "error", message: afterApproval(message), approval } : { name: "error", message };
     onStep(s);
     return s;
   };
@@ -295,6 +321,8 @@ export async function runPurchase(
   try {
     if (styles.length < 1 || styles.length > 50 || styles.length !== wishes.length) return fail("Choose between 1 and 50 candles.");
     if (deps.chainId() !== 1) return fail("Your wallet is on another network. Switch to Ethereum to continue.");
+    // a saved purchase or purchase intent (this tab, another tab, or before a reload/reconnect) blocks a second one
+    if (pendingStore.list(deps.storage === undefined ? undefined : deps.storage).some((t) => t.kind === "buy")) return fail(DUPLICATE_MESSAGE);
     onStep({ name: "checking" });
     if (!(await deps.salesOpen())) return fail("Sales are closed: the garden is not activated or purchases are paused.");
     const total = BigInt(styles.length) * 10n ** 18n;
@@ -309,7 +337,10 @@ export async function runPurchase(
       const r = await deps.wait(ah);
       pendingStore.remove(ah, deps.storage);
       if (r.status !== "success") return fail("The approval transaction reverted. No IMD was spent.");
-      if ((await deps.allowance()) < total) return fail("The approval did not reach the required total. Approve again.");
+      const now = await deps.allowance();
+      if (now < total) return fail("The approval did not reach the required total. Approve again.");
+      // tracked separately from the purchase: a later failure says the approval stands and the purchase was not sent
+      approval = { hash: ah, allowance: now };
     }
     onStep({ name: "simulating" });
     const request = await deps.simulate(styles, wishes);
@@ -334,8 +365,16 @@ export async function runPurchase(
     try {
       hash = await deps.buy(request);
     } catch (e) {
-      pendingStore.remove(INTENT_HASH, deps.storage); // the wallet refused or failed before sending: nothing to recover
-      throw e;
+      if (isProvenRejection(e)) {
+        pendingStore.remove(INTENT_HASH, deps.storage); // proven: the wallet refused before signing, nothing to recover
+        throw e;
+      }
+      // a disconnect (4900/4901), a timeout or an unknown failure: the wallet may have broadcast the purchase and lost
+      // its hash. The intent stays saved and the draft stays locked until the purchase is found, its hash is pasted
+      // and validated, or the user confirms the cancellation.
+      const s: Step = { name: "buy-unknown", hash: INTENT_HASH, message: AMBIGUOUS_MESSAGE };
+      onStep(s);
+      return s;
     }
     // from here on the purchase is broadcast: no failure may unlock the draft as if nothing had been sent
     sent = {
@@ -361,6 +400,11 @@ export async function runPurchase(
   }
 }
 
+
+export const DUPLICATE_MESSAGE =
+  "An earlier purchase is still saved as pending or possibly sent, so another one is not requested. Check it below first.";
+export const AMBIGUOUS_MESSAGE =
+  "Your wallet stopped answering before it returned a transaction hash, so this purchase may have been sent. It stays saved and this draft stays locked so it is not bought twice. Check again, or paste the transaction hash from your wallet's activity.";
 export const STORAGE_MESSAGE =
   "This browser is not letting the site save recovery data (storage is full or blocked), so a sent purchase could not be recovered after a reload. Nothing was sent and your draft is kept. Free some site storage or leave private mode, then try again.";
 export const SENT_UNKNOWN_MESSAGE =

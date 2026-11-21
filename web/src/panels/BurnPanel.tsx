@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount, useSwitchChain } from "wagmi";
-import { getAccount, simulateContract, waitForTransactionReceipt, writeContract } from "wagmi/actions";
+import { getAccount, simulateContract, writeContract } from "wagmi/actions";
 import type { Hash } from "viem";
 import { wishGardenAbi } from "../abi/WishGarden";
 import { burnReceiverAbi } from "../abi/EverlightBurnReceiver";
@@ -11,13 +11,14 @@ import { useBurn, useBurnOps, type BurnView } from "../burnHooks";
 import { eth as ethAmt, imd, short } from "../lib/format";
 import { ConnectButton } from "../components/ConnectSheet";
 import {
-  DISPATCH_MIN_GAS, RETRY_MIN_GAS, ZERO32, addOp, crossCheck, deliveryLabel, dispatchEligibility, feeProblem, jobLabel, jobPage,
-  outcomeOf, parseImd, planQueue, queueEligibility, receiptEligibility, removeOp, retryEligibility, updateOp,
+  DISPATCH_MIN_GAS, RETRY_MIN_GAS, ZERO32, addOp, authenticateDelivery, compactImd, crossCheck, holdOp, opHeld, settleHash, deliveryLabel, dispatchEligibility, feeProblem, jobLabel, jobPage,
+  outcomeOf, parseImd, planQueue, queueEligibility, receiptEligibility, removeOp, retryEligibility,
   type BurnOp, type Delivery, type Job, type OpKind, type Outcome,
 } from "../lib/burn";
-import { readBaseSnap, readDeliveries, readEthSnap, readHistory, readJobs, type TxRef } from "../lib/burnio";
+import { readBaseSnap, readDeliveries, readEthSnap, readHistory, readJobs, readReceiptSent, type TxRef } from "../lib/burnio";
 
-const amt = (v: bigint | undefined) => (v === undefined ? "Unavailable" : `${imd(v, 6)} IMD`);
+/** Dashboard amount: 6 decimals, plus the exact token units whenever 6 decimals would hide part of it. */
+const amt = (v: bigint | undefined) => (v === undefined ? "Unavailable" : `${imd(v, 6)} IMD${imd(v, 18) !== imd(v, 6) ? ` (${v} units)` : ""}`);
 const time = (ms?: number) => (ms ? new Date(ms).toLocaleTimeString("en-US") : "never");
 const txLink = (hash: string, base: string) => <a href={`${base}/tx/${hash}`} target="_blank" rel="noreferrer">{short(hash)}</a>;
 const PAGE = 10;
@@ -33,10 +34,11 @@ const msg = (e: unknown) => ((e as any)?.shortMessage ?? (e as any)?.message ?? 
 export function BurnFooter() {
   const b = useBurn();
   const r = b.good;
-  const show = (v: bigint | undefined) => (r && v !== undefined ? imd(v) : b.loading ? "…" : "Unavailable");
+  const show = (v: bigint | undefined) => (r && v !== undefined ? compactImd(v, imd) : b.loading ? "…" : "Unavailable");
   const label = b.loading ? "Reading" : !r ? "Unavailable" : b.stale ? `Stale · ${time(b.goodAt)}` : `Updated ${time(b.goodAt)}`;
   const ref = useRef<HTMLDivElement>(null);
-  // the strip's real height (it wraps differently per width) is what the zoom, map tools and panels keep clear of
+  // the strip's real height (it wraps differently per width) is what the zoom, map tools and panels keep clear of;
+  // the strip itself never reads this value back, so it shrinks again when the viewport widens
   useEffect(() => {
     const strip = ref.current?.parentElement;
     if (!strip || typeof ResizeObserver === "undefined") return;
@@ -45,20 +47,32 @@ export function BurnFooter() {
     o.observe(strip); set();
     return () => { o.disconnect(); document.documentElement.style.removeProperty("--strip-h"); };
   }, []);
+  const units = (v?: bigint) => (r && v !== undefined ? `${v} token units` : undefined);
   return (
     <div className="burn-live" aria-label="Burn totals" ref={ref}>
-      <p><span className="burn-k">IMD burned</span> <strong>{show(r?.burned)}</strong></p>
-      <p><span className="burn-k">Pending burn</span> <strong>{show(r?.pending)}</strong></p>
-      <button type="button" className="icon-btn burn-refresh" onClick={b.refresh} disabled={b.fetching} aria-label={`Refresh burn totals. ${label}`} title={label}>
-        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4" /></svg>
-      </button>
-      <a className="burn-link" href="#/treasury/burn">Burn details</a>
-      <span className={b.stale && !b.loading ? "burn-time warn" : "burn-time"} role="status">{label}</span>
+      <p title={units(r?.burned)}><span className="burn-k">IMD burned</span> <strong>{show(r?.burned)}</strong></p>
+      <p title={units(r?.pending)}><span className="burn-k">Pending burn</span> <strong>{show(r?.pending)}</strong></p>
+      <div className="burn-acts">
+        <button type="button" className="icon-btn burn-refresh" onClick={b.refresh} disabled={b.fetching} aria-label={`Refresh burn totals. ${label}`} title={label}>
+          <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4" /></svg>
+        </button>
+        <a className="burn-link" href="#/treasury/burn">Burn details</a>
+      </div>
+      <p className={(b.stale || !r) && !b.loading ? "burn-time warn" : "burn-time"} role="status">
+        {label}
+        {r?.eth && r.base && (
+          <>
+            {" · "}<a href={`${ETHERSCAN}/block/${r.eth.block}`} target="_blank" rel="noreferrer" title={`Ethereum block ${r.eth.block}`}>Ethereum block</a>
+            {" · "}<a href={`${BASESCAN}/block/${r.base.block}`} target="_blank" rel="noreferrer" title={`Base block ${r.base.block}`}>Base block</a>
+          </>
+        )}
+      </p>
     </div>
   );
 }
 
-interface Review { kind: OpKind; target: string; chainId: 1 | 8453; lines: [string, string][]; value: bigint; gas: bigint; args: any[]; note?: string }
+/** key: every reviewed figure the wallet request depends on (amounts, job, units, fee). A fresh read must match it. */
+interface Review { kind: OpKind; target: string; chainId: 1 | 8453; account: string; key: string; lines: [string, string][]; value: bigint; gas: bigint; args: any[]; note?: string }
 
 export function BurnPanel() {
   const b = useBurn();
@@ -119,7 +133,7 @@ export function BurnPanel() {
       const est = await ethClient.estimateContractGas({ address: GARDEN, abi: wishGardenAbi, functionName: "queueBurn", args: [max!], account: w.account! });
       const gas = (est * 13n) / 10n, cost = await fees(ethClient, gas);
       return {
-        kind, target, chainId: 1, value: 0n, gas, args: [max!],
+        kind, target, chainId: 1, account: w.account!, key: `queue|${max}|${sim.result}|${p.amount}|${p.dust}|${p.remaining}`, value: 0n, gas, args: [max!],
         lines: [
           ["Step", "1 of 2 · Prepare burn batch (queueBurn)"],
           ["New job", `#${sim.result}`],
@@ -145,7 +159,7 @@ export function BurnPanel() {
       if (sim.result !== true) throw new Error("The simulation shows the bridge send failing inside the contract (it would be marked Failed and refunded). Nothing was sent.");
       const cost = await fees(ethClient, gas);
       return {
-        kind, target, chainId: 1, value: fee.nativeFee, gas, args: [BigInt(target)],
+        kind, target, chainId: 1, account: w.account!, key: `dispatch|${target}|${job.amount}|${job.status}|${job.attempts}|${fee.nativeFee}`, value: fee.nativeFee, gas, args: [BigInt(target)],
         lines: [
           ["Step", `2 of 2 · ${job.status === 2 ? "Retry failed send" : "Send batch to Base"} (dispatchBurn)`],
           ["Job", `#${target} · ${imd(job.amount, 6)} IMD · attempt ${job.attempts + 1}`],
@@ -159,6 +173,12 @@ export function BurnPanel() {
     const bsn = await readBaseSnap(baseClient as any);
     const dv = await baseClient.readContract({ address: BASE_RECEIVER, abi: burnReceiverAbi, functionName: "deliveries", args: [target as Hash] });
     const d: Delivery = { jobId: dv[0], amount: dv[1], attempts: Number(dv[2]), status: Number(dv[3]), acknowledged: dv[4] };
+    // authenticate: the Ethereum job this delivery names, and Base's jobGuids for it, must carry the same GUID and amount
+    if (d.status === 0) throw new Error("No Base delivery is recorded under this GUID.");
+    const [ej] = await readJobs(ethClient as any, [Number(d.jobId)]);
+    const jg = await baseClient.readContract({ address: BASE_RECEIVER, abi: burnReceiverAbi, functionName: "jobGuids", args: [d.jobId] }) as Hash;
+    const auth = authenticateDelivery(target, ej, jg, d);
+    if (auth) throw new Error(auth);
     const busyHere = !!pendingFor(kind, target);
     if (kind === "retry") {
       const why = retryEligibility(w, bsn, d, busyHere);
@@ -167,7 +187,7 @@ export function BurnPanel() {
       const gas = (est * 125n) / 100n > RETRY_MIN_GAS ? (est * 125n) / 100n : RETRY_MIN_GAS;
       await simulateContract(config, { address: BASE_RECEIVER, abi: burnReceiverAbi, functionName: "retryBurn", args: [target as Hash], gas, account: w.account!, chainId: 8453 });
       const cost = await fees(baseClient, gas);
-      return { kind, target, chainId: 8453, value: 0n, gas, args: [target], lines: [["Action", "Retry failed burn (retryBurn)"], ["Delivery", `Job #${d.jobId} · ${imd(d.amount, 6)} IMD · attempt ${d.attempts + 1}`], ["Estimated gas (max)", `${ethAmt(cost)} ETH on Base`]], note: "You pay Base gas and receive no tokens or reward." };
+      return { kind, target, chainId: 8453, account: w.account!, key: `retry|${target}|${d.jobId}|${d.amount}|${d.status}|${d.attempts}`, value: 0n, gas, args: [target], lines: [["Action", "Retry failed burn (retryBurn)"], ["Delivery", `Job #${d.jobId} · ${imd(d.amount, 6)} IMD · attempt ${d.attempts + 1}`], ["Estimated gas (max)", `${ethAmt(cost)} ETH on Base`]], note: "You pay Base gas and receive no tokens or reward." };
     }
     const why = receiptEligibility(w, bsn, d, busyHere);
     if (why) throw new Error(why);
@@ -178,7 +198,7 @@ export function BurnPanel() {
     const gas = (est * 13n) / 10n;
     await simulateContract(config, { address: BASE_RECEIVER, abi: burnReceiverAbi, functionName: "sendBurnReceipt", args: [target as Hash], value: fee.nativeFee, gas, account: w.account!, chainId: 8453 });
     const cost = await fees(baseClient, gas);
-    return { kind, target, chainId: 8453, value: fee.nativeFee, gas, args: [target], lines: [["Action", "Send burn confirmation to Ethereum (sendBurnReceipt)"], ["Delivery", `Job #${d.jobId} · ${imd(d.amount, 6)} IMD`], ["Message fee (quoteReceipt)", `${ethAmt(fee.nativeFee)} ETH`], ["Estimated gas (max)", `${ethAmt(cost)} ETH on Base`], ["Total ETH at most", `${ethAmt(cost + fee.nativeFee)} ETH`]], note: "You pay gas and the message fee and receive no tokens or reward. It can be sent only once." };
+    return { kind, target, chainId: 8453, account: w.account!, key: `receipt|${target}|${d.jobId}|${d.amount}|${d.status}|${d.acknowledged}|${fee.nativeFee}`, value: fee.nativeFee, gas, args: [target], lines: [["Action", "Send burn confirmation to Ethereum (sendBurnReceipt)"], ["Delivery", `Job #${d.jobId} · ${imd(d.amount, 6)} IMD`], ["Message fee (quoteReceipt)", `${ethAmt(fee.nativeFee)} ETH`], ["Estimated gas (max)", `${ethAmt(cost)} ETH on Base`], ["Total ETH at most", `${ethAmt(cost + fee.nativeFee)} ETH`]], note: "You pay gas and the message fee and receive no tokens or reward. It can be sent only once." };
   }
 
   const startReview = async (kind: OpKind, target: string) => {
@@ -193,35 +213,50 @@ export function BurnPanel() {
     let op: BurnOp | null = null;
     try {
       const fresh = await prepare(review.kind, review.target);
-      if (fresh.value !== review.value) { setReview(fresh); throw new Error("The fee changed since your review. Check the new figures and confirm again."); }
+      if (fresh.key !== review.key || fresh.account.toLowerCase() !== review.account.toLowerCase()) {
+        setReview(fresh);
+        throw new Error("The figures changed since your review (amount, job, units, account or fee). Check the new review and confirm again. Nothing was sent.");
+      }
       const a = getAccount(config);
+      if (a.address?.toLowerCase() !== review.account.toLowerCase()) throw new Error("The connected account changed since your review. Nothing was sent.");
       if (a.chainId !== review.chainId) throw new Error(`Your wallet is no longer on ${review.chainId === 1 ? "Ethereum" : "Base"}.`);
       const address = review.chainId === 1 ? GARDEN : BASE_RECEIVER;
       const abi: any = review.chainId === 1 ? wishGardenAbi : burnReceiverAbi;
       const functionName = { queue: "queueBurn", dispatch: "dispatchBurn", retry: "retryBurn", receipt: "sendBurnReceipt" }[review.kind];
-      const { request } = await simulateContract(config, { address, abi, functionName, args: fresh.args, value: fresh.value || undefined, gas: fresh.gas, account: a.address!, chainId: review.chainId } as any);
+      const { request, result: simResult } = await simulateContract(config, { address, abi, functionName, args: fresh.args, value: fresh.value || undefined, gas: fresh.gas, account: a.address!, chainId: review.chainId } as any);
+      // dispatchBurn returns false when it catches a failed bridge send: that is not a success, so the wallet is not asked
+      if (review.kind === "dispatch" && simResult !== true) throw new Error("The final simulation shows the bridge send failing inside the contract (it would be marked Failed and refunded). Nothing was sent; the job stays retryable.");
+      if (review.kind === "queue" && String(simResult) !== review.key.split("|")[2]) { setReview(fresh); throw new Error("The next job number changed since your review. Check the new review and confirm again. Nothing was sent."); }
       op = { id: crypto.randomUUID?.() ?? String(Date.now()), kind: review.kind, chainId: review.chainId, account: a.address!, target: review.target, value: String(fresh.value), stage: "signing", createdAt: Date.now() };
       if (!(await addOp(op))) { op = null; throw new Error("This operation is already pending in this or another tab."); }
       syncOps();
+      // keep this operation locked across tabs while the wallet request is open, so no tab can forget it meanwhile
+      const pending = writeContract(config, { ...(request as any), account: a.address!, chainId: review.chainId });
+      await holdOp(op.id, pending);
       let hash: Hash;
       try {
-        hash = await writeContract(config, { ...(request as any), account: a.address!, chainId: review.chainId });
+        hash = await pending;
       } catch (x) {
         if (isRejection(x)) { await removeOp(op.id); syncOps(); op = null; throw new Error("You rejected the request in your wallet. Nothing was sent."); }
         throw new Error(`The wallet did not return a transaction hash (${msg(x)}). It may still have sent one: check your wallet's activity before trying again. The operation stays saved below.`);
       }
-      await updateOp(op.id, { stage: "sent", hash }); syncOps();
+      // a returned hash is always kept, even if the record was forgotten meanwhile
+      const sent = await settleHash(op, hash); syncOps();
       setReview(null);
-      await follow({ ...op, stage: "sent", hash });
+      await follow(sent);
     } catch (x) {
       setResult({ ok: false, text: msg(x) });
     } finally { setBusy(null); }
   };
 
-  /** Follow a sent operation to its mined receipt (replacements included) and judge it by its events. */
+  /**
+   * Follow a sent operation to its mined receipt (replacements included) and judge it by its events. viem's public
+   * client returns a reverted receipt (wagmi's action throws on one), so a mined revert is reported and unlocks retry.
+   */
   async function follow(op: BurnOp) {
     let replaced = "";
-    const rec = await waitForTransactionReceipt(config, { hash: op.hash!, chainId: op.chainId, timeout: 15 * 60_000, onReplaced: (x: { reason: string }) => { replaced = x.reason; } } as any).catch(() => null);
+    const client: any = op.chainId === 1 ? ethClient : baseClient;
+    const rec = await client.waitForTransactionReceipt({ hash: op.hash!, timeout: 15 * 60_000, onReplaced: (x: { reason: string }) => { replaced = x.reason; } }).catch(() => null);
     if (!rec) { setResult({ ok: false, text: "No receipt yet. The operation stays saved; check again later.", href: `${op.chainId === 1 ? ETHERSCAN : BASESCAN}/tx/${op.hash}` }); return; }
     const out: Outcome = outcomeOf(op.kind, op.target, rec as any, GARDEN, BASE_RECEIVER);
     await removeOp(op.id); syncOps();
@@ -245,7 +280,7 @@ export function BurnPanel() {
     <section aria-labelledby="burn-title" className="burn">
       <p className="crumbs"><a href="#/treasury">Treasury</a> / Burn</p>
       <h2 id="burn-title">Burn dashboard</h2>
-      <p className="lede">Where the 30% burn share of every candle is, read directly from the garden on Ethereum and the burn receiver on Base.</p>
+      <p className="lede">Track IMD allocated on Ethereum and burned on Base. The first candle allocates 90% to burn. Later candles allocate 30%.</p>
       <Snapshot b={b} />
 
       <h3>Totals</h3>
@@ -319,7 +354,11 @@ export function BurnPanel() {
         </div>
       )}
       {result && <p className={result.ok ? "ok-note" : "bad"} role="alert">{result.text} {result.href && <a href={result.href} target="_blank" rel="noreferrer">View transaction</a>}</p>}
-      <SavedOps ops={ops} onForget={async (id) => { await removeOp(id); syncOps(); }} onCheck={(o) => { if (o.hash) follow(o); else { b.refresh(); jobs.refetch(); } }} />
+      <SavedOps ops={ops} onForget={async (id) => {
+        // a tab still waiting on the wallet for this operation holds its lock: refuse, so its hash cannot be lost
+        if (busy === "send" || (await opHeld(id))) { setResult({ ok: false, text: "A tab is still waiting on your wallet for this operation. Finish or reject it in the wallet first." }); return; }
+        await removeOp(id); syncOps();
+      }} onCheck={(o) => { if (o.hash) follow(o); else { b.refresh(); jobs.refetch(); } }} />
 
       <h3>Public actions (Base)</h3>
       <p className="fine">Base normally burns a delivery automatically when it arrives. If that attempt failed, anyone can retry it; after a burn, anyone can send the confirmation back to Ethereum. The caller pays gas (and the message fee for a confirmation) and receives no tokens or reward. The receiver's internal burn function only runs from the receiver itself, so this site never offers it. These buttons appear on the matching job above.</p>
@@ -368,18 +407,29 @@ function JobRow({ j, side, hist, start, busy, isOwner, chainId, address, pending
   const et = hist?.eth.get(j.id) ?? [];
   const bt = j.guid !== ZERO32 ? hist?.base.get(j.guid.toLowerCase()) ?? [] : [];
   const dispatchTx = et.filter((t) => t.name === "BurnDispatched" && t.detail?.toLowerCase() === j.guid.toLowerCase()).pop();
-  const receiptTx = bt.find((t) => t.name === "ReceiptSent");
+  // a pending confirmation: look up its ReceiptSent by the indexed burn GUID, newest blocks first
+  const wantReceipt = !!d?.acknowledged && j.status === 3 && j.guid !== ZERO32;
+  const rq = useQuery({
+    queryKey: ["burn-receipt", j.guid],
+    enabled: wantReceipt && FIXTURE === null,
+    retry: 0,
+    staleTime: 5 * 60_000,
+    queryFn: () => readReceiptSent(baseClient as any, j.guid),
+  });
+  const receiptTx = rq.data?.tx ?? bt.find((t) => t.name === "ReceiptSent");
   const canDispatch = isOwner && (j.status === 1 || j.status === 2);
   const w = { account: address, chainId };
-  const retryWhy = retryEligibility(w, { activated: true } as any, d, !!pendingFor("retry", j.guid));
-  const rcWhy = receiptEligibility(w, { activated: true } as any, d, !!pendingFor("receipt", j.guid));
+  // public actions only for an authenticated delivery: Ethereum job, Base jobGuids and deliveries agree
+  const auth = j.guid === ZERO32 ? "Not sent yet." : authenticateDelivery(j.guid, j, side?.jobGuid, d);
+  const retryWhy = auth ?? retryEligibility(w, { activated: true } as any, d, !!pendingFor("retry", j.guid));
+  const rcWhy = auth ?? receiptEligibility(w, { activated: true } as any, d, !!pendingFor("receipt", j.guid));
   return (
     <li className="job">
       <div className="job-h"><strong>Job #{j.id}</strong><span>{imd(j.amount, 6)} IMD</span></div>
       <dl className="job-d">
         <div><dt>Ethereum</dt><dd>{jobLabel(j.status)} · {j.attempts} send attempt{j.attempts === 1 ? "" : "s"}</dd></div>
         <div><dt>Base</dt><dd>{j.guid === ZERO32 ? "Not sent" : deliveryLabel(d)}{d && d.status ? ` · ${d.attempts} burn attempt${d.attempts === 1 ? "" : "s"}` : ""}</dd></div>
-        <div><dt>GUID</dt><dd className="mono">{j.guid === ZERO32 ? "none yet" : dispatchTx ? <a href={`${LZSCAN}/tx/${dispatchTx.hash}`} target="_blank" rel="noreferrer">{short(j.guid)}</a> : short(j.guid)}</dd></div>
+        <div><dt>GUID</dt><dd className="mono">{j.guid === ZERO32 ? "none yet" : dispatchTx ? <a href={`${LZSCAN}/tx/${dispatchTx.hash}`} target="_blank" rel="noreferrer">{j.guid}</a> : j.guid}</dd></div>
         <div><dt>Check</dt><dd className={cc.ok ? "" : "bad"}>{cc.note}</dd></div>
         <div><dt>Transactions</dt><dd>
           {et.length + bt.length === 0 ? "Not located in the scanned history" : null}
@@ -388,7 +438,18 @@ function JobRow({ j, side, hist, start, busy, isOwner, chainId, address, pending
         </dd></div>
       </dl>
       {d?.acknowledged && j.status === 3 && (
-        <p className="stale-note">Confirmation sent from Base, not yet delivered to Ethereum. It is retried on LayerZero with the same message; tokens are never resent or burned again. {receiptTx?.detail ? <a href={`${LZSCAN}/tx/${receiptTx.hash}`} target="_blank" rel="noreferrer">Message status</a> : <a href={`${LZSCAN}/address/${BASE_RECEIVER}`} target="_blank" rel="noreferrer">Receiver on LayerZero Scan</a>}</p>
+        <p className="stale-note">Confirmation sent from Base, not yet delivered to Ethereum. It is retried on LayerZero with the same message; tokens are never resent or burned again. {receiptTx ? (
+            <>
+              <a href={`${LZSCAN}/tx/${receiptTx.hash}`} target="_blank" rel="noreferrer">Message status on LayerZero Scan</a>{" · "}
+              <a href={`${BASESCAN}/tx/${receiptTx.hash}`} target="_blank" rel="noreferrer">ReceiptSent on Basescan</a>
+              {receiptTx.detail && <span className="mono"> · message GUID {receiptTx.detail}</span>}
+            </>
+          ) : rq.isFetching ? "Looking up the confirmation message…" : (
+            <>
+              {rq.data ? `ReceiptSent for this GUID was not found in Base blocks ${rq.data.from}–${rq.data.to}${rq.data.complete ? "" : " (partial: the RPC limited the search)"}.` : rq.isError ? "The confirmation message could not be looked up." : ""}{" "}
+              <a href={`${LZSCAN}/address/${BASE_RECEIVER}`} target="_blank" rel="noreferrer">Receiver on LayerZero Scan</a>
+            </>
+          )}</p>
       )}
       <div className="job-a">
         {canDispatch && (

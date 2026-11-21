@@ -321,3 +321,58 @@ export async function updateOp(id: string, patch: Partial<BurnOp>, s: Storage | 
 export async function removeOp(id: string, s: Storage | null = storage()): Promise<void> {
   await locked(() => write(listOps(s).filter((o) => o.id !== id), s));
 }
+
+/**
+ * Persist a hash the wallet returned. If the record was forgotten meanwhile (another tab, "forget it"), the operation
+ * is saved again as sent: a returned hash is never dropped. Other saved operations are left untouched.
+ */
+export async function settleHash(op: BurnOp, hash: Hash, s: Storage | null = storage()): Promise<BurnOp> {
+  const next: BurnOp = { ...op, stage: "sent", hash };
+  await locked(() => {
+    const ops = listOps(s);
+    write(ops.some((o) => o.id === op.id) ? ops.map((o) => (o.id === op.id ? { ...o, stage: "sent", hash } : o)) : [...ops, next], s);
+  });
+  return next;
+}
+
+/** Name of the Web Lock a tab holds while its wallet request for an operation is outstanding. */
+export const opLockName = (id: string) => `everlight-burnop-${id}`;
+/**
+ * Hold the operation's lock until `until` settles, so another tab can see the wallet request is still open.
+ * Resolves once the lock is held (or immediately without Web Locks).
+ */
+export function holdOp(id: string, until: Promise<unknown>): Promise<void> {
+  const l = typeof navigator !== "undefined" ? (navigator as any).locks : undefined;
+  if (!l?.request) return Promise.resolve();
+  return new Promise<void>((held) => {
+    l.request(opLockName(id), async () => { held(); await until.catch(() => undefined); }).catch(() => held());
+  });
+}
+/** True when some tab (this one included) still holds the wallet-request lock for this operation. */
+export async function opHeld(id: string): Promise<boolean> {
+  const l = typeof navigator !== "undefined" ? (navigator as any).locks : undefined;
+  if (!l?.query) return false;
+  try { const q = await l.query(); return (q.held ?? []).some((x: { name: string }) => x.name === opLockName(id)); } catch { return false; }
+}
+
+/**
+ * A Base delivery is authenticated for a public action only when the Ethereum job it names (burnJobs), Base's
+ * jobGuids(jobId) and deliveries(guid) agree on job ID, amount and GUID. Returns the reason it is not, or null.
+ */
+export function authenticateDelivery(guid: string, job: Job | undefined, jobGuidOnBase: Hash | undefined, d: Delivery | null | undefined): string | null {
+  if (!job || jobGuidOnBase === undefined || d === undefined) return "The delivery could not be authenticated: a chain could not be read.";
+  if (!d || d.status === 0) return "No Base delivery is recorded under this GUID.";
+  const g = guid.toLowerCase();
+  if (job.guid.toLowerCase() !== g || jobGuidOnBase.toLowerCase() !== g || d.jobId !== BigInt(job.id) || d.amount !== job.amount)
+    return "Base delivery does not match this job's ID, amount or GUID, so public actions stay off.";
+  return null;
+}
+
+/** Footer amount: never rounds a positive balance to "0". */
+export function compactImd(v: bigint, fmt: (v: bigint, digits?: number) => string): string {
+  if (v === 0n) return "0";
+  const s = fmt(v);
+  if (s !== "0") return s;
+  const fine = fmt(v, 6);
+  return fine !== "0" ? fine : "< 0.000001";
+}

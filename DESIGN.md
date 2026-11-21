@@ -1,3 +1,42 @@
+# DESIGN: revision 17, burn footer layout and dashboard fixes (current source, 2026-11-21)
+
+Everything in revision 16 below still applies except where this section replaces it. Taken from `web/src/styles.css`
+(the "live burn counters" block near the end), `web/src/panels/BurnPanel.tsx` (`BurnFooter`, `JobRow`).
+
+## Tokens
+- No new colour, type or spacing tokens.
+- New layout variable `--strip-min`: the footer strip's own minimum height (76px default, 64px at 900px and below).
+  The strip no longer uses `--strip-h` for its min-height. `--strip-h` is only the measured height that
+  `BurnFooter`'s `ResizeObserver` writes for the zoom, minimap, frames, candle sheet and panels to clear. Because
+  the strip never reads that value back, it shrinks again when the viewport widens (901px to 1920px: 225px to 87px
+  without a reload). First-paint defaults for `--strip-h`: 76px desktop, 150px at 900px and below.
+
+## Components
+- **Burn footer** (`.burn-live`): four children.
+  - Two counters (`p` with `.burn-k` label in `--text-sm` and a `strong` figure in `--text-md` serif, tabular
+    numbers). A positive balance never reads "0". Below 0.0001 IMD the figure shows 6 decimals, for example
+    "0.000001", and below one bridge unit it shows "< 0.000001". The exact token units are in the `title`.
+  - An action group (`.burn-acts`) with the 44 × 44px refresh icon button and the "Burn details" link (44px tall).
+  - A status line (`.burn-time`, `role="status"`, `--text-sm`) that is always shown: "Updated h:mm:ss" /
+    "Stale · h:mm:ss" / "Unavailable", followed by "Ethereum block" and "Base block" links (`--color-accent-strong`)
+    to the two snapshot blocks on Etherscan and Basescan. Stale and unavailable use `--color-danger`.
+- **Job card** (`.job`): the GUID row shows the full 66-character GUID, wrapping (`.mono`, `overflow-wrap:
+  anywhere`). For a pending confirmation (dispatched on Ethereum, burned and acknowledged on Base), the note
+  links "Message status on LayerZero Scan" and "ReceiptSent on Basescan" to the matching `ReceiptSent` transaction
+  and shows its message GUID. If that event is not found, the note gives the Base block range it searched.
+- Base action buttons ("Retry failed burn", "Send burn confirmation to Ethereum") are disabled with the reason
+  beside them unless the Ethereum job, Base `jobGuids` and `deliveries` agree on ID, amount and GUID.
+- Dashboard lede: "Track IMD allocated on Ethereum and burned on Base. The first candle allocates 90% to burn.
+  Later candles allocate 30%."
+
+## Responsive behaviour
+- 901px and wider: the burn block is a 3-column grid (burned | pending | refresh + Burn details) with the status
+  line across its full width underneath. Strip 87px at 1440 and 1920.
+- 900px and below: the burn block is a full-width wrapping row under Find and "Split of 1 IMD". Counters wrap as
+  needed, the action group sits at the row's end, and the status line takes its own row. The strip grows vertically
+  instead of pushing controls sideways: 157px at 320 and 136px at 390 (measured in Chromium with "Unavailable" in
+  both counters, everything inside the viewport).
+
 # DESIGN: revision 16, burn dashboard and live footer counters (current source, 2026-11-21)
 
 Everything below revision 16 still applies; this section records what revision 16 adds. Taken from

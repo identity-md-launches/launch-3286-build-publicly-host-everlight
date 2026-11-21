@@ -331,7 +331,7 @@ textarea:focus-visible, .custom input:focus-visible, .find input:focus-visible {
 .side-act:first-child { min-height: 120px; }
 
 .strip {
-  position: absolute; left: 0; right: 0; bottom: 0; min-height: var(--strip-h); transform: none; max-width: none;
+  position: absolute; left: 0; right: 0; bottom: 0; min-height: var(--strip-min, 76px); transform: none; max-width: none;
   display: flex; align-items: center; gap: var(--space-5); padding: var(--space-3) var(--space-5);
   background: linear-gradient(180deg, rgb(5 12 9 / 0.94), rgb(2 6 4 / 0.98)); border-top: 1px solid var(--color-line);
 }
@@ -467,24 +467,27 @@ textarea:focus-visible, .custom input:focus-visible, .find input:focus-visible {
 .split li.split-first { white-space: normal; }
 .split li.split-first strong { font-size: var(--text-md); }
 
-/* ---------- live burn counters in the footer strip, beside the split ---------- */
+/* ---------- live burn counters in the footer strip, beside the split ----------
+   The strip's own minimum is --strip-min; BurnFooter measures the strip into --strip-h for the garden tools,
+   frames and panels that keep clear of it (the strip never reads --strip-h, so it shrinks again on widening). */
 .burn-live { flex: none; order: 4; display: grid; grid-template-columns: auto auto auto; align-items: center; gap: 0 var(--space-3); padding-left: var(--space-4); border-left: 1px solid var(--color-line-soft); }
 .burn-live p { margin: 0; display: flex; flex-direction: column; line-height: 1.2; }
 .burn-k { font-size: var(--text-sm); color: var(--color-text-secondary); white-space: nowrap; }
 .burn-live strong { font-family: var(--font-serif); font-size: var(--text-md); font-weight: 600; color: var(--color-headline); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.burn-refresh { grid-row: 1; grid-column: 3; width: 44px; height: 44px; min-height: 44px; border-color: var(--color-line-soft); color: var(--color-headline); }
-.burn-link { grid-column: 1 / 3; font-size: var(--text-sm); color: var(--color-accent-strong); min-height: 24px; display: inline-flex; align-items: center; }
-.burn-time { grid-column: 3; font-size: var(--text-sm); color: var(--color-text-secondary); white-space: nowrap; justify-self: end; }
+.burn-acts { display: flex; align-items: center; gap: var(--space-2); }
+.burn-refresh { flex: none; width: 44px; height: 44px; min-height: 44px; border-color: var(--color-line-soft); color: var(--color-headline); }
+.burn-link { font-size: var(--text-sm); color: var(--color-accent-strong); min-height: 44px; display: inline-flex; align-items: center; white-space: nowrap; }
+.burn-live .burn-time { grid-column: 1 / -1; display: block; font-size: var(--text-sm); color: var(--color-text-secondary); line-height: 1.4; }
+.burn-time a { color: var(--color-accent-strong); }
 .burn-time.warn { color: var(--color-danger); }
-@media (max-width: 1500px) { .burn-time { display: none; } .burn-time.warn { display: block; grid-column: 1 / -1; justify-self: start; } }
 @media (max-width: 900px) {
-  :root { --strip-h: 120px; }
-  .burn-live { order: 5; flex: 1 1 100%; display: flex; flex-wrap: nowrap; gap: var(--space-3); padding: var(--space-1) 0 0; border-left: 0; border-top: 1px solid var(--color-line-soft); }
-  .burn-live p { flex-direction: row; gap: var(--space-1); align-items: baseline; }
-  .burn-refresh { margin-left: auto; }
-  .burn-link { min-height: 44px; }
+  :root { --strip-min: 64px; --strip-h: 150px; }
+  .burn-live { order: 5; flex: 1 1 100%; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--space-3); padding: var(--space-1) 0 0; border-left: 0; border-top: 1px solid var(--color-line-soft); }
+  .burn-live p { flex-direction: row; flex-wrap: wrap; gap: 0 var(--space-1); align-items: baseline; min-width: 0; }
+  .burn-acts { margin-left: auto; }
+  .burn-live .burn-time { flex: 1 1 100%; }
 }
-@media (max-width: 420px) { .burn-live { gap: var(--space-2); } .burn-k { white-space: normal; } }
+@media (max-width: 420px) { .burn-live { gap: 0 var(--space-2); } }
 
 /* ---------- burn dashboard (#/treasury/burn) ---------- */
 .crumbs { font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-2); }

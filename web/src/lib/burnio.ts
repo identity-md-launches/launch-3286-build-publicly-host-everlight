@@ -67,24 +67,29 @@ const BASE_EVENTS = [
 ];
 
 /**
- * Adaptive log scan: halves the range when an RPC refuses it, and stops after `budget` requests. Returns what it found
- * and whether it covered the whole range (RPC range limits and partial history are labelled, never hidden).
+ * Adaptive log scan, NEWEST blocks first: halves the range when an RPC refuses it, and stops after `budget` requests.
+ * Returns what it found and the range it covered (RPC range limits and partial history are labelled, never hidden).
+ * `args` filters on indexed event arguments (one event only).
  */
-export async function scanLogs(c: PublicClient, address: Hash, events: readonly any[], from: bigint, to: bigint, step: bigint, budget: number) {
+export async function scanLogs(c: PublicClient, address: Hash, events: readonly any[], from: bigint, to: bigint, step: bigint, budget: number, args?: Record<string, unknown>) {
   const logs: any[] = [];
-  let at = from, size = step, used = 0;
-  while (at <= to && used < budget) {
-    const end = at + size - 1n > to ? to : at + size - 1n;
+  let at = to, size = step, used = 0;
+  while (at >= from && used < budget) {
+    const start = at - size + 1n < from ? from : at - size + 1n;
     used++;
     try {
-      logs.push(...(await c.getLogs({ address, events: events as any, fromBlock: at, toBlock: end })));
-      at = end + 1n;
+      const got = args
+        ? await c.getLogs({ address, event: events[0], args, fromBlock: start, toBlock: at } as any)
+        : await c.getLogs({ address, events: events as any, fromBlock: start, toBlock: at });
+      logs.push(...got);
+      at = start - 1n;
+      if (args && got.length) break; // a filtered lookup stops at its (newest) hit
     } catch {
-      if (size <= 500n) break;
+      if (size <= 250n) break;
       size /= 2n;
     }
   }
-  return { logs, complete: at > to, scannedTo: at - 1n };
+  return { logs, complete: at < from, scannedFrom: at + 1n, scannedTo: to };
 }
 
 /** Transaction hashes for every job, from events matched to the job ID / GUID. Used for explorer links only. */
@@ -92,13 +97,26 @@ export async function readHistory(eth: PublicClient, base: PublicClient, ethHead
   const h: JobHistory = { eth: new Map(), base: new Map(), complete: true };
   const add = <K,>(m: Map<K, TxRef[]>, k: K, t: TxRef) => m.set(k, [...(m.get(k) ?? []).filter((x) => x.hash !== t.hash || x.name !== t.name), t]);
   const e = await scanLogs(eth, GARDEN, ETH_EVENTS, GARDEN_DEPLOY_BLOCK, ethHead, 50_000n, 40);
-  for (const l of e.logs) add(h.eth, Number(l.args.jobId), { hash: l.transactionHash, block: l.blockNumber, name: l.eventName, detail: l.args.guid });
-  // Base: newest first is what users need; scan from the receiver's creation within a bounded request budget
+  // oldest first within each job, so "last" is the latest attempt
+  for (const l of [...e.logs].sort((x, y) => Number(x.blockNumber - y.blockNumber))) add(h.eth, Number(l.args.jobId), { hash: l.transactionHash, block: l.blockNumber, name: l.eventName, detail: l.args.guid });
+  // Base: newest blocks first, so recent deliveries and receipts are found even when an RPC limits the range
   const b = await scanLogs(base, BASE_RECEIVER as Hash, BASE_EVENTS, BASE_RECEIVER_DEPLOY_BLOCK, baseHead, 10_000n, 60);
-  for (const l of b.logs) add(h.base, String(l.args.guid ?? l.args.burnGuid).toLowerCase(), { hash: l.transactionHash, block: l.blockNumber, name: l.eventName, detail: l.args.messageGuid });
+  for (const l of [...b.logs].sort((x, y) => Number(x.blockNumber - y.blockNumber))) add(h.base, String(l.args.guid ?? l.args.burnGuid).toLowerCase(), { hash: l.transactionHash, block: l.blockNumber, name: l.eventName, detail: l.args.messageGuid });
   if (!e.complete || !b.complete) {
     h.complete = false;
-    h.note = `Event history is partial (Ethereum scanned to block ${e.scannedTo}, Base to block ${b.scannedTo}); job states above are read directly and are complete.`;
+    h.note = `Event history is partial (Ethereum scanned blocks ${e.scannedFrom}–${e.scannedTo}, Base ${b.scannedFrom}–${b.scannedTo}, newest first); job states above are read directly and are complete.`;
   }
   return h;
+}
+
+/** The ReceiptSent event for one burn GUID (indexed), searched newest first with explicit coverage. */
+export async function readReceiptSent(base: PublicClient, burnGuid: Hash, budget = 40): Promise<{ tx?: TxRef; from: bigint; to: bigint; complete: boolean }> {
+  const head = await base.getBlockNumber();
+  const ev = BASE_EVENTS[3];
+  const r = await scanLogs(base, BASE_RECEIVER as Hash, [ev], BASE_RECEIVER_DEPLOY_BLOCK, head, 10_000n, budget, { burnGuid });
+  const l = r.logs.find((x) => String(x.args.burnGuid).toLowerCase() === burnGuid.toLowerCase());
+  return {
+    tx: l ? { hash: l.transactionHash, block: l.blockNumber, name: "ReceiptSent", detail: l.args.messageGuid } : undefined,
+    from: r.scannedFrom, to: r.scannedTo, complete: r.complete,
+  };
 }

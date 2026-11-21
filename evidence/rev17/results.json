@@ -1,0 +1,435 @@
+{
+ "mocked": true,
+ "note": "Real Chromium, the compiled dist/, mocked JSON-RPC for Ethereum and Base and a labelled mock EIP-6963 wallet. No live chain reads and no transactions.",
+ "ranAt": "2026-11-21T07:40:26.225Z",
+ "passed": 71,
+ "failed": 0,
+ "results": [
+  {
+   "scenario": "ee3b7c3e-final-dispatch-sim-false",
+   "name": "connected the labelled mock owner",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "ee3b7c3e-final-dispatch-sim-false",
+   "name": "Retry failed send is offered for Failed job #1",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "ee3b7c3e-final-dispatch-sim-false",
+   "name": "review opened (simulation 1 returned true)",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "ee3b7c3e-final-dispatch-sim-false",
+   "name": "owner sees the failed-simulation message",
+   "passed": true,
+   "detail": "The final simulation shows the bridge send failing inside the contract (it would be marked Failed and refunded). Nothing was sent; the job stays retryable."
+  },
+  {
+   "scenario": "ee3b7c3e-final-dispatch-sim-false",
+   "name": "three dispatchBurn simulations ran (true, true, false)",
+   "passed": true,
+   "detail": "sim dispatchBurn -> true, sim dispatchBurn -> true, sim dispatchBurn -> false"
+  },
+  {
+   "scenario": "ee3b7c3e-final-dispatch-sim-false",
+   "name": "zero wallet sends",
+   "passed": true,
+   "detail": "[]"
+  },
+  {
+   "scenario": "ee3b7c3e-final-dispatch-sim-false",
+   "name": "no saved operation",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "ee3b7c3e-final-dispatch-sim-false",
+   "name": "job stays retryable (button still offered)",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "eaa937a3-guid-mismatch",
+   "name": "failed: row reports the mismatch",
+   "passed": true,
+   "detail": "Ethereum\nDispatched, unacknowledged · 1 send attempt\nBase\nBurn failed (retryable by anyone) · 1 burn attempt\nGUID\n0xabababababababababababababababababababababababababababababababab\nCheck\nBase delivery does not match this job's ID, amount or GUID.\nTransactions\nNot located in the scanned history"
+  },
+  {
+   "scenario": "eaa937a3-guid-mismatch",
+   "name": "failed: \"Retry failed burn\" is disabled",
+   "passed": true,
+   "detail": "visible"
+  },
+  {
+   "scenario": "eaa937a3-guid-mismatch",
+   "name": "failed: no review opened",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "eaa937a3-guid-mismatch",
+   "name": "failed: zero wallet requests",
+   "passed": true,
+   "detail": "[]"
+  },
+  {
+   "scenario": "eaa937a3-guid-mismatch",
+   "name": "burned-unacknowledged: row reports the mismatch",
+   "passed": true,
+   "detail": "Ethereum\nDispatched, unacknowledged · 1 send attempt\nBase\nBurned · confirmation not sent · 1 burn attempt\nGUID\n0xabababababababababababababababababababababababababababababababab\nCheck\nBase delivery does not match this job's ID, amount or GUID.\nTransactions\nNot located in the scanned history"
+  },
+  {
+   "scenario": "eaa937a3-guid-mismatch",
+   "name": "burned-unacknowledged: \"Send burn confirmation to Ethereum\" is disabled",
+   "passed": true,
+   "detail": "visible"
+  },
+  {
+   "scenario": "eaa937a3-guid-mismatch",
+   "name": "burned-unacknowledged: no review opened",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "eaa937a3-guid-mismatch",
+   "name": "burned-unacknowledged: zero wallet requests",
+   "passed": true,
+   "detail": "[]"
+  },
+  {
+   "scenario": "eaa937a3-guid-mismatch",
+   "name": "control: matching Failed delivery enables Retry failed burn",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "eaa937a3-guid-mismatch",
+   "name": "control: review opens after fresh authentication",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "eaa937a3-guid-mismatch",
+   "name": "control: preparation read burnJobs on Ethereum and jobGuids on Base",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "eaa937a3-guid-mismatch",
+   "name": "control: exactly one retryBurn request to the receiver on Base (mock wallet rejects it)",
+   "passed": true,
+   "detail": "[{\"to\":\"0x4FdE47d5b574F9F18bC86D9878A460e6b1373D1E\",\"chain\":\"0x2105\",\"fn\":\"retryBurn\",\"args\":[\"0xabababababababababababababababababababababababababababababababab\"],\"value\":\"0x0\"}]"
+  },
+  {
+   "scenario": "5352100c-cross-tab-late-hash",
+   "name": "tab A: wallet request open (no hash returned yet)",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "5352100c-cross-tab-late-hash",
+   "name": "tab B sees tab A's saved signing operation",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "5352100c-cross-tab-late-hash",
+   "name": "tab B: forget refused while tab A's wallet request is open",
+   "passed": true,
+   "detail": "A tab is still waiting on your wallet for this operation. Finish or reject it in the wallet first."
+  },
+  {
+   "scenario": "5352100c-cross-tab-late-hash",
+   "name": "saved operation still present",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "5352100c-cross-tab-late-hash",
+   "name": "tab B: Prepare burn batch stays disabled (a burn operation is pending)",
+   "passed": true,
+   "detail": "Maximum to queue (IMD)\nAll unqueued\n\nQueues 1 IMD; 0 units are rounded off and stay unqueued with the rest (4.4 IMD).\n\nPrepare burn batch\n\nA burn operation is already pending."
+  },
+  {
+   "scenario": "5352100c-cross-tab-late-hash",
+   "name": "tab B opened no wallet request",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "5352100c-cross-tab-late-hash",
+   "name": "tab A's returned hash is saved",
+   "passed": true,
+   "detail": "[{\"id\":\"9c7d5a21-8d79-483e-a554-bea004afaf30\",\"kind\":\"queue\",\"chainId\":1,\"account\":\"0x00000000000000000000000000000000000000A1\",\"target\":\"1\",\"value\":\"0\",\"stage\":\"sent\",\"createdAt\":1795246747997,\"hash\":\"0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"}]"
+  },
+  {
+   "scenario": "5352100c-cross-tab-late-hash",
+   "name": "after reloading tab A the operation and its hash survive",
+   "passed": true,
+   "detail": "[{\"id\":\"9c7d5a21-8d79-483e-a554-bea004afaf30\",\"kind\":\"queue\",\"chainId\":1,\"account\":\"0x00000000000000000000000000000000000000A1\",\"target\":\"1\",\"value\":\"0\",\"stage\":\"sent\",\"createdAt\":1795246747997,\"hash\":\"0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"}]"
+  },
+  {
+   "scenario": "5352100c-cross-tab-late-hash",
+   "name": "the saved list shows the sent transaction",
+   "passed": true,
+   "detail": "Saved operations\nPrepare burn batch · 11/21/2026, 7:39:07 AM · sent 0xcccc…cccc, waiting for its receipt Check again\n\nNothing here is ever sent again automatically."
+  },
+  {
+   "scenario": "20d3d3c6-mined-revert",
+   "name": "a mined status 0x0 receipt is reported as an onchain revert",
+   "passed": true,
+   "detail": "The transaction reverted. Nothing changed onchain; you paid only its gas. View transaction"
+  },
+  {
+   "scenario": "20d3d3c6-mined-revert",
+   "name": "not reported as 'No receipt yet'",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "20d3d3c6-mined-revert",
+   "name": "the operation is removed (retry unlocked)",
+   "passed": true,
+   "detail": "[]"
+  },
+  {
+   "scenario": "20d3d3c6-mined-revert",
+   "name": "Prepare burn batch is available again",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "20d3d3c6-mined-revert",
+   "name": "after a reload the saved reverted operation resolves as a revert and unlocks",
+   "passed": true,
+   "detail": "The transaction reverted. Nothing changed onchain; you paid only its gas. View transaction"
+  },
+  {
+   "scenario": "f223abb2-queue-changed-after-review",
+   "name": "review shows 5.4 IMD (5400000000000000000 units)",
+   "passed": true,
+   "detail": "Review before your wallet\nStep\n1 of 2 · Prepare burn batch (queueBurn)\nNew job\n#1\nAmount reserved\n5.4 IMD (5400000000000000000 units)\nRounded off to bridge precision\n0 units stay unqueued\nUnqueued after this\n0 IMD (0 units)\nEstimated gas (max)\n0.00031 ETH · 255590 gas\n\nNothing moves to Base in this step. Sending the batch is step 2.\n\nConfirm in wallet\nCancel"
+  },
+  {
+   "scenario": "f223abb2-queue-changed-after-review",
+   "name": "confirm stops with 'figures changed'",
+   "passed": true,
+   "detail": "The figures changed since your review (amount, job, units, account or fee). Check the new review and confirm again. Nothing was sent."
+  },
+  {
+   "scenario": "f223abb2-queue-changed-after-review",
+   "name": "review replaced: 2 IMD reserved, job #2, 0 remaining",
+   "passed": true,
+   "detail": "Review before your wallet\nStep\n1 of 2 · Prepare burn batch (queueBurn)\nNew job\n#2\nAmount reserved\n2 IMD (2000000000000000000 units)\nRounded off to bridge precision\n0 units stay unqueued\nUnqueued after this\n0 IMD (0 units)\nEstimated gas (max)\n0.00031 ETH · 255590 gas\n\nNothing moves to Base in this step. Sending the batch is step 2.\n\nConfirm in wallet\nCancel"
+  },
+  {
+   "scenario": "f223abb2-queue-changed-after-review",
+   "name": "zero wallet requests",
+   "passed": true,
+   "detail": "[]"
+  },
+  {
+   "scenario": "f223abb2-queue-changed-after-review",
+   "name": "after accepting the new review, one queueBurn request (mock wallet rejects it)",
+   "passed": true,
+   "detail": "[{\"to\":\"0x33a514c5e2028f1affd70b82f170e8193df030a5\",\"chain\":\"0x1\",\"fn\":\"queueBurn\",\"args\":[\"5400000000000000000\"],\"value\":\"0x0\"}]"
+  },
+  {
+   "scenario": "6715d5a3-tiny-footer-amounts",
+   "name": "burned-1-unit: footer shows burned 0.000001 and pending 5.3999",
+   "passed": true,
+   "detail": "[\"0.000001\",\"5.3999\"]"
+  },
+  {
+   "scenario": "6715d5a3-tiny-footer-amounts",
+   "name": "pending-1-unit: footer shows burned 5.3999 and pending 0.000001",
+   "passed": true,
+   "detail": "[\"5.3999\",\"0.000001\"]"
+  },
+  {
+   "scenario": "3564d23a-rpc-outage-footer",
+   "name": "320px: both counters say Unavailable",
+   "passed": true,
+   "detail": "[\"Unavailable\",\"Unavailable\"]"
+  },
+  {
+   "scenario": "3564d23a-rpc-outage-footer",
+   "name": "320px: counters, refresh, Burn details and status are inside the viewport",
+   "passed": true,
+   "detail": "[{\"sel\":\".burn-live p, .burn-refresh, .burn-link, .burn-time\",\"x0\":12,\"x1\":168.6,\"y0\":753.4,\"y1\":773.8,\"w\":156.59375,\"display\":\"flex\",\"ok\":true},{\"sel\":\".burn-live p, .burn-refresh, .burn-link, .burn-time\",\"x0\":12,\"x1\":176.9,\"y0\":785.6,\"y1\":806,\"w\":164.90625,\"display\":\"flex\",\"ok\":true},{\"sel\":\".burn-live p, .burn-refresh, .burn-link, .burn-time\",\"x0\":187.7,\"x1\":231.7,\"y0\":773.8,\"y1\":817.8,\"w\":44,\"display\":\"block\",\"ok\":true},{\"sel\":\".burn-live p, .burn-refresh, .burn-link, .burn-time\",\"x0\":239.7,\"x1\":308,\"y0\":773.8,\"y1\":817.8,\"w\":68.265625,\"display\":\"flex\",\"ok\":true},{\"sel\":\".burn-live p, .burn"
+  },
+  {
+   "scenario": "3564d23a-rpc-outage-footer",
+   "name": "320px: refresh target is 44px wide",
+   "passed": true,
+   "detail": "[{\"sel\":\".burn-refresh\",\"x0\":187.7,\"x1\":231.7,\"y0\":773.8,\"y1\":817.8,\"w\":44,\"display\":\"block\",\"ok\":true}]"
+  },
+  {
+   "scenario": "3564d23a-rpc-outage-footer",
+   "name": "320px: no horizontal overflow",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "3564d23a-rpc-outage-footer",
+   "name": "390px: both counters say Unavailable",
+   "passed": true,
+   "detail": "[\"Unavailable\",\"Unavailable\"]"
+  },
+  {
+   "scenario": "3564d23a-rpc-outage-footer",
+   "name": "390px: counters, refresh, Burn details and status are inside the viewport",
+   "passed": true,
+   "detail": "[{\"sel\":\".burn-live p, .burn-refresh, .burn-link, .burn-time\",\"x0\":12,\"x1\":168.6,\"y0\":753.4,\"y1\":773.8,\"w\":156.59375,\"display\":\"flex\",\"ok\":true},{\"sel\":\".burn-live p, .burn-refresh, .burn-link, .burn-time\",\"x0\":176.6,\"x1\":341.5,\"y0\":753.4,\"y1\":773.8,\"w\":164.90625,\"display\":\"flex\",\"ok\":true},{\"sel\":\".burn-live p, .burn-refresh, .burn-link, .burn-time\",\"x0\":257.7,\"x1\":301.7,\"y0\":773.8,\"y1\":817.8,\"w\":44,\"display\":\"block\",\"ok\":true},{\"sel\":\".burn-live p, .burn-refresh, .burn-link, .burn-time\",\"x0\":309.7,\"x1\":378,\"y0\":773.8,\"y1\":817.8,\"w\":68.265625,\"display\":\"flex\",\"ok\":true},{\"sel\":\".burn-live p, "
+  },
+  {
+   "scenario": "3564d23a-rpc-outage-footer",
+   "name": "390px: refresh target is 44px wide",
+   "passed": true,
+   "detail": "[{\"sel\":\".burn-refresh\",\"x0\":257.7,\"x1\":301.7,\"y0\":773.8,\"y1\":817.8,\"w\":44,\"display\":\"block\",\"ok\":true}]"
+  },
+  {
+   "scenario": "3564d23a-rpc-outage-footer",
+   "name": "390px: no horizontal overflow",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "59d44d44-footer-last-update",
+   "name": "320px: last-update line is displayed in the footer and inside the viewport",
+   "passed": true,
+   "detail": "[{\"sel\":\".burn-time\",\"x0\":12,\"x1\":308,\"y0\":817.8,\"y1\":836,\"w\":296,\"display\":\"block\",\"ok\":true}]"
+  },
+  {
+   "scenario": "59d44d44-footer-last-update",
+   "name": "320px: footer links each snapshot block to its explorer",
+   "passed": true,
+   "detail": "[\"https://etherscan.io/block/26500007\",\"https://basescan.org/block/60269007\"]"
+  },
+  {
+   "scenario": "59d44d44-footer-last-update",
+   "name": "320px: all footer links and refresh inside the viewport",
+   "passed": true,
+   "detail": "[{\"sel\":\".burn-time a, .burn-link, .burn-refresh\",\"x0\":187.7,\"x1\":231.7,\"y0\":773.8,\"y1\":817.8,\"w\":44,\"display\":\"block\",\"ok\":true},{\"sel\":\".burn-time a, .burn-link, .burn-refresh\",\"x0\":239.7,\"x1\":308,\"y0\":773.8,\"y1\":817.8,\"w\":68.265625,\"display\":\"flex\",\"ok\":true},{\"sel\":\".burn-time a, .burn-link, .burn-refresh\",\"x0\":142.9,\"x1\":230.9,\"y0\":817.8,\"y1\":834.8,\"w\":88.03125,\"display\":\"inline\",\"ok\":true},{\"sel\":\".burn-time a, .burn-link, .burn-refresh\",\"x0\":241.8,\"x1\":304.4,\"y0\":817.8,\"y1\":834.8,\"w\":62.578125,\"display\":\"inline\",\"ok\":true}]"
+  },
+  {
+   "scenario": "59d44d44-footer-last-update",
+   "name": "320px: zoom stays above the strip; the minimap covers no footer text",
+   "passed": true,
+   "detail": "{\"strip\":{\"l\":0,\"r\":320,\"t\":687.421875,\"b\":844},\"zoom\":{\"l\":12,\"r\":212,\"t\":631,\"b\":675},\"mini\":{\"l\":176,\"r\":308,\"t\":631,\"b\":675},\"covered\":[]}"
+  },
+  {
+   "scenario": "59d44d44-footer-last-update",
+   "name": "390px: last-update line is displayed in the footer and inside the viewport",
+   "passed": true,
+   "detail": "[{\"sel\":\".burn-time\",\"x0\":12,\"x1\":378,\"y0\":817.8,\"y1\":836,\"w\":366,\"display\":\"block\",\"ok\":true}]"
+  },
+  {
+   "scenario": "59d44d44-footer-last-update",
+   "name": "390px: footer links each snapshot block to its explorer",
+   "passed": true,
+   "detail": "[\"https://etherscan.io/block/26500007\",\"https://basescan.org/block/60269007\"]"
+  },
+  {
+   "scenario": "59d44d44-footer-last-update",
+   "name": "390px: all footer links and refresh inside the viewport",
+   "passed": true,
+   "detail": "[{\"sel\":\".burn-time a, .burn-link, .burn-refresh\",\"x0\":257.7,\"x1\":301.7,\"y0\":773.8,\"y1\":817.8,\"w\":44,\"display\":\"block\",\"ok\":true},{\"sel\":\".burn-time a, .burn-link, .burn-refresh\",\"x0\":309.7,\"x1\":378,\"y0\":773.8,\"y1\":817.8,\"w\":68.265625,\"display\":\"flex\",\"ok\":true},{\"sel\":\".burn-time a, .burn-link, .burn-refresh\",\"x0\":142.9,\"x1\":230.9,\"y0\":817.8,\"y1\":834.8,\"w\":88.03125,\"display\":\"inline\",\"ok\":true},{\"sel\":\".burn-time a, .burn-link, .burn-refresh\",\"x0\":241.8,\"x1\":304.4,\"y0\":817.8,\"y1\":834.8,\"w\":62.578125,\"display\":\"inline\",\"ok\":true}]"
+  },
+  {
+   "scenario": "59d44d44-footer-last-update",
+   "name": "390px: zoom stays above the strip; the minimap covers no footer text",
+   "passed": true,
+   "detail": "{\"strip\":{\"l\":0,\"r\":390,\"t\":707.8125,\"b\":844},\"zoom\":{\"l\":12,\"r\":212,\"t\":651,\"b\":695},\"mini\":{\"l\":246,\"r\":378,\"t\":651,\"b\":695},\"covered\":[]}"
+  },
+  {
+   "scenario": "59d44d44-footer-last-update",
+   "name": "1440px: last-update line is displayed in the footer and inside the viewport",
+   "passed": true,
+   "detail": "[{\"sel\":\".burn-time\",\"x0\":1123.6,\"x1\":1416,\"y0\":813.8,\"y1\":832,\"w\":292.421875,\"display\":\"block\",\"ok\":true}]"
+  },
+  {
+   "scenario": "59d44d44-footer-last-update",
+   "name": "1440px: footer links each snapshot block to its explorer",
+   "passed": true,
+   "detail": "[\"https://etherscan.io/block/26500007\",\"https://basescan.org/block/60269007\"]"
+  },
+  {
+   "scenario": "59d44d44-footer-last-update",
+   "name": "1440px: all footer links and refresh inside the viewport",
+   "passed": true,
+   "detail": "[{\"sel\":\".burn-time a, .burn-link, .burn-refresh\",\"x0\":1292.9,\"x1\":1336.9,\"y0\":769.8,\"y1\":813.8,\"w\":44,\"display\":\"block\",\"ok\":true},{\"sel\":\".burn-time a, .burn-link, .burn-refresh\",\"x0\":1344.9,\"x1\":1413.2,\"y0\":769.8,\"y1\":813.8,\"w\":68.265625,\"display\":\"flex\",\"ok\":true},{\"sel\":\".burn-time a, .burn-link, .burn-refresh\",\"x0\":1254.5,\"x1\":1342.5,\"y0\":813.8,\"y1\":830.8,\"w\":88.03125,\"display\":\"inline\",\"ok\":true},{\"sel\":\".burn-time a, .burn-link, .burn-refresh\",\"x0\":1353.4,\"x1\":1416,\"y0\":813.8,\"y1\":830.8,\"w\":62.578125,\"display\":\"inline\",\"ok\":true}]"
+  },
+  {
+   "scenario": "59d44d44-footer-last-update",
+   "name": "1440px: zoom stays above the strip; the minimap covers no footer text",
+   "passed": true,
+   "detail": "{\"strip\":{\"l\":0,\"r\":1440,\"t\":756.8125,\"b\":844},\"zoom\":{\"l\":24,\"r\":68,\"t\":532,\"b\":732},\"mini\":{\"l\":354,\"r\":574,\"t\":766,\"b\":838},\"covered\":[]}"
+  },
+  {
+   "scenario": "6c1e729b-footer-shrinks-on-widen",
+   "name": "after widening 901→1920 the strip is as tall as a fresh 1920 load",
+   "passed": true,
+   "detail": "{\"h901\":{\"strip\":225,\"min\":\"76px\",\"var\":\"225px\"},\"widened\":{\"strip\":87,\"min\":\"76px\",\"var\":\"88px\"},\"fresh\":{\"strip\":87,\"min\":\"76px\",\"var\":\"88px\"}}"
+  },
+  {
+   "scenario": "6c1e729b-footer-shrinks-on-widen",
+   "name": "the strip's minimum is independent of the measured --strip-h",
+   "passed": true,
+   "detail": "{\"strip\":87,\"min\":\"76px\",\"var\":\"88px\"}"
+  },
+  {
+   "scenario": "957d9c55-recent-receipt-under-range-limit",
+   "name": "pending confirmation links to its ReceiptSent transaction on LayerZero Scan",
+   "passed": true,
+   "detail": "Job #1\n5.4 IMD\nEthereum\nDispatched, unacknowledged · 1 send attempt\nBase\nBurned · confirmation sent · 1 burn attempt\nGUID\n0xabababababababababababababababababababababababababababababababab\nCheck\nBase delivery matches this job.\nTransactions\nNot located in the scanned history\n\nConfirmation sent from Base, not yet delivered to Ethereum. It is retried on LayerZero with the same message; tokens are never resent or burned again. Message status on LayerZero Scan · ReceiptSent on Basescan · message GUID 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  {
+   "scenario": "957d9c55-recent-receipt-under-range-limit",
+   "name": "and on Basescan",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "957d9c55-recent-receipt-under-range-limit",
+   "name": "full burn GUID is shown",
+   "passed": true,
+   "detail": "Job #1\n5.4 IMD\nEthereum\nDispatched, unacknowledged · 1 send attempt\nBase\nBurned · confirmation sent · 1 burn attempt\nGUID\n0xabababababababababababababababababababababababababababababababab\nCheck\nBase delivery matches this job.\nTransactions\nNot located in the scanned history\n\nConfirmation sent from Base, not yet delivered to Ethereum. It is retried on LayerZero with the same message; tokens are never resent or burned again. Message status on LayerZero Scan · ReceiptSent on Basescan · message GUID 0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  {
+   "scenario": "957d9c55-recent-receipt-under-range-limit",
+   "name": "message GUID is shown",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "957d9c55-recent-receipt-under-range-limit",
+   "name": "the burnGuid-filtered lookup started at the head",
+   "passed": true,
+   "detail": "base getLogs 60259009-60269008 burnGuid-filtered; base getLogs 60259009-60269008 burnGuid-filtered; base getLogs 60259009-60269008 burnGuid-filtered; base getLogs 60259009-60269008 burnGuid-filtered; base getLogs 60259009-60269008 burnGuid-filtered; base getLogs 60259009-60269008 burnGuid-filtered"
+  },
+  {
+   "scenario": "957d9c55-recent-receipt-under-range-limit",
+   "name": "the full GUID wraps inside its cell at 390px",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "957d9c55-recent-receipt-under-range-limit",
+   "name": "no horizontal overflow",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "9342fb89-dashboard-lede",
+   "name": "lede states the first-candle 90% exception",
+   "passed": true,
+   "detail": "Track IMD allocated on Ethereum and burned on Base. The first candle allocates 90% to burn. Later candles allocate 30%."
+  }
+ ]
+}

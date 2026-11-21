@@ -1,3 +1,97 @@
+# Everlight Garden
+
+Static Vite + React + TypeScript site for the Everlight Garden on IMD. Install, preview and rebuild:
+
+```sh
+cd web
+npm ci              # install the locked dependencies
+npm run build       # tsc --noEmit + vite build, writes the static export to ../dist (relative ./ asset URLs)
+npm run preview     # serve the built export locally
+npx vitest run      # unit and regression tests (all mocked)
+```
+
+## Current revision (2026-11-21, revision 17): review findings on the burn dashboard. Read first
+
+This is a website change only. Contracts, addresses, ABIs and economics are unchanged: 1 IMD per candle, split
+30% burn / 60% previous paid candles / 5% operations / 5% founder, and the first-ever candle sends 90% to burn.
+Nothing was deployed. No real-fund transaction was sent.
+
+### Fixes (each one reproduced first in the mocked browser harness)
+- **Final dispatch simulation** (`BurnPanel.tsx`, `confirm`): the last `simulateContract` before `writeContract`
+  now has its result checked. If `dispatchBurn` returns `false` (a send failure the contract catches), the wallet is
+  not asked and the job stays retryable.
+- **Authenticated Base deliveries** (`lib/burn.ts` `authenticateDelivery`; `BurnPanel.tsx` `prepare` and `JobRow`):
+  "Retry failed burn" and "Send burn confirmation to Ethereum" require the Ethereum `burnJobs` row, Base
+  `jobGuids(jobId)` and `deliveries(guid)` to agree on job ID, amount and GUID. The row check runs on display, and
+  fresh reads repeat it before the review and again before the wallet request. If a read is missing, the actions
+  stay off.
+- **Cross-tab wallet requests** (`lib/burn.ts` `holdOp`, `opHeld`, `settleHash`): a tab holds a Web Lock named after
+  the operation for as long as its wallet request is open. "I checked my wallet: forget it" is refused in any tab
+  while that lock is held. If the record was removed anyway, a late hash is saved again and other saved operations
+  are left alone.
+- **Mined reverts** (`BurnPanel.tsx` `follow`): receipts are now followed with the chain's viem public client. It
+  returns a reverted receipt, where wagmi's action threw. A status-0 receipt is reported as a revert, and the
+  operation is removed so retry is unlocked. A receipt that cannot be read yet still keeps the operation saved.
+- **Review stays accurate** (`Review.key`): Confirm compares the fresh account, arguments, job number, reserved
+  amount, dust, remaining balance and fee with the review. If any of them changed, the review is replaced and
+  nothing is sent until the owner confirms again.
+- **Tiny footer amounts** (`compactImd`): a positive balance never reads "0". It shows "0.000001", or
+  "< 0.000001" below one bridge unit. The exact units are in the tooltip, and the dashboard adds a units suffix
+  wherever 6 decimals would hide part of an amount.
+- **Footer layout**: the counters wrap, and refresh with Burn details gets its own group. The strip grows taller on
+  phones. The last-update line is always visible and links the Ethereum and Base snapshot blocks to their explorers.
+  The strip's min-height (`--strip-min`) is now separate from the measured `--strip-h`, so the footer shrinks again
+  when the window widens.
+- **Recent confirmations** (`lib/burnio.ts`): log scans now run newest blocks first. `readReceiptSent` filters on
+  the indexed `burnGuid` and reports the block range it covered. A pending confirmation links its `ReceiptSent`
+  transaction (LayerZero Scan and Basescan) and shows the message GUID. Job cards show the full GUID, wrapped.
+- **Dashboard lede** now gives the first-candle 90% exception.
+
+### Checks run (revision 17)
+| Check | Command | Result |
+| --- | --- | --- |
+| Typecheck | `cd web && npx tsc --noEmit` | no errors |
+| Unit tests (all mocked) | `cd web && npx vitest run` | 20 files, 238 tests passed (8 new in `tests/revision17.test.ts`) |
+| Production build | `cd web && npm run build` | built; `dist/` committed |
+| Finding reproductions (MOCKED) | `PLAYWRIGHT_BROWSERS_PATH=… node evidence/rev17/burn-harness.mjs <repo> evidence/rev17 <playwright/index.mjs>` | 71/71 passed: `evidence/rev17/results.json`, screenshots in `evidence/rev17/screens/` |
+| Purchase/claim regression (MOCKED) | `node evidence/rev15/browser-harness.mjs <repo> <out> <playwright>` against the new `dist/` | 68/68 passed: `evidence/rev17/regression-purchase-claim-results.json` |
+| Design probe | `IMD_PLAYWRIGHT=… node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste` | all 16 checks passed: `evidence/rev17/taste-probe.json`. The 390 screenshot shows the garden and "Light a candle · 1 IMD" on the first screen |
+
+**Mocked versus live.** Every row in `evidence/rev17/results.json` is mocked and the file says so (`"mocked": true`).
+The harness serves the compiled `dist/` to real Chromium. Playwright route interception answers all Ethereum and
+Base JSON-RPC with labelled fixtures, and a labelled EIP-6963 test wallet records each `eth_sendTransaction`
+instead of sending it. The scenarios follow each finding's reproduction:
+- dispatch simulations returning true, true, false: zero sends;
+- jobGuids 0xcdcd… against an Ethereum GUID 0xabab…, for both a Failed and a Burned-unacknowledged delivery: zero
+  sends, plus a matching control that does reach the wallet once;
+- two tabs, with "forget" tried while tab A's wallet request is still open, then a late hash and a reload;
+- a mined status-0 receipt, both live and after a reload;
+- unqueued dropping from 5.4 to 2 IMD between review and confirm;
+- 0.000001 IMD burned, then 0.000001 IMD pending;
+- a Base RPC outage at 320 and 390px;
+- the footer's last-update line and explorer links at 320, 390 and 1440px;
+- widening the window from 901 to 1920px;
+- a 1,000-block getLogs limit with a ReceiptSent one block below the head;
+- the dashboard lede.
+
+This round made no new live read-only check. The live figures in revision 16 below (5.4 IMD allocated and queued,
+0 jobs, 0 burned) are the most recent ones.
+
+**Better Interface review of this round's changes.**
+- Layout: the footer controls and error text now stay inside the viewport at 320/390px (findings 3564d23a and
+  6c1e729b).
+- Accessibility: the status line stays `role="status"` and is visible rather than only in a tooltip (59d44d44).
+  The disabled public actions state their reason in text.
+- Writing: the plain lede states the 90% exception.
+- Typography and colour: existing tokens only, and the probe's type-size, face and contrast checks pass.
+- UI: a changed review needs a second explicit confirmation.
+
+Limitations: rendered checks ran in headless Chromium only. There was no screen-reader run and no real wallet.
+
+**Not tested**: real `queueBurn`, `dispatchBurn`, `retryBurn` or `sendBurnReceipt` transactions (no real funds, and
+no live burn job exists), LayerZero delivery timing, and Web Lock behaviour in browsers other than Chromium.
+Without Web Locks the forget guard only protects the tab that is signing. A late hash is still saved again.
+
 ## Current revision (2026-11-21, revision 16): burn dashboard and live footer counters. Read first
 
 Website update only, using the deployed contracts: garden `0x33a514c5e2028f1affd70b82f170e8193df030a5`
@@ -42,7 +136,7 @@ Nothing was deployed or sent; the only "transactions" in testing went to a mock 
 - Wagmi now knows Base (8453) too. Purchases and claims still check `chainId === 1`; the header shows "On Base"
   rather than "Wrong network" on Base.
 
-### Checks run (results in `artifacts/rev16/`)
+### Checks run in revision 16 (its `artifacts/rev16/` files were never committed because `artifacts/` is git-excluded in this workspace; current evidence is in `evidence/rev17/`, see revision 17 above)
 | Check | Command | Result |
 | --- | --- | --- |
 | Typecheck | `cd web && npx tsc --noEmit` | no errors |

@@ -1,3 +1,49 @@
+# DESIGN: revision 16, burn dashboard and live footer counters (current source, 2026-11-21)
+
+Everything below revision 16 still applies; this section records what revision 16 adds. Taken from
+`web/src/styles.css` (end of file), `web/src/panels/BurnPanel.tsx` and `web/src/App.tsx`.
+
+## Tokens
+
+No new colour, size or spacing tokens. The additions use the existing ones:
+- Colour: `--color-headline` (#f3dca0) for figures, `--color-text-secondary` for labels, `--color-line-soft`
+  for the divider beside the split, `--color-danger` (coral) for stale/inconsistent states, `--color-live`
+  (emerald) for the success note border, `--night-800` for job cards.
+- Type: the existing scale only. Footer labels `--text-sm` (13px), footer figures `--text-md` (17px, serif,
+  tabular numbers), dashboard headings `--text-xl` / `--text-lg`. Two families only (serif display, system sans);
+  GUIDs use tabular numbers, not a third monospace family.
+- Spacing `--space-1` to `--space-4`; radius `--radius-sm`.
+- `--strip-h` is now measured: `BurnFooter` observes the footer strip with a `ResizeObserver` and writes its real
+  height to `--strip-h`, so the zoom, minimap and panels always clear the strip at any wrap. CSS defaults remain
+  (76px desktop, 120px at 900px and below) for the first paint.
+
+## Components
+
+- **Burn footer counters** (`.burn-live`, in the strip after the split): "IMD burned" (Base `totalBurned`) and
+  "Pending burn" (`totalBurnAllocated - totalBurned`) as label-over-figure pairs, a 44px refresh icon button whose
+  accessible name carries the last update time, a "Burn details" link to `#/treasury/burn`, and an "Updated
+  h:mm:ss" / "Stale" line (shown above 1500px; the stale warning is shown at every width). Unavailable figures read
+  "Unavailable", never 0.
+- **Burn dashboard** (`#/treasury/burn`, panel `.burn`): breadcrumb back to Treasury; snapshot line with both
+  block numbers linked to the explorers, block times, last update and a Refresh link; a consistency note
+  (`.stale-note`) when reads disagree; Totals (`.summary`); Ethereum and Base stage lists (`.stages`); paginated
+  job cards (`.jobs` / `.job`, Newer/Older `.pager`) with a two-column definition grid (`.job-d`) for Ethereum
+  state, Base state, GUID, cross-check and verified transactions, and an action row (`.job-a`); owner form
+  (`.owner`: labelled amount input, "All unqueued", "Prepare burn batch"); review box (`.review`) listing the
+  step, exact amounts in token units, dust, bridge/message fee and gas before "Confirm in wallet"; saved
+  operations (`.saved`) for reload recovery; outcome notes (`.ok-note`, `.bad`, both `role="alert"`).
+- Header wallet control: on Base it reads "On Base" (ghost) instead of "Wrong network"; purchases and claims
+  still require Ethereum and say so.
+
+## Responsive behaviour
+
+- Above 1500px the footer shows find, minimap slot, split and the burn block in one row with the update time.
+- 901 to 1500px the update time folds into the refresh button's name; the split wraps to two rows and the
+  measured `--strip-h` grows with it (93px at 1440, 102px at 1280 in the probe) so nothing overlaps.
+- 900px and below the burn block becomes its own full-width row under Find and "Split of 1 IMD": label and
+  figure inline, refresh and "Burn details" (44px tall) at the end. Strip 120px at 320, 390 and 820.
+- 640px and below the dashboard opens as the existing bottom sheet; the strip is hidden under it as before.
+
 # DESIGN: revision 15 changes (current source, 2026-11-20)
 
 This revision changes transaction state only. The tokens, typography, pixel-art garden, Pepes and responsive layout are unchanged from the sections below.

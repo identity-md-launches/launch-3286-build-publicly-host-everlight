@@ -26,6 +26,8 @@ export const OWNER: Address = "0x48E4E74fE1d0c14404cEB57B9fec5b21329C6ec9";
  * (CREATE2 factory call, block 26448736); event queries start here.
  */
 export const GARDEN_DEPLOY_BLOCK = 26448736n;
+/** First Base block holding the receiver's code (found by a getCode bisection on 2026-11-21); Base event scans start here. */
+export const BASE_RECEIVER_DEPLOY_BLOCK = 59865494n;
 /**
  * Earlier garden (source f3ae2915, 30/30/30/5/5 split). Linked for its own history only: the site never reads,
  * caches or writes to it, and its candle IDs are never merged with the live garden's.
@@ -53,14 +55,17 @@ export const BASE_RPCS = ["https://mainnet.base.org", "https://base-rpc.publicno
 export const ETHERSCAN = "https://etherscan.io";
 export const BASESCAN = "https://basescan.org";
 
+export const LZSCAN = "https://layerzeroscan.com";
+
 export const ethTransport = fallback(ETH_RPCS.map((u) => http(u, { timeout: 12_000, retryCount: 1, batch: { wait: 16 } })));
 
 export const config = createConfig({
-  chains: [mainnet],
+  // Ethereum first: purchases, claims and owner burn actions. Base only for the public burn retry / confirmation.
+  chains: [mainnet, base],
   // EIP-6963 discovery lists every installed extension under its own name
   multiInjectedProviderDiscovery: true,
   connectors: [injected(), coinbaseWallet({ appName: SITE_NAME })],
-  transports: { [mainnet.id]: ethTransport },
+  transports: { [mainnet.id]: ethTransport, [base.id]: fallback(BASE_RPCS.map((u) => http(u, { timeout: 12_000, retryCount: 1 }))) },
 });
 
 export const ethClient = createPublicClient({ chain: mainnet, transport: ethTransport, batch: { multicall: true } });

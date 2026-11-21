@@ -1,3 +1,85 @@
+## Current revision (2026-11-21, revision 16): burn dashboard and live footer counters. Read first
+
+Website update only, using the deployed contracts: garden `0x33a514c5e2028f1affd70b82f170e8193df030a5`
+(Ethereum) and burn receiver `0x4FdE47d5b574F9F18bC86D9878A460e6b1373D1E` (Base). Contract rules come from
+launch-3312 at 5752e230 (`EverlightBridgeQueue.sol`, `EverlightBurnReceiver.sol`). The split is still 1 IMD per
+candle: 30% burn / 60% previous paid candles / 5% operations / 5% founder, with 90% burn for the first-ever candle.
+Nothing was deployed or sent; the only "transactions" in testing went to a mock wallet that rejects every request.
+
+### What changed
+- **Footer** (`BurnFooter`, `web/src/panels/BurnPanel.tsx`): "IMD burned" = Base `totalBurned`; "Pending burn" =
+  Ethereum `totalBurnAllocated` minus Base `totalBurned`. A refresh button, last-update time, 60 s polling and a
+  "Burn details" link to the shareable route `#/treasury/burn`.
+- **Accounting** (`web/src/lib/burn.ts`, pure and unit-tested): each chain is read at one block (number +
+  timestamp recorded, `web/src/lib/burnio.ts`). Checks inside each chain (allocated = queued + reserved + in
+  transit + confirmed; failed ⊆ reserved; dust = queued mod 1e12; received = pending + burned; failed ⊆ pending)
+  and across chains (burned ≤ allocated; confirmed ≤ burned; received ≤ dispatched). A cross-chain mismatch
+  re-reads both chains up to 3 times; if they still disagree the figures read "Unavailable" and the last consistent
+  snapshot is shown labelled stale. Negative values are never clamped. `confirmedBurn` is never added to
+  `totalBurned`, and `burnInTransit` is never summed with Base `pendingBurn`.
+- **Dashboard** (`#/treasury/burn`): Ethereum allocation, unqueued (`burnQueued`, with bridge dust), reserved
+  (`burnReserved`, failed sends as a subset), dispatched/unacknowledged (`burnInTransit`, with the part already
+  burned on Base), confirmed (`confirmedBurn`); Base received, pending, failed (subset) and burned. Jobs are read
+  straight from the `burnJobs` mapping, newest first, 10 per page, with the Base `jobGuids`/`deliveries` cross-check.
+  Transaction links come only from events matched to the job ID/GUID; when the bounded log scan cannot cover the
+  range the page says the history is partial. `burnJobCount` is labelled as a historical count (the Treasury panel's
+  old "In N burn job(s)" wording was corrected the same way).
+- **Owner actions (Ethereum)**, only for the address `owner()` returns: "Prepare burn batch" (`queueBurn`) shows the
+  exact rounded amount in token units, the rounded-off dust and the remaining balance; "Send batch to Base" /
+  "Retry failed send" (`dispatchBurn`) uses `quoteBurn(jobId)` as the exact `msg.value`, re-quotes before the wallet
+  is asked (stops if it changed), simulates (stops if the simulated send returns `false`), and sends at least
+  1,500,000 gas so the contract's `SEND_GAS` headroom check passes. Success requires `BurnDispatched` for the job;
+  `BurnSendFailed` in a successful receipt is reported as a failed send that can be retried.
+- **Public actions (Base)**: "Retry failed burn" (`retryBurn`) only for Failed deliveries; "Send burn confirmation
+  to Ethereum" (`sendBurnReceipt`, fee from `quoteReceipt(2, guid)`) only for Burned, unacknowledged deliveries. The
+  page says the caller pays and gets no tokens or reward. `performBurn` is never offered. A sent but undelivered
+  confirmation is shown as pending with a LayerZero Scan link; nothing is resent.
+- **Transaction safety**: fresh account/chain/eligibility checks, simulation and a review of all costs before every
+  wallet request; operations are saved in `localStorage` (`everlight:v1:burnops:…`) before signing, carry their hash
+  after it, are shared across tabs (Web Locks + storage events; a conflicting operation in another tab is refused)
+  and are followed after a reload. Replacements are followed through viem and judged by events. A wallet error that
+  is not a rejection leaves the operation saved as uncertain; nothing is retried automatically.
+- Wagmi now knows Base (8453) too. Purchases and claims still check `chainId === 1`; the header shows "On Base"
+  rather than "Wrong network" on Base.
+
+### Checks run (results in `artifacts/rev16/`)
+| Check | Command | Result |
+| --- | --- | --- |
+| Typecheck | `cd web && npx tsc --noEmit` | no errors |
+| Unit tests (all mocked) | `cd web && npx vitest run` | 19 files, 230 tests passed (28 new in `tests/burn.test.ts`; existing purchase/claim/recovery suites unchanged and passing) |
+| Production build | `cd web && npm run build` | built, `dist/` committed |
+| Design probe | `node .imd/reads/skills/design-critic/scripts/taste.mjs --out test/scratch/taste` | all 16 checks passed (`artifacts/rev16/taste-probe.json`) |
+| Layout (headless Chromium, live read-only RPC) | `artifacts/rev16/shots.mjs` | 320/390/820/1280/1440, garden and burn route: no horizontal overflow, no console errors, zoom and minimap never overlap the strip (`layout-checks.json`, screenshots in `screens/`) |
+| Wallet flows (mock EIP-1193 wallet, live read-only RPC) | `artifacts/rev16/wallet.mjs` | owner on Ethereum: Prepare enabled after an amount, review showed job #1, 5.4 IMD (5400000000000000000 units), 0 dust, gas estimate; Confirm sent one request to the mock wallet, which rejected it; page said "You rejected the request… Nothing was sent." and the saved operation was removed. Non-owner: no owner controls. Owner on Base: Prepare disabled with "Switch your wallet to Ethereum.", header "On Base" (`mock-wallet-checks.json`) |
+
+**Mocked versus live.** Unit tests use fixtures only: accounting with a lagging RPC, retry until both chains agree,
+giving up as Unavailable, RPC failure, staleness, bridge dust, fee ceilings, owner/public authorisation, wrong chain,
+wallet rejection, `BurnSendFailed` inside a successful receipt (failed-send recovery), a Base retry that fails again,
+already-sent and pending confirmations, replaced transactions, saved operations across reloads and duplicate tabs.
+Live read-only verification (2026-11-21): Ethereum block 26461815: `totalBurnAllocated` 5.4 IMD, all of it
+`burnQueued`, `burnJobCount` 0, `owner()` 0x48E4…6ec9, activated and base-ready; Base block 60268595: receiver
+`totalBurned` 0, `pendingBurn` 0. The site shows 0 burned and 5.4 pending, consistent.
+
+**Not tested** (no real funds, and no live job exists): a real `dispatchBurn`, `retryBurn` or `sendBurnReceipt`
+transaction, the Base switch with a real wallet, and LayerZero delivery timing. Base event scans use public RPCs with
+a bounded request budget, so very old Base history may be labelled partial.
+
+### Better Interface review (six domains) of the new UI
+- Accessibility: every control is a native button/link/input with a visible label; the amount input has a `<label>`
+  and `aria-describedby` note; the review heading takes focus when it opens (`BurnPanel.tsx`, review `useEffect`);
+  outcomes are `role="alert"`, the snapshot is `role="status"`; stale/inconsistent states are said in words, not
+  only colour. Fixed during review: the review box opened off-screen on phones without focus.
+- Layout: the footer was taller than `--strip-h` at 1280/1440 so the zoom control overlapped it (probe measured
+  102px vs 76px). Fixed by measuring the strip (`ResizeObserver` in `BurnFooter`). No overflow at any width.
+- Writing: plain labels ("IMD burned", "Pending burn", "Burn details"); each disabled action says why next to it.
+- Typography: existing scale only; a monospace family for GUIDs was dropped to keep two families (probe passes).
+- Colour: existing tokens; contrast probe passes on measured text.
+- UI: two explicit steps (review, then wallet); costs shown before the wallet; no auto-signing or auto-resend.
+- Limitations: no screen-reader run and no real-wallet run; rendered checks were made in headless Chromium only.
+
+### Publication
+The committed `dist/` is the delivery; the hosting plane publishes it under everlight.identitymd.eth / https://everlight.imd.site/.
+
 ## Current revision (2026-11-20, revision 15): read first
 
 This round fixes the two unresolved transaction-state findings from the final review of job 959f20ae (reviewed commit `59aab81`, which was still the tip of `main` when this round started). Contracts, addresses, ABIs and economics are unchanged: 1 IMD per candle; 30% burn, 60% to earlier paid candles, 5% operations, 5% founder, and 90% burn for the first-ever candle. Sales stay closed: nothing was deployed or activated, and no real-fund transaction was sent.
@@ -129,7 +211,7 @@ Install, preview, rebuild:
 cd web
 npm ci              # install exactly the locked dependencies
 npm run typecheck   # tsc --noEmit
-npm test            # vitest, 165 mocked tests
+npm test            # vitest, 230 mocked tests (revision 16)
 npm run build       # writes the static export to ../dist (relative asset URLs)
 npm run preview     # serve the built export locally
 ```

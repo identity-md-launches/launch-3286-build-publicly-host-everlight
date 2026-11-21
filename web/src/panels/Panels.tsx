@@ -406,12 +406,12 @@ export function TreasuryPanel() {
           <ol className="stages">
             <li><strong>Allocated</strong><span>{amt(e.totalBurnAllocated)}</span><em>Set aside on Ethereum by purchases. Not burned yet.</em></li>
             <li><strong>Queued</strong><span>{amt(e.burnQueued)}</span><em>Waiting for the owner to open a burn job. Not burned yet.</em></li>
-            <li><strong>Reserved in jobs</strong><span>{amt(e.burnReserved)}</span><em>In {e.burnJobCount === undefined ? "an unknown number of" : String(e.burnJobCount)} burn job(s); {amt(e.failedBurnAmount)} of it failed a send and awaits retry.</em></li>
+            <li><strong>Reserved in jobs</strong><span>{amt(e.burnReserved)}</span><em>In burn jobs not yet sent ({e.burnJobCount === undefined ? "job count unavailable" : `${e.burnJobCount} job(s) created in all, a historical count`}). {amt(e.failedBurnAmount)} of it failed a send and awaits retry; that is part of this figure, not extra.</em></li>
             <li><strong>Dispatched to Base</strong><span>{amt(e.burnInTransit)}</span><em>Sent across the bridge, not yet acknowledged.</em></li>
             <li><strong>Burned on Base</strong><span>{amt(b?.totalBurned)}</span><em>Base supply reduced. {b ? `${amt(b.pendingBurn)} received and pending burn.` : "The Base RPC did not answer."}</em></li>
             <li><strong>Confirmed on Ethereum</strong><span>{amt(e.confirmedBurn)}</span><em>Base burn receipts acknowledged by the garden.</em></li>
           </ol>
-          <p className="fine">A purchase does not burn IMD instantly. Burning crosses chains in owner-started jobs, and this site never sends owner transactions.</p>
+          <p className="fine">A purchase does not burn IMD instantly. Burning crosses chains in owner-started jobs. <a href="#/treasury/burn">Open the burn dashboard</a> for every job, its Base delivery and the owner and public burn actions.</p>
         </>
       )}
       <h3>Contracts</h3>

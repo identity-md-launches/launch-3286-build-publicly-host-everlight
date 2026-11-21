@@ -14,6 +14,7 @@ import { settleClaim } from "./lib/receipt";
 import { imd } from "./lib/format";
 import type { Candle } from "./lib/candles";
 import { ignite, newIds } from "./garden/ignite";
+import { BurnFooter, BurnPanel } from "./panels/BurnPanel";
 
 const ROUTES = [
   ["garden", "Garden"],
@@ -22,9 +23,13 @@ const ROUTES = [
   ["treasury", "Treasury"],
   ["light", "Light a candle"],
   ["how", "How it works"],
+  ["burn", "Burn"],
 ] as const;
+/** Shareable hash of each route; the burn dashboard lives under Treasury. */
+const hrefOf = (k: string) => (k === "burn" ? "#/treasury/burn" : `#/${k}`);
 /** Header tabs, in the reference order; Light a candle and How it works live in the side actions. */
 const NAV = [...ROUTES.slice(0, 4), ROUTES[5]];
+const MENU = ROUTES.filter(([k]) => k !== "burn");
 /** At this width the Light your candle form is docked beside the garden, as in the approved design. */
 const DOCK_QUERY = "(min-width: 1180px)";
 /** Contract split of every 1 IMD candle (revised WishGarden, allocationBps 3000/6000/0/500/500). */
@@ -52,7 +57,8 @@ if (FIXTURE !== null) (window as unknown as { __igniteForTest?: (id: number) => 
 const FIXTURE_NOTE = `Test fixture (${FIXTURE ?? 0} simulated candles), transactions disabled.`;
 
 const readRoute = (): Route => {
-  const r = location.hash.replace(/^#\/?/, "") as Route;
+  const h = location.hash.replace(/^#\/?/, "").replace(/\/+$/, "");
+  const r = (h === "treasury/burn" || h === "burn" ? "burn" : h) as Route;
   return ROUTES.some(([k]) => k === r) ? r : "garden";
 };
 
@@ -265,11 +271,11 @@ export default function App() {
           <span className="brand-name">Everlight Garden</span><span className="brand-on"> on IMD</span>
         </a>
         <nav aria-label="Main" className={menu ? "nav open" : "nav"}>
-          {(menu ? ROUTES : NAV).map(([k, label]) => (
+          {(menu ? MENU : NAV).map(([k, label]) => (
             <a
               key={k}
-              href={`#/${k}`}
-              aria-current={route === k ? "page" : undefined}
+              href={hrefOf(k)}
+              aria-current={route === k || (k === "treasury" && route === "burn") ? "page" : undefined}
               // the hash may already be this route (no hashchange): close the menu and reopen the dock here
               onClick={() => { setMenu(false); if (k === "light") setDockHidden(false); }}
             >{label}</a>
@@ -345,6 +351,7 @@ export default function App() {
               <li className="split-first"><strong>90%</strong> burn for the first-ever candle</li>
             </ul>
           </details>
+          <BurnFooter />
           {findBusy !== null && <p className="find-err find-wait" role="status">Loading candle #{findBusy}…</p>}
           {findError && <p id="find-err" className="find-err" role="alert">{findError}</p>}
         </div>
@@ -373,6 +380,7 @@ export default function App() {
               {route === "mine" && <MinePanel candles={cs.candles} onJump={jump} highlight={highlightMine} setHighlight={setHighlightMine} />}
               {route === "rewards" && <RewardsPanel />}
               {route === "treasury" && <TreasuryPanel />}
+              {route === "burn" && <BurnPanel />}
               {route === "how" && <HowPanel />}
               {(route === "mine" || route === "how") && <Register candles={cs.candles} info={cs} onRetry={() => { store.sync(); }} onJump={jump} />}
             </div>

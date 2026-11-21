@@ -466,3 +466,44 @@ textarea:focus-visible, .custom input:focus-visible, .find input:focus-visible {
 .faq details p { margin: 0; padding: 0 var(--space-3) var(--space-3); color: var(--color-text-secondary); }
 .split li.split-first { white-space: normal; }
 .split li.split-first strong { font-size: var(--text-md); }
+
+/* ---------- live burn counters in the footer strip, beside the split ---------- */
+.burn-live { flex: none; order: 4; display: grid; grid-template-columns: auto auto auto; align-items: center; gap: 0 var(--space-3); padding-left: var(--space-4); border-left: 1px solid var(--color-line-soft); }
+.burn-live p { margin: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.burn-k { font-size: var(--text-sm); color: var(--color-text-secondary); white-space: nowrap; }
+.burn-live strong { font-family: var(--font-serif); font-size: var(--text-md); font-weight: 600; color: var(--color-headline); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.burn-refresh { grid-row: 1; grid-column: 3; width: 44px; height: 44px; min-height: 44px; border-color: var(--color-line-soft); color: var(--color-headline); }
+.burn-link { grid-column: 1 / 3; font-size: var(--text-sm); color: var(--color-accent-strong); min-height: 24px; display: inline-flex; align-items: center; }
+.burn-time { grid-column: 3; font-size: var(--text-sm); color: var(--color-text-secondary); white-space: nowrap; justify-self: end; }
+.burn-time.warn { color: var(--color-danger); }
+@media (max-width: 1500px) { .burn-time { display: none; } .burn-time.warn { display: block; grid-column: 1 / -1; justify-self: start; } }
+@media (max-width: 900px) {
+  :root { --strip-h: 120px; }
+  .burn-live { order: 5; flex: 1 1 100%; display: flex; flex-wrap: nowrap; gap: var(--space-3); padding: var(--space-1) 0 0; border-left: 0; border-top: 1px solid var(--color-line-soft); }
+  .burn-live p { flex-direction: row; gap: var(--space-1); align-items: baseline; }
+  .burn-refresh { margin-left: auto; }
+  .burn-link { min-height: 44px; }
+}
+@media (max-width: 420px) { .burn-live { gap: var(--space-2); } .burn-k { white-space: normal; } }
+
+/* ---------- burn dashboard (#/treasury/burn) ---------- */
+.crumbs { font-size: var(--text-sm); color: var(--color-text-secondary); margin-bottom: var(--space-2); }
+.snap .fine { margin-bottom: var(--space-2); }
+.jobs { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.job { background: var(--night-800); border-radius: var(--radius-sm); padding: var(--space-3); border-left: 3px solid var(--color-border-strong); }
+.job-h { display: flex; justify-content: space-between; gap: var(--space-3); font-variant-numeric: tabular-nums; }
+.job-d { display: grid; grid-template-columns: 7.5rem 1fr; gap: var(--space-1) var(--space-3); margin: var(--space-2) 0; font-size: var(--text-sm); }
+.job-d div { display: contents; }
+.job-d dt { color: var(--color-text-secondary); }
+.job-d dd { margin: 0; overflow-wrap: anywhere; }
+.job-a { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.pager { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
+.owner, .review, .saved, .owner-off { display: flex; flex-direction: column; gap: var(--space-2); align-items: flex-start; }
+.owner label { font-weight: 600; }
+.row-in { display: flex; flex-wrap: wrap; gap: var(--space-2); width: 100%; }
+.row-in input { flex: 1 1 10rem; min-width: 0; min-height: 44px; padding: 0 var(--space-3); background: var(--night-900); border: 1px solid var(--color-border); border-radius: var(--radius-sm); color: var(--color-text); font-variant-numeric: tabular-nums; }
+.row-in input:focus-visible { border-color: var(--color-accent); }
+.review { margin-top: var(--space-4); padding: var(--space-3); border: 1px solid var(--color-line); border-radius: var(--radius-sm); }
+.review .summary { width: 100%; }
+.ok-note { color: var(--color-headline); border-left: 3px solid var(--color-live); padding-left: var(--space-2); }
+.mono { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }

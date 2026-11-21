@@ -1,0 +1,375 @@
+{
+ "mocked": true,
+ "note": "Real Chromium, the compiled dist/, mocked JSON-RPC for Ethereum and Base and a labelled mock EIP-6963 wallet. No live chain reads and no transactions.",
+ "ranAt": "2026-11-21T08:26:48.144Z",
+ "passed": 48,
+ "failed": 13,
+ "results": [
+  {
+   "scenario": "5fd8d64b-queue-amount-capped",
+   "name": "connected the labelled mock owner",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "5fd8d64b-queue-amount-capped",
+   "name": "review opened for a typed maximum of 6 IMD",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "5fd8d64b-queue-amount-capped",
+   "name": "review shows job #1, 5.4 IMD and the wallet request queueBurn(5400000000000000000)",
+   "passed": true,
+   "detail": "Review before your wallet\nStep\n1 of 2 · Prepare burn batch (queueBurn)\nNew job\n#1\nAmount reserved\n5.4 IMD (5400000000000000000 units)\nRounded off to bridge precision\n0 units stay unqueued\nUnqueued after this\n0 IMD (0 units)\nWallet request\nqueueBurn(5400000000000000000): at most the amount above\nEstimated gas (max)\n0.00031 ETH · 255590 gas\n\nNothing moves to Base in this step. Sending the batch is step 2. A candle bought before your transaction is mined stays unqueued; it never enlarges this batch.\n\nConfirm in wallet\nCancel"
+  },
+  {
+   "scenario": "5fd8d64b-queue-amount-capped",
+   "name": "three queueBurn simulations, every one with the reviewed 5.4 IMD as its argument",
+   "passed": true,
+   "detail": "sim queueBurn(5400000000000000000), sim queueBurn(5400000000000000000), sim queueBurn(5400000000000000000)"
+  },
+  {
+   "scenario": "5fd8d64b-queue-amount-capped",
+   "name": "exactly one wallet request: queueBurn(5400000000000000000), not the typed 6 IMD",
+   "passed": true,
+   "detail": "[[\"queueBurn\",[\"5400000000000000000\"]]]"
+  },
+  {
+   "scenario": "5fd8d64b-queue-amount-capped",
+   "name": "purchase during the fresh review: owner is told the figures changed",
+   "passed": false,
+   "detail": "You rejected the request in your wallet. Nothing was sent."
+  },
+  {
+   "scenario": "5fd8d64b-queue-amount-capped",
+   "name": "purchase during the fresh review: the new review shows 5.7 IMD",
+   "passed": false,
+   "detail": "Review before your wallet\nStep\n1 of 2 · Prepare burn batch (queueBurn)\nNew job\n#1\nAmount reserved\n5.4 IMD (5400000000000000000 units)\nRounded off to bridge precision\n0 units stay unqueued\nUnqueued after this\n0 IMD (0 units)\nWallet request\nqueueBurn(5400000000000000000): at most the amount above\nEstimated gas (max)\n0.00031 ETH · 255590 gas\n\nNothing moves to Base in this step. Sending the batch is step 2. A candle bought before your transaction is mined stays unqueued; it never enlarges this batch.\n\nConfirm in wallet\nCancel"
+  },
+  {
+   "scenario": "5fd8d64b-queue-amount-capped",
+   "name": "purchase during the fresh review: zero wallet requests",
+   "passed": false,
+   "detail": "[[\"queueBurn\",[\"5400000000000000000\"]]]"
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "4900 without a hash is reported as uncertain",
+   "passed": true,
+   "detail": "The wallet did not return a transaction hash (The Provider is disconnected from all chains.). It may still have sent one, so this operation stays saved and locked below. Check again searches your account's transactions for it, or paste its hash from your wallet's activity."
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "the attempt is saved with its exact request, preflight nonce and block",
+   "passed": true,
+   "detail": "[{\"id\":\"cf571e6d-a395-466d-96af-717512950059\",\"kind\":\"queue\",\"chainId\":1,\"account\":\"0x00000000000000000000000000000000000000A1\",\"target\":\"1\",\"value\":\"0\",\"stage\":\"signing\",\"createdAt\":1795249069839,\"req\":{\"to\":\"0x33a514c5e2028f1affd70b82f170e8193df030a5\",\"data\":\"0xa9b657570000000000000000000000000000000000000000000000000de0b6b3a7640000\",\"value\":\"0\"},\"nonce\":7,\"block\":\"26500008\",\"expect\":\"1000000000000000000\"}]"
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "after reload: the record is still shown",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "after reload: Check again says it may still be pending (nonce 7 not mined)",
+   "passed": true,
+   "detail": "Saved operations\nPrepare burn batch 1 IMD · 11/21/2026, 8:17:49 AM · the wallet was asked but no hash came back; the outcome is uncertain and this operation stays locked. Check again Nothing from this account has been mined at or after nonce 7 yet, so the request may still be open in your wallet or waiting to be mined.\nTransaction hash from your wallet's activity\nUse this hash\n\nNothing here is ever sent again automatically."
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "no forget or release control while it is unresolved",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "Prepare burn batch stays disabled while it is saved",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "a hash input is offered",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "a hash with different calldata is refused",
+   "passed": true,
+   "detail": "Saved operations\nPrepare burn batch 1 IMD · 11/21/2026, 8:17:49 AM · the wallet was asked but no hash came back; the outcome is uncertain and this operation stays locked. Check again Nothing from this account has been mined at or after nonce 7 yet, so the request may still be open in your wallet or waiting to be mined.\nTransaction hash from your wallet's activity\nUse this hash\n\nThat transaction carries a different call or different arguments.\n\nNothing here is ever sent again automatically."
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "an unknown hash is refused",
+   "passed": true,
+   "detail": "Saved operations\nPrepare burn batch 1 IMD · 11/21/2026, 8:17:49 AM · the wallet was asked but no hash came back; the outcome is uncertain and this operation stays locked. Check again Nothing from this account has been mined at or after nonce 7 yet, so the request may still be open in your wallet or waiting to be mined.\nTransaction hash from your wallet's activity\nUse this hash\n\nThat hash was not found on Ethereum.\n\nNothing here is ever sent again automatically."
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "the matching hash is accepted with its verified nonce",
+   "passed": true,
+   "detail": "[{\"id\":\"cf571e6d-a395-466d-96af-717512950059\",\"kind\":\"queue\",\"chainId\":1,\"account\":\"0x00000000000000000000000000000000000000A1\",\"target\":\"1\",\"value\":\"0\",\"stage\":\"sent\",\"createdAt\":1795249069839,\"req\":{\"to\":\"0x33a514c5e2028f1affd70b82f170e8193df030a5\",\"data\":\"0xa9b657570000000000000000000000000000000000000000000000000de0b6b3a7640000\",\"value\":\"0\"},\"nonce\":7,\"block\":\"26500008\",\"expect\":\"1000000000000000000\",\"hash\":\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"from\":\"0x00000000000000000000000000000000000000a1\",\"nonceChecked\":true}]"
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "once mined: the record settles from its BurnQueued event",
+   "passed": true,
+   "detail": "Burn job #1 prepared with 1000000000000000000 token units. View transaction"
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "one wallet request in all",
+   "passed": true,
+   "detail": "[\"queueBurn\"]"
+  },
+  {
+   "scenario": "736c741b-hashless-found-by-nonce",
+   "name": "after reload: the mined transaction carrying the saved request is found by nonce and settles the record",
+   "passed": true,
+   "detail": "Burn job #1 prepared with 1000000000000000000 token units. View transaction"
+  },
+  {
+   "scenario": "736c741b-hashless-found-by-nonce",
+   "name": "one wallet request in all",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-hashless-not-found-release",
+   "name": "nonce used by another transaction and nothing pending: release is offered with that evidence",
+   "passed": true,
+   "detail": "Saved operations\nPrepare burn batch 1 IMD · 11/21/2026, 8:19:26 AM · the wallet was asked but no hash came back; the outcome is uncertain and this operation stays locked. Check again Nonce 7 was used by other transactions and nothing is pending, so this request was not mined. You can release it.\nTransaction hash from your wallet's activity\nUse this hash\nRelease this record\n\nNothing here is ever sent again automatically."
+  },
+  {
+   "scenario": "736c741b-hashless-not-found-release",
+   "name": "release clears only that record",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-hashless-not-found-release",
+   "name": "Prepare burn batch is available again",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-hashless-not-found-release",
+   "name": "one wallet request in all",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-replacement-after-reload",
+   "name": "the sent transaction's sender and nonce are read and saved",
+   "passed": true,
+   "detail": "[{\"id\":\"60ed79f8-21dc-4f26-8391-f8c40f816dbd\",\"kind\":\"queue\",\"chainId\":1,\"account\":\"0x00000000000000000000000000000000000000A1\",\"target\":\"1\",\"value\":\"0\",\"stage\":\"sent\",\"createdAt\":1795249190487,\"req\":{\"to\":\"0x33a514c5e2028f1affd70b82f170e8193df030a5\",\"data\":\"0xa9b657570000000000000000000000000000000000000000000000000de0b6b3a7640000\",\"value\":\"0\"},\"nonce\":7,\"block\":\"26500018\",\"expect\":\"1000000000000000000\",\"hash\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"from\":\"0x00000000000000000000000000000000000000a1\",\"nonceChecked\":true}]"
+  },
+  {
+   "scenario": "736c741b-replacement-after-reload",
+   "name": "after reopening: the mined replacement settles the record, reported as a replacement with job #1",
+   "passed": true,
+   "detail": "A replacement transaction with the same nonce was mined, so the original can no longer be. Burn job #1 prepared with 1000000000000000000 token units. View transaction"
+  },
+  {
+   "scenario": "736c741b-replacement-after-reload",
+   "name": "the result links the replacement transaction",
+   "passed": true,
+   "detail": "https://etherscan.io/tx/0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  {
+   "scenario": "736c741b-replacement-after-reload",
+   "name": "Prepare burn batch is available again",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-replacement-after-reload",
+   "name": "one wallet request in all",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "901×844: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "901×844: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 901 strip 129px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "960×800: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "960×800: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 960 strip 129px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1024×768: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1024×768: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 1024 strip 129px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1100×800: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1100×800: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 1100 strip 129px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1150×800: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1150×800: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 1150 strip 129px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1151×800: no overlap between search, allocation, counters, links and map tools",
+   "passed": false,
+   "detail": "tool Minimap: click to move the vie × strip"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1151×800: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 1151 strip 186px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1200×800: no overlap between search, allocation, counters, links and map tools",
+   "passed": false,
+   "detail": "tool Minimap: click to move the vie × strip"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1200×800: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 1200 strip 166px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1279×800: no overlap between search, allocation, counters, links and map tools",
+   "passed": false,
+   "detail": "tool Minimap: click to move the vie × strip"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1279×800: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 1279 strip 127px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1280×800: no overlap between search, allocation, counters, links and map tools",
+   "passed": false,
+   "detail": "tool Minimap: click to move the vie × strip"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1280×800: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 1280 strip 127px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1440×900: no overlap between search, allocation, counters, links and map tools",
+   "passed": false,
+   "detail": "tool Minimap: click to move the vie × strip"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1440×900: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 1440 strip 102px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "390×844: no overlap between search, allocation, counters, links and map tools",
+   "passed": false,
+   "detail": " × Refresh burn totals. Updated 8;  × Burn details;  × Refresh burn totals. Updated 8;  × Burn details;  × Refresh burn totals. Updated 8;  × Burn details;  × Updated 8:25:12 AM · Ethereum ;  × Ethereum block;  × Base block"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "390×844: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": false,
+   "detail": " 243–478;  243–395 scrollWidth 390 strip 136px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "320×700: no overlap between search, allocation, counters, links and map tools",
+   "passed": false,
+   "detail": " × Pending burn\n5.4;  × Pending burn\n5.4;  × Refresh burn totals. Updated 8;  × Burn details;  × Refresh burn totals. Updated 8;  × Burn details;  × Refresh burn totals. Updated 8;  × Burn details;  × Updated 8:25:24 AM · Ethereum ;  × Ethereum block;  × Updated 8:25:24 AM · Ethereum "
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "320×700: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": false,
+   "detail": " 173–408;  173–325 scrollWidth 320 strip 175px"
+  },
+  {
+   "scenario": "de013622-history-refresh",
+   "name": "reserved job #1 shows its BurnQueued link",
+   "passed": true,
+   "detail": "Job #1\n1 IMD\nEthereum\nReserved, not sent · 0 send attempts\nBase\nNot sent\nGUID\nnone yet\nCheck\nNot sent yet: no GUID.\nTransactions\nBurnQueued 0x5555…5555"
+  },
+  {
+   "scenario": "de013622-history-refresh",
+   "name": "after dashboard Refresh: the row shows the new state and its BurnDispatched link",
+   "passed": true,
+   "detail": "Job #1\n1 IMD\nEthereum\nDispatched, unacknowledged · 1 send attempt\nBase\nNot delivered to Base\nGUID\n0xabababababababababababababababababababababababababababababababab\nCheck\nIn flight: not delivered to Base yet.\nTransactions\nBurnQueued 0x5555…5555 BurnDispatched 0x6666…6666"
+  },
+  {
+   "scenario": "de013622-history-refresh",
+   "name": "the history query reached the new snapshot block",
+   "passed": true,
+   "detail": "max toBlock 26500002; eth getLogs 26450001-26500000, eth getLogs 26448736-26450000, eth getLogs 26500001-26500002"
+  },
+  {
+   "scenario": "de013622-history-refresh",
+   "name": "GUID links to LayerZero Scan and BurnDispatched to Etherscan for the dispatch transaction",
+   "passed": true,
+   "detail": "https://layerzeroscan.com/tx/0x6666666666666666666666666666666666666666666666666666666666666666 https://etherscan.io/tx/0x5555555555555555555555555555555555555555555555555555555555555555 https://etherscan.io/tx/0x6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  {
+   "scenario": "de013622-history-refresh",
+   "name": "the incremental scan covered only the new blocks",
+   "passed": true,
+   "detail": "eth getLogs 26450001-26500000, eth getLogs 26448736-26450000, eth getLogs 26500001-26500002"
+  },
+  {
+   "scenario": "de013622-history-refresh",
+   "name": "failed incremental scan: cached links kept and labelled current through block 26500002",
+   "passed": false,
+   "detail": ""
+  }
+ ]
+}

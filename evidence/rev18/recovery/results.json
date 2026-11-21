@@ -1,0 +1,147 @@
+{
+ "mocked": true,
+ "note": "Real Chromium, the compiled dist/, mocked JSON-RPC for Ethereum and Base and a labelled mock EIP-6963 wallet. No live chain reads and no transactions.",
+ "ranAt": "2026-11-21T08:42:18.319Z",
+ "passed": 23,
+ "failed": 0,
+ "results": [
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "4900 without a hash is reported as uncertain",
+   "passed": true,
+   "detail": "The wallet did not return a transaction hash (The Provider is disconnected from all chains.). It may still have sent one, so this operation stays saved and locked below. Check again searches your account's transactions for it, or paste its hash from your wallet's activity."
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "the attempt is saved with its exact request, preflight nonce and block",
+   "passed": true,
+   "detail": "[{\"id\":\"2d98fd42-7bab-4914-901f-7ba5ddf980f8\",\"kind\":\"queue\",\"chainId\":1,\"account\":\"0x00000000000000000000000000000000000000A1\",\"target\":\"1\",\"value\":\"0\",\"stage\":\"signing\",\"createdAt\":1795250411524,\"req\":{\"to\":\"0x33a514c5e2028f1affd70b82f170e8193df030a5\",\"data\":\"0xa9b657570000000000000000000000000000000000000000000000000de0b6b3a7640000\",\"value\":\"0\"},\"nonce\":7,\"block\":\"26500001\",\"expect\":\"1000000000000000000\"}]"
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "after reload: the record is still shown",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "after reload: Check again says it may still be pending (nonce 7 not mined)",
+   "passed": true,
+   "detail": "Saved operations\nPrepare burn batch 1 IMD · 11/21/2026, 8:40:11 AM · the wallet was asked but no hash came back; the outcome is uncertain and this operation stays locked. Check again Nothing from this account has been mined at or after nonce 7 yet, so the request may still be open in your wallet or waiting to be mined.\nTransaction hash from your wallet's activity\nUse this hash\n\nNothing here is ever sent again automatically."
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "no forget or release control while it is unresolved",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "Prepare burn batch stays disabled while it is saved",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "a hash input is offered",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "a hash with different calldata is refused",
+   "passed": true,
+   "detail": "Saved operations\nPrepare burn batch 1 IMD · 11/21/2026, 8:40:11 AM · the wallet was asked but no hash came back; the outcome is uncertain and this operation stays locked. Check again Nothing from this account has been mined at or after nonce 7 yet, so the request may still be open in your wallet or waiting to be mined.\nTransaction hash from your wallet's activity\nUse this hash\n\nThat transaction carries a different call or different arguments.\n\nNothing here is ever sent again automatically."
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "an unknown hash is refused",
+   "passed": true,
+   "detail": "Saved operations\nPrepare burn batch 1 IMD · 11/21/2026, 8:40:11 AM · the wallet was asked but no hash came back; the outcome is uncertain and this operation stays locked. Check again Nothing from this account has been mined at or after nonce 7 yet, so the request may still be open in your wallet or waiting to be mined.\nTransaction hash from your wallet's activity\nUse this hash\n\nThat hash was not found on Ethereum.\n\nNothing here is ever sent again automatically."
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "the matching hash is accepted with its verified nonce",
+   "passed": true,
+   "detail": "[{\"id\":\"2d98fd42-7bab-4914-901f-7ba5ddf980f8\",\"kind\":\"queue\",\"chainId\":1,\"account\":\"0x00000000000000000000000000000000000000A1\",\"target\":\"1\",\"value\":\"0\",\"stage\":\"sent\",\"createdAt\":1795250411524,\"req\":{\"to\":\"0x33a514c5e2028f1affd70b82f170e8193df030a5\",\"data\":\"0xa9b657570000000000000000000000000000000000000000000000000de0b6b3a7640000\",\"value\":\"0\"},\"nonce\":7,\"block\":\"26500001\",\"expect\":\"1000000000000000000\",\"hash\":\"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"from\":\"0x00000000000000000000000000000000000000a1\",\"nonceChecked\":true}]"
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "once mined: the record settles from its BurnQueued event",
+   "passed": true,
+   "detail": "Burn job #1 prepared with 1000000000000000000 token units. View transaction"
+  },
+  {
+   "scenario": "736c741b-hashless-pasted-hash",
+   "name": "one wallet request in all",
+   "passed": true,
+   "detail": "[\"queueBurn\"]"
+  },
+  {
+   "scenario": "736c741b-hashless-found-by-nonce",
+   "name": "after reload: the mined transaction carrying the saved request is found by nonce and settles the record",
+   "passed": true,
+   "detail": "Burn job #1 prepared with 1000000000000000000 token units. View transaction"
+  },
+  {
+   "scenario": "736c741b-hashless-found-by-nonce",
+   "name": "one wallet request in all",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-hashless-not-found-release",
+   "name": "nonce used by another transaction and nothing pending: release is offered with that evidence",
+   "passed": true,
+   "detail": "Saved operations\nPrepare burn batch 1 IMD · 11/21/2026, 8:41:35 AM · the wallet was asked but no hash came back; the outcome is uncertain and this operation stays locked. Check again Nonce 7 was used by other transactions and nothing is pending, so this request was not mined. You can release it.\nTransaction hash from your wallet's activity\nUse this hash\nRelease this record\n\nNothing here is ever sent again automatically."
+  },
+  {
+   "scenario": "736c741b-hashless-not-found-release",
+   "name": "release clears only that record",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-hashless-not-found-release",
+   "name": "Prepare burn batch is available again",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-hashless-not-found-release",
+   "name": "one wallet request in all",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-replacement-after-reload",
+   "name": "the sent transaction's sender and nonce are read and saved",
+   "passed": true,
+   "detail": "[{\"id\":\"6cb54651-874a-4749-9aef-45ff8a2ac21c\",\"kind\":\"queue\",\"chainId\":1,\"account\":\"0x00000000000000000000000000000000000000A1\",\"target\":\"1\",\"value\":\"0\",\"stage\":\"sent\",\"createdAt\":1795250518137,\"req\":{\"to\":\"0x33a514c5e2028f1affd70b82f170e8193df030a5\",\"data\":\"0xa9b657570000000000000000000000000000000000000000000000000de0b6b3a7640000\",\"value\":\"0\"},\"nonce\":7,\"block\":\"26500009\",\"expect\":\"1000000000000000000\",\"hash\":\"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"from\":\"0x00000000000000000000000000000000000000a1\",\"nonceChecked\":true}]"
+  },
+  {
+   "scenario": "736c741b-replacement-after-reload",
+   "name": "after reopening: the mined replacement settles the record, reported as a replacement with job #1",
+   "passed": true,
+   "detail": "A replacement transaction with the same nonce was mined, so the original can no longer be. Burn job #1 prepared with 1000000000000000000 token units. View transaction"
+  },
+  {
+   "scenario": "736c741b-replacement-after-reload",
+   "name": "the result links the replacement transaction",
+   "passed": true,
+   "detail": "https://etherscan.io/tx/0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  {
+   "scenario": "736c741b-replacement-after-reload",
+   "name": "Prepare burn batch is available again",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "736c741b-replacement-after-reload",
+   "name": "one wallet request in all",
+   "passed": true,
+   "detail": ""
+  }
+ ]
+}

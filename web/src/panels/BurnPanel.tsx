@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useAccount, useSwitchChain } from "wagmi";
 import { getAccount, simulateContract, writeContract } from "wagmi/actions";
-import type { Hash } from "viem";
+import { encodeFunctionData, type Hash } from "viem";
 import { wishGardenAbi } from "../abi/WishGarden";
 import { burnReceiverAbi } from "../abi/EverlightBurnReceiver";
 import { BASESCAN, BASE_RECEIVER, ETHERSCAN, GARDEN, LZSCAN, baseClient, config, ethClient } from "../config";
@@ -11,11 +11,12 @@ import { useBurn, useBurnOps, type BurnView } from "../burnHooks";
 import { eth as ethAmt, imd, short } from "../lib/format";
 import { ConnectButton } from "../components/ConnectSheet";
 import {
-  DISPATCH_MIN_GAS, RETRY_MIN_GAS, ZERO32, addOp, authenticateDelivery, compactImd, crossCheck, holdOp, opHeld, settleHash, deliveryLabel, dispatchEligibility, feeProblem, jobLabel, jobPage,
+  DISPATCH_MIN_GAS, RETRY_MIN_GAS, ZERO32, addOp, updateOp, authenticateDelivery, compactImd, crossCheck, holdOp, opHeld, settleHash, deliveryLabel, dispatchEligibility, feeProblem, jobLabel, jobPage,
   outcomeOf, parseImd, planQueue, queueEligibility, receiptEligibility, removeOp, retryEligibility,
   type BurnOp, type Delivery, type Job, type OpKind, type Outcome,
 } from "../lib/burn";
-import { readBaseSnap, readDeliveries, readEthSnap, readHistory, readJobs, readReceiptSent, type TxRef } from "../lib/burnio";
+import { extendHistory, opClient, readBaseSnap, readDeliveries, readEthSnap, readHistory, readJobs, readReceiptSent, type JobHistory, type TxRef } from "../lib/burnio";
+import { locateOp, requestOf, verifyPasted, type OpState } from "../lib/burnrecover";
 
 /** Dashboard amount: 6 decimals, plus the exact token units whenever 6 decimals would hide part of it. */
 const amt = (v: bigint | undefined) => (v === undefined ? "Unavailable" : `${imd(v, 6)} IMD${imd(v, 18) !== imd(v, 6) ? ` (${v} units)` : ""}`);
@@ -103,13 +104,23 @@ export function BurnPanel() {
       return { js, dv };
     },
   });
+  // explorer links follow the snapshot: each new pair of snapshot blocks scans only the blocks after the cached
+  // coverage and merges what it finds, so a job's state and its links come from the same refresh
+  const histRef = useRef<JobHistory | null>(null);
   const hist = useQuery({
-    queryKey: ["burn-history", count, FIXTURE],
+    queryKey: ["burn-history", e?.block.toString(), bs?.block.toString(), FIXTURE],
     enabled: !!e && !!bs && count > 0 && FIXTURE === null,
     retry: 0,
-    staleTime: 5 * 60_000,
-    queryFn: () => readHistory(ethClient as any, baseClient as any, e!.block, bs!.block),
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const prev = histRef.current;
+      const h = prev ? await extendHistory(ethClient as any, baseClient as any, prev, e!.block, bs!.block) : await readHistory(ethClient as any, baseClient as any, e!.block, bs!.block);
+      histRef.current = h;
+      return h;
+    },
   });
+  const [notes, setNotes] = useState<Record<string, OpState>>({});
+  const following = useRef(new Set<string>());
 
   const isOwner = !!address && !!e && address.toLowerCase() === e.owner.toLowerCase();
   const pendingFor = (kind: OpKind, target: string) => ops.find((o) => o.kind === kind && o.target.toLowerCase() === target.toLowerCase());
@@ -129,20 +140,23 @@ export function BurnPanel() {
       const why = queueEligibility(w, es, max, ethBusy);
       if (why) throw new Error(why);
       const p = planQueue(es.burnQueued, max!);
-      const sim = await simulateContract(config, { address: GARDEN, abi: wishGardenAbi, functionName: "queueBurn", args: [max!], account: w.account!, chainId: 1 });
-      const est = await ethClient.estimateContractGas({ address: GARDEN, abi: wishGardenAbi, functionName: "queueBurn", args: [max!], account: w.account! });
+      // the wallet is asked for queueBurn(reviewed amount), not the typed maximum: a candle bought between this
+      // review and the transaction cannot enlarge the batch (the contract reserves min(argument, burnQueued))
+      const sim = await simulateContract(config, { address: GARDEN, abi: wishGardenAbi, functionName: "queueBurn", args: [p.amount], account: w.account!, chainId: 1 });
+      const est = await ethClient.estimateContractGas({ address: GARDEN, abi: wishGardenAbi, functionName: "queueBurn", args: [p.amount], account: w.account! });
       const gas = (est * 13n) / 10n, cost = await fees(ethClient, gas);
       return {
-        kind, target, chainId: 1, account: w.account!, key: `queue|${max}|${sim.result}|${p.amount}|${p.dust}|${p.remaining}`, value: 0n, gas, args: [max!],
+        kind, target, chainId: 1, account: w.account!, key: `queue|${max}|${sim.result}|${p.amount}|${p.dust}|${p.remaining}`, value: 0n, gas, args: [p.amount],
         lines: [
           ["Step", "1 of 2 · Prepare burn batch (queueBurn)"],
           ["New job", `#${sim.result}`],
           ["Amount reserved", `${imd(p.amount, 6)} IMD (${p.amount} units)`],
           ["Rounded off to bridge precision", `${p.dust} units stay unqueued`],
           ["Unqueued after this", `${imd(p.remaining, 6)} IMD (${p.remaining} units)`],
+          ["Wallet request", `queueBurn(${p.amount}): at most the amount above`],
           ["Estimated gas (max)", `${ethAmt(cost)} ETH · ${gas} gas`],
         ],
-        note: "Nothing moves to Base in this step. Sending the batch is step 2.",
+        note: "Nothing moves to Base in this step. Sending the batch is step 2. A candle bought before your transaction is mined stays unqueued; it never enlarges this batch.",
       };
     }
     if (kind === "dispatch") {
@@ -227,7 +241,16 @@ export function BurnPanel() {
       // dispatchBurn returns false when it catches a failed bridge send: that is not a success, so the wallet is not asked
       if (review.kind === "dispatch" && simResult !== true) throw new Error("The final simulation shows the bridge send failing inside the contract (it would be marked Failed and refunded). Nothing was sent; the job stays retryable.");
       if (review.kind === "queue" && String(simResult) !== review.key.split("|")[2]) { setReview(fresh); throw new Error("The next job number changed since your review. Check the new review and confirm again. Nothing was sent."); }
-      op = { id: crypto.randomUUID?.() ?? String(Date.now()), kind: review.kind, chainId: review.chainId, account: a.address!, target: review.target, value: String(fresh.value), stage: "signing", createdAt: Date.now() };
+      if (review.kind === "queue" && String(fresh.args[0]) !== String(review.args[0])) { setReview(fresh); throw new Error("The amount changed since your review. Check the new review and confirm again. Nothing was sent."); }
+      const chainClient: any = review.chainId === 1 ? ethClient : baseClient;
+      const data = encodeFunctionData({ abi, functionName, args: fresh.args } as any);
+      let nonce: number, block: bigint;
+      try { [nonce, block] = await Promise.all([chainClient.getTransactionCount({ address: a.address!, blockTag: "pending" }), chainClient.getBlockNumber()]); }
+      catch { throw new Error("Your account's nonce and the current block could not be read. Nothing was sent; try again."); }
+      op = {
+        id: crypto.randomUUID?.() ?? String(Date.now()), kind: review.kind, chainId: review.chainId, account: a.address!, target: review.target, value: String(fresh.value), stage: "signing", createdAt: Date.now(),
+        req: { to: address, data, value: String(fresh.value) }, nonce, block: String(block), expect: review.kind === "queue" ? String(fresh.args[0]) : undefined,
+      };
       if (!(await addOp(op))) { op = null; throw new Error("This operation is already pending in this or another tab."); }
       syncOps();
       // keep this operation locked across tabs while the wallet request is open, so no tab can forget it meanwhile
@@ -238,7 +261,8 @@ export function BurnPanel() {
         hash = await pending;
       } catch (x) {
         if (isRejection(x)) { await removeOp(op.id); syncOps(); op = null; throw new Error("You rejected the request in your wallet. Nothing was sent."); }
-        throw new Error(`The wallet did not return a transaction hash (${msg(x)}). It may still have sent one: check your wallet's activity before trying again. The operation stays saved below.`);
+        follow(op, true); // read-only: is it already pending or mined under this account's nonce?
+        throw new Error(`The wallet did not return a transaction hash (${msg(x)}). It may still have sent one, so this operation stays saved and locked below. Check again searches your account's transactions for it, or paste its hash from your wallet's activity.`);
       }
       // a returned hash is always kept, even if the record was forgotten meanwhile
       const sent = await settleHash(op, hash); syncOps();
@@ -250,23 +274,61 @@ export function BurnPanel() {
   };
 
   /**
-   * Follow a sent operation to its mined receipt (replacements included) and judge it by its events. viem's public
-   * client returns a reverted receipt (wagmi's action throws on one), so a mined revert is reported and unlocks retry.
+   * Follow a saved operation to the mined transaction that settles it, judged by its events: its own receipt, or the
+   * receipt of the transaction that used the same sender and nonce (a replacement). The sender and nonce are read
+   * from the sent transaction as soon as an RPC returns it and saved, so a replacement is still found after a reload
+   * when the old hash has been dropped. An operation without a hash is resolved once from the sender's nonces and
+   * the exact saved request. Read-only: nothing is ever sent again.
    */
-  async function follow(op: BurnOp) {
-    let replaced = "";
-    const client: any = op.chainId === 1 ? ethClient : baseClient;
-    const rec = await client.waitForTransactionReceipt({ hash: op.hash!, timeout: 15 * 60_000, onReplaced: (x: { reason: string }) => { replaced = x.reason; } }).catch(() => null);
-    if (!rec) { setResult({ ok: false, text: "No receipt yet. The operation stays saved; check again later.", href: `${op.chainId === 1 ? ETHERSCAN : BASESCAN}/tx/${op.hash}` }); return; }
-    const out: Outcome = outcomeOf(op.kind, op.target, rec as any, GARDEN, BASE_RECEIVER);
-    await removeOp(op.id); syncOps();
-    setResult({ ok: out.ok, text: `${replaced ? `Your wallet ${replaced} the transaction. ` : ""}${out.text}`, href: `${op.chainId === 1 ? ETHERSCAN : BASESCAN}/tx/${rec.transactionHash}` });
-    b.refresh(); jobs.refetch();
+  async function follow(op: BurnOp, once = false) {
+    if (following.current.has(op.id)) return;
+    following.current.add(op.id);
+    const c = opClient((op.chainId === 1 ? ethClient : baseClient) as any);
+    const req = requestOf(op, GARDEN, BASE_RECEIVER);
+    const scan = op.chainId === 1 ? ETHERSCAN : BASESCAN;
+    const deadline = Date.now() + 15 * 60_000;
+    let cur = op;
+    try {
+      for (;;) {
+        const st: OpState = await locateOp(c, cur, req).catch((x) => ({ kind: "unknown", reason: `A read failed (${msg(x)}).` }));
+        if (st.kind === "mined") {
+          const out: Outcome = outcomeOf(cur.kind, cur.target, st.receipt as any, GARDEN, BASE_RECEIVER);
+          await removeOp(cur.id); syncOps();
+          setNotes((n) => { const m = { ...n }; delete m[cur.id]; return m; });
+          const diff = out.ok && cur.kind === "queue" && cur.expect && out.amount !== undefined && String(out.amount) !== cur.expect ? ` Your review showed ${cur.expect} units.` : "";
+          setResult({ ok: out.ok, text: `${st.replaced ? "A replacement transaction with the same nonce was mined, so the original can no longer be. " : ""}${out.text}${diff}`, href: `${scan}/tx/${st.hash}` });
+          b.refresh(); jobs.refetch();
+          return;
+        }
+        if (st.kind === "pending" && st.seen && cur.hash) {
+          cur = { ...cur, from: st.seen.from, nonce: st.seen.nonce, nonceChecked: true };
+          await updateOp(cur.id, { from: st.seen.from, nonce: st.seen.nonce, nonceChecked: true }); syncOps();
+        }
+        setNotes((n) => ({ ...n, [cur.id]: st }));
+        if (!cur.hash) return;
+        if (once || Date.now() > deadline) {
+          setResult({ ok: false, text: `No receipt yet${st.kind === "unknown" ? `: ${st.reason}` : "."} The operation stays saved; check again later.`, href: `${scan}/tx/${cur.hash}` });
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 4000));
+      }
+    } finally { following.current.delete(op.id); }
   }
 
-  // reload recovery: follow saved hashes (never re-send); operations without a hash are shown as uncertain
+  /** A hash the visitor pasted: accepted only when it carries exactly the saved request, then followed. */
+  async function acceptPasted(o: BurnOp, raw: string): Promise<string | null> {
+    const v = await verifyPasted(opClient((o.chainId === 1 ? ethClient : baseClient) as any), o, requestOf(o, GARDEN, BASE_RECEIVER), raw);
+    if (!v.ok) return v.reason;
+    const sent = await settleHash(o, v.hash);
+    await updateOp(o.id, { from: v.from, nonce: v.nonce, nonceChecked: true }); syncOps();
+    follow({ ...sent, from: v.from, nonce: v.nonce, nonceChecked: true });
+    return null;
+  }
+
+  // reload recovery: follow saved hashes and resolve hashless attempts once (read-only, never re-sent). A tab whose
+  // wallet request is still open holds the operation's lock and settles it itself.
   useEffect(() => {
-    ops.filter((o) => o.stage === "sent" && o.hash).forEach((o) => { follow(o); });
+    ops.forEach(async (o) => { if (o.hash) follow(o); else if (!(await opHeld(o.id))) follow(o); });
   }, []);
 
   const wrong = (want: 1 | 8453) => address && chainId !== want && (
@@ -320,7 +382,7 @@ export function BurnPanel() {
           <button className="btn" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>Older</button>
         </nav>
       )}
-      {hist.data && !hist.data.complete && <p className="stale-note">{hist.data.note}</p>}
+      {hist.data?.note && <p className="stale-note">{hist.data.note}</p>}
       {hist.isError && <p className="stale-note">Transaction links are unavailable (event history could not be read). Job states are unaffected.</p>}
 
       <h3>Owner actions (Ethereum)</h3>
@@ -354,11 +416,13 @@ export function BurnPanel() {
         </div>
       )}
       {result && <p className={result.ok ? "ok-note" : "bad"} role="alert">{result.text} {result.href && <a href={result.href} target="_blank" rel="noreferrer">View transaction</a>}</p>}
-      <SavedOps ops={ops} onForget={async (id) => {
-        // a tab still waiting on the wallet for this operation holds its lock: refuse, so its hash cannot be lost
-        if (busy === "send" || (await opHeld(id))) { setResult({ ok: false, text: "A tab is still waiting on your wallet for this operation. Finish or reject it in the wallet first." }); return; }
-        await removeOp(id); syncOps();
-      }} onCheck={(o) => { if (o.hash) follow(o); else { b.refresh(); jobs.refetch(); } }} />
+      <SavedOps ops={ops} notes={notes} onPaste={acceptPasted} onRelease={async (o) => {
+        // released only with evidence tied to this attempt (its nonces resolved, nothing pending) or, for a record an
+        // earlier version saved without its nonce, by the visitor; never while a tab is still waiting on the wallet
+        if (busy === "send" || (await opHeld(o.id))) { setResult({ ok: false, text: "A tab is still waiting on your wallet for this operation. Finish or reject it in the wallet first." }); return; }
+        if (o.nonce !== undefined && notes[o.id]?.kind !== "not-found") { setResult({ ok: false, text: "This attempt is not resolved yet, so it stays saved." }); return; }
+        await removeOp(o.id); syncOps();
+      }} onCheck={(o) => { b.refresh(); jobs.refetch(); follow(o, true); }} />
 
       <h3>Public actions (Base)</h3>
       <p className="fine">Base normally burns a delivery automatically when it arrives. If that attempt failed, anyone can retry it; after a burn, anyone can send the confirmation back to Ethereum. The caller pays gas (and the message fee for a confirmation) and receives no tokens or reward. The receiver's internal burn function only runs from the receiver itself, so this site never offers it. These buttons appear on the matching job above.</p>
@@ -466,7 +530,18 @@ function JobRow({ j, side, hist, start, busy, isOwner, chainId, address, pending
   );
 }
 
-function SavedOps({ ops, onForget, onCheck }: { ops: BurnOp[]; onForget: (id: string) => void; onCheck: (o: BurnOp) => void }) {
+function opNote(o: BurnOp, st?: OpState): string {
+  if (o.hash) return "";
+  if (!st) return "Checking your account's transactions…";
+  if (st.kind === "pending") return `Nothing from this account has been mined at or after nonce ${o.nonce} yet, so the request may still be open in your wallet or waiting to be mined.`;
+  if (st.kind === "not-found") return `Nonce${st.checked === 1 ? "" : "s"} ${o.nonce}${st.checked > 1 ? `–${o.nonce! + st.checked - 1}` : ""} ${st.checked === 1 ? "was used by another transaction" : "were used by other transactions"} and nothing is pending, so this request was not mined. You can release it.`;
+  if (st.kind === "unknown") return st.reason;
+  return "";
+}
+
+function SavedOps({ ops, notes, onPaste, onRelease, onCheck }: {
+  ops: BurnOp[]; notes: Record<string, OpState>; onPaste: (o: BurnOp, raw: string) => Promise<string | null>; onRelease: (o: BurnOp) => void; onCheck: (o: BurnOp) => void;
+}) {
   if (!ops.length) return null;
   const name = { queue: "Prepare burn batch", dispatch: "Send batch", retry: "Retry burn", receipt: "Burn confirmation" };
   return (
@@ -475,10 +550,14 @@ function SavedOps({ ops, onForget, onCheck }: { ops: BurnOp[]; onForget: (id: st
       <ul className="bullets">
         {ops.map((o) => (
           <li key={o.id}>
-            {name[o.kind]} {o.kind === "queue" ? "" : o.kind === "dispatch" ? `#${o.target}` : short(o.target)} · {new Date(o.createdAt).toLocaleString("en-US")} ·{" "}
-            {o.hash ? <>sent {txLink(o.hash, o.chainId === 1 ? ETHERSCAN : BASESCAN)}, waiting for its receipt</> : "the wallet was asked but no hash came back; the outcome is uncertain. Check your wallet's activity."}{" "}
+            {name[o.kind]} {o.kind === "queue" ? (o.expect ? `${imd(BigInt(o.expect), 6)} IMD` : "") : o.kind === "dispatch" ? `#${o.target}` : short(o.target)} · {new Date(o.createdAt).toLocaleString("en-US")} ·{" "}
+            {o.hash ? <>sent {txLink(o.hash, o.chainId === 1 ? ETHERSCAN : BASESCAN)}, waiting for its receipt{o.nonceChecked ? ` (nonce ${o.nonce})` : ""}</> : "the wallet was asked but no hash came back; the outcome is uncertain and this operation stays locked."}{" "}
             <button className="link" onClick={() => onCheck(o)}>Check again</button>{" "}
-            {!o.hash && <button className="link" onClick={() => onForget(o.id)}>I checked my wallet: forget it</button>}
+            {!o.hash && <span className="fine" role="status">{opNote(o, notes[o.id])}</span>}
+            {!o.hash && <PasteHash o={o} onPaste={onPaste} />}
+            {!o.hash && (notes[o.id]?.kind === "not-found" || o.nonce === undefined) && (
+              <button className="link" onClick={() => onRelease(o)}>{o.nonce === undefined ? "Saved by an earlier version without its nonce: forget it" : "Release this record"}</button>
+            )}
           </li>
         ))}
       </ul>
@@ -487,3 +566,19 @@ function SavedOps({ ops, onForget, onCheck }: { ops: BurnOp[]; onForget: (id: st
   );
 }
 
+function PasteHash({ o, onPaste }: { o: BurnOp; onPaste: (o: BurnOp, raw: string) => Promise<string | null> }) {
+  const [v, setV] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const id = `paste-${o.id}`;
+  return (
+    <form className="paste" onSubmit={async (x) => { x.preventDefault(); setBusy(true); setErr(null); try { setErr(await onPaste(o, v)); } catch (y) { setErr(msg(y)); } finally { setBusy(false); } }}>
+      <label htmlFor={id}>Transaction hash from your wallet's activity</label>
+      <div className="row-in">
+        <input id={id} value={v} onChange={(x) => setV(x.target.value)} placeholder="0x…" spellCheck={false} autoComplete="off" aria-describedby={err ? `${id}-err` : undefined} />
+        <button type="submit" className="btn" disabled={busy || !v.trim()}>{busy ? "Checking…" : "Use this hash"}</button>
+      </div>
+      {err && <p id={`${id}-err`} className="bad" role="alert">{err}</p>}
+    </form>
+  );
+}

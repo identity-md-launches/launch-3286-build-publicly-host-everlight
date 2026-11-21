@@ -1,0 +1,153 @@
+{
+ "mocked": true,
+ "note": "Real Chromium, the compiled dist/, mocked JSON-RPC for Ethereum and Base and a labelled mock EIP-6963 wallet. No live chain reads and no transactions.",
+ "ranAt": "2026-11-21T08:39:24.672Z",
+ "passed": 24,
+ "failed": 0,
+ "results": [
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "901×844: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "901×844: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 901 strip 129px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "960×800: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "960×800: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 960 strip 129px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1024×768: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1024×768: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 1024 strip 129px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1100×800: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1100×800: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 1100 strip 129px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1150×800: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1150×800: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 1150 strip 129px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1151×800: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1151×800: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 1151 strip 186px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1200×800: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1200×800: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 1200 strip 166px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1279×800: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1279×800: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 1279 strip 127px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1280×800: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1280×800: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 1280 strip 127px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1440×900: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "1440×900: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 1440 strip 102px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "390×844: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "390×844: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 390 strip 136px"
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "320×700: no overlap between search, allocation, counters, links and map tools",
+   "passed": true,
+   "detail": ""
+  },
+  {
+   "scenario": "dde298ac-footer-widths",
+   "name": "320×700: allocation, counters and both links inside the viewport; no horizontal scroll",
+   "passed": true,
+   "detail": " scrollWidth 320 strip 175px"
+  }
+ ]
+}

@@ -242,7 +242,7 @@ export function receiptEligibility(w: WalletCtx, b: BaseSnap | undefined, d: Del
 export type OpKind = "queue" | "dispatch" | "retry" | "receipt";
 export interface MinedReceipt { status: "success" | "reverted"; transactionHash: Hash; logs: Pick<Log, "address" | "data" | "topics">[] }
 export type Outcome =
-  | { ok: true; kind: OpKind; text: string; jobId?: bigint; guid?: Hash; messageGuid?: Hash }
+  | { ok: true; kind: OpKind; text: string; jobId?: bigint; amount?: bigint; guid?: Hash; messageGuid?: Hash }
   | { ok: false; kind: OpKind; text: string; failedInside?: boolean };
 
 function events(r: MinedReceipt, address: string, abi: readonly unknown[]) {
@@ -258,7 +258,7 @@ export function outcomeOf(kind: OpKind, target: string, r: MinedReceipt, garden:
   if (r.status !== "success") return { ok: false, kind, text: "The transaction reverted. Nothing changed onchain; you paid only its gas." };
   if (kind === "queue") {
     const ev = events(r, garden, wishGardenAbi).find((x) => x.eventName === "BurnQueued");
-    return ev ? { ok: true, kind, jobId: ev.args.jobId, text: `Burn job #${ev.args.jobId} prepared with ${ev.args.amount} token units.` }
+    return ev ? { ok: true, kind, jobId: ev.args.jobId, amount: ev.args.amount, text: `Burn job #${ev.args.jobId} prepared with ${ev.args.amount} token units.` }
       : { ok: false, kind, text: "This transaction did not create a burn job (it may have been replaced by another transaction)." };
   }
   if (kind === "dispatch") {
@@ -286,6 +286,14 @@ export interface BurnOp {
   id: string; kind: OpKind; chainId: 1 | 8453; account: string; target: string; value?: string;
   /** signing: the wallet was asked and has not returned a hash (a reload here leaves the outcome uncertain). */
   stage: "signing" | "sent"; hash?: Hash; createdAt: number;
+  /** The exact request sent to the wallet (contract, calldata, value): a pasted or found transaction must carry it. */
+  req?: { to: string; data: `0x${string}`; value: string };
+  /** The sender's pending nonce and the head block read just before the wallet was asked (preflight). */
+  nonce?: number; block?: string;
+  /** Sender and nonce read from the sent transaction itself; once set, a mined same-nonce replacement settles it. */
+  from?: string; nonceChecked?: boolean;
+  /** queue: the reviewed amount in token units, compared with the mined BurnQueued amount. */
+  expect?: string;
 }
 export const OPS_KEY = "everlight:v1:burnops:0x33a514c5e2028f1affd70b82f170e8193df030a5";
 const storage = (): Storage | null => { try { return typeof localStorage === "undefined" ? null : localStorage; } catch { return null; } };
